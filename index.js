@@ -29,13 +29,31 @@ export function apply(ctx) {
     try { return ctx.agents.list() || [] } catch (e) { return [] }
   }
 
-  const 挂 = (agent) => agent.ctx.systemPrompt.context({
-    name: 'feiyu-life',
-    order: 880,
-    text: () => {
-      try { return 生成(读配置()).text } catch (e) { return '' }
-    },
-  })
+  /** 这个会话在不在「要注入」的工作区名单里；名单空 = 全都注 */
+  const 属于工作区 = (cfg, cwd) => {
+    const list = Array.isArray(cfg.工作区) ? cfg.工作区.filter((x) => typeof x === 'string' && x.trim()) : []
+    if (!list.length) return true
+    if (!cwd) return false
+    return list.some((x) => {
+      const 头 = String(x).replace(/[\\/]+$/, '')
+      return cwd === 头 || cwd.startsWith(头 + '/') || cwd.startsWith(头 + '\\')
+    })
+  }
+
+  const 挂 = (agent) => {
+    const cwd = String((agent && agent.session && agent.session.cwd) || '')
+    return agent.ctx.systemPrompt.context({
+      name: 'feiyu-life',
+      order: 880,
+      text: () => {
+        try {
+          const cfg = 读配置()
+          if (!属于工作区(cfg, cwd)) return ''
+          return 生成(cfg).text
+        } catch (e) { return '' }
+      },
+    })
+  }
 
   const tick = () => {
     const list = 会话们()
