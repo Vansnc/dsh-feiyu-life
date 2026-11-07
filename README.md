@@ -94,10 +94,31 @@
 ## 安装 / 更新
 
 ```bash
-dsh plugin --profile web add /home/ubuntu/dsh-agentchat/plugins/dsh-feiyu-life
+dsh plugin --profile web add dsh-feiyu-life
 ```
 
-改代码后要生效：在插件页卸掉再装一次（`link:` 装的是目录，但模块是启动时加载的）。
+装完**刷新一下页面**，设置里就有「鱼的生活线」。
+
+更新要**先卸再装**（直接装可能拿到缓存里的旧副本）：
+
+```bash
+dsh plugin --profile web remove dsh-feiyu-life
+dsh plugin --profile web add dsh-feiyu-life
+```
+
+### 本地开发（改代码要立刻生效）
+
+用 `link:` 直接指工作区目录：
+
+```bash
+dsh plugin --profile web add /absolute/path/to/dsh-feiyu-life
+```
+
+⚠️ 这时要把 `cordis.patch.yml` 里的 `name:` 从**包名**换成**该目录下 `index.js` 的绝对路径** ——
+客户端那半是拿"挂载行的模块名 + 解析基址"去找 `package.json` 的，若按包名从工作区目录往上找
+不到 `node_modules`，它会静默跳过，设置页就永远不出现。改成路径后走 `nearestPackage`，直接命中。
+
+改完代码要生效：在插件页卸掉再装一次（模块是加载时读的，不是每次都读盘）。
 
 ## 已知边界
 
