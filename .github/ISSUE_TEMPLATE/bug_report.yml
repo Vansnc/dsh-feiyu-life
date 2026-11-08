@@ -1,0 +1,53 @@
+name: Bug 报告
+description: 哪里不对、怎么复现
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看一眼 README 的「排错」那节，很多问题是配置没填。
+  - type: input
+    id: version
+    attributes:
+      label: 插件版本
+      description: 设置 → 插件 里看到的版本号
+    validations:
+      required: true
+  - type: input
+    id: dsh
+    attributes:
+      label: DSH 版本
+      placeholder: 0.2.1-rc.2
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 系统 / Node
+      placeholder: Ubuntu 24.04 / Node 22.19
+    validations:
+      required: false
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 期望怎样、实际怎样
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 设置 → …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 控制台 / journalctl 里那几行，能贴多少贴多少
+      render: shell
+    validations:
+      required: false

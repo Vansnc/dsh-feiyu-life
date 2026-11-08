@@ -1,0 +1,23 @@
+name: 功能建议
+description: 想要什么、为什么
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: 想要什么
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 用在什么场景
+      description: 说清楚场景，比说「希望支持 X」有用得多
+    validations:
+      required: true
+  - type: textarea
+    id: alt
+    attributes:
+      label: 现在你怎么绕过去的
+    validations:
+      required: false

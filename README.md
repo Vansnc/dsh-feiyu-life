@@ -1,5 +1,9 @@
 # dsh-feiyu-life · 鱼的生活线
 
+[![npm](https://img.shields.io/npm/v/dsh-feiyu-life)](https://www.npmjs.com/package/dsh-feiyu-life)
+[![license](https://img.shields.io/npm/l/dsh-feiyu-life)](./LICENSE)
+[![node](https://img.shields.io/badge/node-%E2%89%A522-informational)](https://nodejs.org/)
+
 给她一条**自己的时间**。
 
 她原来永远在线：你什么时候说话，她什么时候在。心情也只由对话决定。
@@ -128,3 +132,9 @@ dsh plugin --profile web add /absolute/path/to/dsh-feiyu-life
 - **工作区过滤已做**：`工作区` 留空仍然全注，填上就只注那几个目录。
 - **子代理不注入**：只挂在 `agents.roots()`，刷 B 站那种分身看不见本体在不在上课。
 - **节日是公历表**：农历节日（春节、中秋）按你这几年实际的日期填成"只那几天"。
+
+## 反馈
+
+- 装不上 / 用不对：先看上面的「排错」和「已知边界」；
+- 还是不行就开 [issue](https://github.com/Vansnc/dsh-feiyu-life/issues)，按模板把版本和日志带上；
+- 想改代码看 [CONTRIBUTING.md](./CONTRIBUTING.md)。
