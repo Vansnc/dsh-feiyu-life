@@ -1,7 +1,7 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "0.2.2",
-  "description": "大肥鱼的生活线：按校历、课表和她自己的作息算出现在在干什么、手机在不在手上，把一天里的小事攒成短上下文注入；带设置页。",
+  "version": "0.3.0",
+  "description": "大肥鱼的生活线（DSH 插件）：每天用模型写一份全天剧本（在哪、做什么、穿什么），注入此刻/早些时候/接下来，带设置页。",
   "type": "module",
   "license": "MIT",
   "author": "Vansnc",
@@ -15,12 +15,11 @@
   },
   "keywords": [
     "dsh",
+    "dsh-plugin",
     "deepseek-harness",
-    "plugin",
-    "agent",
     "companion",
-    "persona",
-    "life"
+    "life",
+    "persona"
   ],
   "engines": {
     "node": ">=22"

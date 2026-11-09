@@ -12,12 +12,51 @@
 //   POST /dsh-feiyu-life/save     存配置（整份替换）
 //   GET  /dsh-feiyu-life/preview  指定时间预览（?ts=毫秒时间戳）
 
-import { 读配置, 存配置, 生成, CONFIG_PATH } from './life.js'
+import { existsSync, readFileSync } from 'node:fs'
+import { 读配置, 存配置, 生成, CONFIG_PATH, 时区现在, 今日日历 } from './life.js'
+import { 日程类型, 每日剧本, 剧本路径, 写剧本, 改剧本 } from './plan.js'
+import { 用模型写一天 } from './gen.js'
 
 export const name = 'feiyu-life'
-export const inject = ['systemPrompt', 'agents', 'timer', 'webServer']
+export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'llm', 'tools']
 
 const 路由前缀 = '/dsh-feiyu-life'
+
+/** 经期第几天（0 = 不在） */
+function 经期天(cfg, ymd) {
+  const q = cfg.经期 || {}
+  const 起 = /^\d{4}-\d{2}-\d{2}$/.test(String(q.起始 || '')) ? Date.parse(String(q.起始) + 'T00:00:00Z') : NaN
+  if (!Number.isFinite(起)) return 0
+  const 今 = Date.parse(ymd + 'T00:00:00Z')
+  if (!Number.isFinite(今)) return 0
+  const 天 = Math.floor((今 - 起) / 86400000)
+  const 周 = Math.max(1, Math.round(Number(q.周期) || 29))
+  const 长 = Math.max(1, Math.round(Number(q.天数) || 5))
+  return ((天 % 周) + 周) % 周 < 长 ? ((天 % 周) + 周) % 周 + 1 : 0
+}
+
+/** 写剧本时告诉模型的「身体/状态」 */
+function 身体提示(cfg, t) {
+  const 经 = 经期天(cfg, t.ymd)
+  if (经 && 经 <= 3) return '经期头几天，腰酸、想吃甜的、没力气'
+  if (经) return '经期后段，肚子还坠着'
+  return ''
+}
+
+/** 最近三天剧本摘要，避免天天一样 */
+function 最近摘要(cfg, t) {
+  const 行 = []
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(Date.parse(t.ymd + 'T00:00:00Z') - i * 86400000).toISOString().slice(0, 10)
+    try {
+      const j = JSON.parse(readFileSync(剧本路径(d), 'utf8'))
+      const 标题 = j.title || (j.type && j.type.名) || ''
+      const 段 = (j.items || []).slice(0, 3).map((x) => x.在).join('、')
+      行.push(`- ${d}：${标题}${段 ? '（' + 段 + '…）' : ''}`)
+    } catch { /* 没有就算了 */ }
+  }
+  return 行.join('\n')
+}
 
 export function apply(ctx) {
   const mounted = new Map()
@@ -40,9 +79,15 @@ export function apply(ctx) {
     })
   }
 
+  const 钟点 = (分) => {
+    const v = ((Math.round(分) % 1440) + 1440) % 1440
+    return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`
+  }
+
   const 挂 = (agent) => {
     const cwd = String((agent && agent.session && agent.session.cwd) || '')
-    return agent.ctx.systemPrompt.context({
+    const 卸 = []
+    卸.push(agent.ctx.systemPrompt.context({
       name: 'feiyu-life',
       order: 880,
       text: () => {
@@ -52,7 +97,90 @@ export function apply(ctx) {
           return 生成(cfg).text
         } catch (e) { return '' }
       },
-    })
+    }))
+    // 她可以临时改主意：改今天的安排（改完下一轮注入就变）
+    try {
+      const off = agent.ctx.tools.register({
+        name: 'life_adjust',
+        description: '临时改今天的安排（赖床、出门、被叫走、加班）。只在你真的改主意时用；回复里别提到这个工具。',
+        parameters: {
+          type: 'object',
+          properties: {
+            在: { type: 'string', description: '改成在做什么（短句，例如：在便利店买布丁）' },
+            从: { type: 'string', description: '从几点开始（HH:MM，不填=现在）' },
+            时长分钟: { type: 'number', description: '持续多少分钟，默认 90' },
+          },
+          required: ['在'],
+          additionalProperties: false,
+        },
+        output: {
+          schema: { type: 'object', properties: { ok: { type: 'boolean' }, 说: { type: 'string' } }, additionalProperties: true },
+          render: (_a, v) => [{ type: 'text', text: String((v && v.说) || '') }],
+        },
+        async execute(参数 = {}) {
+          try {
+            const cfg = 读配置()
+            const t = 时区现在(new Date(), String(cfg.时区 || 'Asia/Shanghai'))
+            const 在 = String(参数.在 || '').trim().slice(0, 24)
+            if (!在) return { ok: false, 说: '没说要改成什么' }
+            let 起 = t.分
+            const m = /^(\d{1,2}):(\d{2})$/.exec(String(参数.从 || '').trim())
+            if (m) 起 = Number(m[1]) * 60 + Number(m[2])
+            const 时长 = Math.max(15, Math.min(360, Number(参数.时长分钟) || 90))
+            const d = 改剧本(t.ymd, 起, { 起, 止: Math.min(1440, 起 + 时长), 在, 手机: '在手', 穿: '' })
+            return d ? { ok: true, 说: `记下了：${钟点(起)} 起，${在}` } : { ok: false, 说: '今天还没有剧本，改不了' }
+          } catch (e) { return { ok: false, 说: '改失败：' + String((e && e.message) || e) } }
+        },
+      })
+      if (typeof off === 'function') 卸.push(off)
+    } catch (e) { /* 工具注册失败不影响注入 */ }
+    return () => { for (const f of 卸) { try { f() } catch {} } }
+  }
+
+  // ── 每日剧本：一天写一次（模型写，失败退模板）──
+  const 在写 = new Set()
+  const 查模型用的会话 = () => {
+    try {
+      const roots = (typeof ctx.agents.roots === 'function' ? ctx.agents.roots() : ctx.agents.list()) || []
+      return roots[0]
+    } catch { return undefined }
+  }
+  const 确保剧本 = async (now) => {
+    const cfg = 读配置()
+    const tz = String(cfg.时区 || 'Asia/Shanghai')
+    for (const 偏移 of [0, 1]) {
+      const when = 偏移 === 0 ? now : new Date(now.getTime() + 86400000)
+      const t = 时区现在(when, tz)
+      if (existsSync(剧本路径(t.ymd))) continue
+      if (在写.has(t.ymd)) continue
+      在写.add(t.ymd)
+      ;(async () => {
+        try {
+          const 日历 = 今日日历(cfg, t)
+          const 类型 = 日程类型(cfg, t, 日历)
+          const agent = 查模型用的会话()
+          let r = null
+          if (agent) {
+            r = await 用模型写一天(ctx, agent, {
+              cfg, date: t.ymd, 周: t.周, 类型, 日历,
+              课表: ((cfg.课表 || {})[t.周] || []).map((x) => [x[0], x[1], x[2]]),
+              身体: 身体提示(cfg, t),
+              最近: 最近摘要(cfg, t),
+            })
+          }
+          if (r) {
+            写剧本(t.ymd, { type: 类型, title: r.title, mood: r.mood, items: r.items, source: 'llm', model: r.model })
+            try { console.log('[feiyu-life] 剧本已生成（模型）：' + t.ymd) } catch {}
+          } else {
+            const 兜底 = 每日剧本(cfg, t, 日历, {}, 类型)
+            写剧本(t.ymd, { type: 类型, title: 兜底.title || '', mood: '', items: 兜底.items, source: 'template' })
+            try { console.log('[feiyu-life] 剧本用模板兜底：' + t.ymd) } catch {}
+          }
+        } catch (e) {
+          try { console.log('[feiyu-life] 写剧本失败：' + String((e && e.message) || e)) } catch {}
+        } finally { 在写.delete(t.ymd) }
+      })()
+    }
   }
 
   const tick = () => {
@@ -77,6 +205,8 @@ export function apply(ctx) {
   })
 
   tick()
+  try { setTimeout(() => { 确保剧本(new Date()).catch(() => {}) }, 8000) } catch {}
+  try { ctx.effect(() => ctx.interval(() => { 确保剧本(new Date()).catch(() => {}) }, 20 * 60 * 1000)) } catch {}
 
   // ── 设置页的三条接口 ────────────────────────────────────────────────
   const 只认本人 = (handler) => async (req, res) => {
