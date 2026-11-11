@@ -1,5 +1,5 @@
 /**
- * dsh-feiyu-life · browser half (Settings -> 鱼的生活线)
+ * dsh-feiyu-life · browser half (Settings -> 鱼的生活)
  *
  * Same plugin convention: window.__ModuleLoader__.load({ id, factory }), React via require.
  *
@@ -701,7 +701,7 @@ window.__ModuleLoader__.load({
         const slots = (typeof ctx.get === 'function' ? ctx.get('slots') : undefined) || ctx.slots
         if (!slots) return
         slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'feiyu-life', order: 56, label: '鱼的生活线' },
+          { name: 'settings.section', id: 'feiyu-life', order: 56, label: '鱼的生活' },
           () => h(Panel),
         ))
 

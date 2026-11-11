@@ -1,10 +1,10 @@
-# dsh-feiyu-life · 鱼的生活线
+# dsh-feiyu-life · 鱼的生活
 
 [![npm](https://img.shields.io/npm/v/dsh-feiyu-life)](https://www.npmjs.com/package/dsh-feiyu-life)
 [![license](https://img.shields.io/npm/l/dsh-feiyu-life)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-informational)](https://nodejs.org/)
 
-![鱼的生活线：计划 + 调整 → 一条真实的时间线](./assets/banner.png)
+![鱼的生活：计划 + 调整 → 一条真实的时间线](./assets/banner.png)
 
 给她一条**自己的时间**。
 
@@ -21,7 +21,7 @@
 （说话）这些是你自己的日子，别当时间表念：不说"按日程/计划/安排"，不报时间段、不列清单。
 ```
 
-设置页在 **设置 → 鱼的生活线**，六个页签：此刻 / 年度 / 课表 / 作息 / 身体 / 事件。
+设置页在 **设置 → 鱼的生活**，六个页签：此刻 / 年度 / 课表 / 作息 / 身体 / 事件。
 「此刻」页顶部是一条 0–24 点的时序图：灰=按计划走，橙=`life_adjust` 改过的。
 
 ---
@@ -138,7 +138,7 @@ life_adjust 调整 ─┘
 dsh plugin --profile web add dsh-feiyu-life
 ```
 
-装完**刷新一下页面**，设置里就有「鱼的生活线」。
+装完**刷新一下页面**，设置里就有「鱼的生活」。
 
 更新要**先卸再装**（直接装可能拿到缓存里的旧副本）：
 
