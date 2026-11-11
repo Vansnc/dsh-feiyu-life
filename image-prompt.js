@@ -279,10 +279,10 @@ export async function 检查图(ctx, agent, cfg, 图路径, 要素, 用参考 = 
 
   let 结果
   try {
-    结果 = await 流式收集(ctx, t, sys, 用户, agent, { maxTokens: 2200, reasoningEffort: 'low', 图片: 图引用 })
+    结果 = await 流式收集(ctx, t, sys, 用户, agent, { maxTokens: 4000, reasoningEffort: 'low', 图片: 图引用 })
   } catch (e) {
     日志('自检调用失败：' + String((e && e.message) || e).slice(0, 160))
-    try { 结果 = await 流式收集(ctx, t, sys, 用户, agent, { maxTokens: 3600, 图片: 图引用 }) } catch { return null }
+    try { 结果 = await 流式收集(ctx, t, sys, 用户, agent, { maxTokens: 5000, 图片: 图引用 }) } catch { return null }
   }
   const 文 = String(结果?.out || '').trim()
   const 块 = 文.match(/\{[\s\S]*\}/)
