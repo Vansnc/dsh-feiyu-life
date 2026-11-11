@@ -26,7 +26,7 @@ window.__ModuleLoader__.load({
     const sectionOptions = ['上午', '中午', '下午', '晚上']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['events', '事件']]
+    const tabs = [['now', '此刻'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['events', '事件'], ['photo', '照片']]
 
     const CSS = `
 [data-fl-wrap]{display:flex;flex-direction:column;gap:14px;padding:4px 2px 24px;color-scheme:light dark;font-size:13px;}
@@ -433,6 +433,7 @@ window.__ModuleLoader__.load({
         tab === 'day' ? dayPage : null,
         tab === 'body' ? bodyPage : null,
         tab === 'events' ? eventsPage : null,
+        tab === 'photo' ? h(IMAGE.Panel) : null,
         h('div', { 'data-fl-msg': '' }, message))
     }
 
@@ -703,10 +704,7 @@ window.__ModuleLoader__.load({
           { name: 'settings.section', id: 'feiyu-life', order: 56, label: '鱼的生活线' },
           () => h(Panel),
         ))
-        slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'feiyu-image', order: 57, label: '鱼的照片' },
-          () => h(IMAGE.Panel),
-        ))
+
       },
     }
   },
