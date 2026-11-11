@@ -1,5 +1,13 @@
 # 更新记录
 
+## 0.7.0
+
+- **相机与生活线融合**：`shoot` 的「此刻」不再自己读剧本文件，改成走生活线的状态机（`generate`）——拍出来的穿着、地点、光线跟注入给她的完全一致。
+- **命名空间统一**：相机路由 `/dsh-feiyu-life/image/*`，配置 `feiyu-life-image-config.json`，照片目录 `~/.dsh/feiyu-life-image/`，日志 `feiyu-life-image.log`；旧路径仍可读，已有照片不丢。
+- **标识符英文**：`image.js` / `image-prompt.js` 全部英文；重复的「生活此刻 / 推地点 / 日志」合成一处。
+- **`shoot` 参数英文**：`hint` / `type` / `location` / `outfit` / `expression`。
+- 设置页照片面板走新接口，字段与其余面板一致（`config` / `photos` / `today` / `check` 等）。
+
 ## 0.6.1
 
 - 设置页名字从「鱼的生活线」改成「**鱼的生活**」——相机并进来之后，这一页已经不只是生活线了。
