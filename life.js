@@ -25,6 +25,7 @@ import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 export const CONFIG_PATH = join(homedir(), '.dsh', 'feiyu-life-config.json')
+export const 状态路径 = join(homedir(), '.dsh', 'feiyu-life-status.json')
 
 const 段门 = { 上午: 9, 中午: 12, 下午: 15, 晚上: 19 }
 const 手机说 = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
@@ -343,6 +344,50 @@ function 今日底色(经, 生病, 困, 好事) {
   return ''
 }
 
+// ── 离场状态（治前后矛盾）─────────────────────────────────────────────
+// 她亲口说的「去洗澡 / 睡了 / 出门」这类，之前不被任何地方记住，
+// 下一轮时钟又把她算回「在刷图」，于是前后矛盾（说去洗澡下一秒还在回）。
+// 现在：回复里识别到这种「要进入某状态」，写进状态文件；
+// 注入时在「直到」过期前，用它盖过时钟算出来的「此刻」。
+export function 读状态() {
+  try {
+    const d = JSON.parse(readFileSync(状态路径, 'utf8'))
+    if (d && d.v === 1 && typeof d.在 === 'string' && d.在 && Number.isFinite(d.直到)) return d
+  } catch {}
+  return null
+}
+
+export function 写状态(状态) {
+  try {
+    mkdirSync(dirname(状态路径), { recursive: true })
+    const tmp = 状态路径 + '.tmp'
+    writeFileSync(tmp, JSON.stringify({ v: 1, ...状态 }, null, 2), 'utf8')
+    renameSync(tmp, 状态路径)
+    return true
+  } catch { return false }
+}
+
+// 保守识别：宁可漏，不可误（误了反而造出新的矛盾）。
+// 「当」命中且「否」不命中才触发；「否」负责排除「刚洗完 / 还没睡 / 没出门」这类过去式或否定。
+const 离场规则 = [
+  { 在: '在洗澡', 手机: '不在手边', 分钟: 40, 当: /洗澡|冲个?澡|冲凉/, 否: /洗完|洗好|洗过了|刚洗|洗完了|没洗/ },
+  { 在: '睡着了', 手机: '在床头', 分钟: 480, 当: /晚安|去睡|先睡|要睡|睡了|睡觉|该睡|熄灯|躺下/, 否: /睡不着|还没睡|刚醒|睡醒|没睡|睡踏实|睡不/ },
+  { 在: '出门了', 手机: '在手', 分钟: 90, 当: /出门|出去|下楼/, 否: /刚回|回来|到家|没出/ },
+  { 在: '在上课', 手机: '静音', 分钟: 90, 当: /上课了|去上课|上课去|去教室|去图书馆|去自习/, 否: /下课|放学|还没上|没课/ },
+  { 在: '在吃饭', 手机: '在手', 分钟: 40, 当: /去吃饭|去食堂|吃饭去/, 否: /刚吃|吃完|吃过了|还没吃/ },
+]
+
+export function 识别离场(文本, now = new Date()) {
+  const s = String(文本 || '')
+  if (!s || s.length > 400) return null
+  for (const r of 离场规则) {
+    if (r.当.test(s) && !r.否.test(s)) {
+      return { 在: r.在, 手机: r.手机, 直到: now.getTime() + r.分钟 * 60000 }
+    }
+  }
+  return null
+}
+
 /** 压成两行，附「为什么这么算」 */
 export function 生成(cfg, now = new Date()) {
   const 空 = { text: '', 依据: [] }
@@ -353,7 +398,12 @@ export function 生成(cfg, now = new Date()) {
   const 偏离 = 今日偏离(cfg, t, 日历.作息表)
   const 类型 = 日程类型(cfg, t, 日历)
   const 剧本 = 每日剧本(cfg, t, 日历, 偏离, 类型)
-  const 在 = 找此刻(剧本.items, t.分) || { 在: '闲着', 手机: '在手', 穿: '' }
+  let 在 = 找此刻(剧本.items, t.分) || { 在: '闲着', 手机: '在手', 穿: '' }
+  // 离场状态优先：她刚亲口说过去洗澡/睡了，就认它，别被时钟拽回「在刷图」
+  const 状态 = 读状态()
+  if (状态 && 状态.直到 > now.getTime()) {
+    在 = { 在: 状态.在, 手机: 状态.手机 || '在手', 穿: 状态.穿 || '' }
+  }
 
   const 依据 = []
   依据.push(日历.特殊 ? `${日历.特殊.名}第 ${日历.第几天} 天`
@@ -411,7 +461,7 @@ export function 生成(cfg, now = new Date()) {
   }
 
   // ── 怎么把这段带进聊天（借 daily-schedule 的思路）──
-  行们.push('（说话）这些是你自己的日子，别当时间表念：不说"按日程/计划/安排"，不报时间段、不列清单；他问起就像闲聊挑一两件说，带点感受。')
+  行们.push('（说话）这些是你自己的日子，别当时间表念：不说"按日程/计划/安排"，不报时间段、不列清单；他问起就像闲聊挑一两件说，带点感受。你的场景以「（此刻）」这行为准；他说他在地铁/公司/家，那是他的场景，别安到自己身上。')
   return {
     text: 行们.join('\n'),
     依据,

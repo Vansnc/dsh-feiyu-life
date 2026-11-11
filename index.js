@@ -13,7 +13,7 @@
 //   GET  /dsh-feiyu-life/preview  指定时间预览（?ts=毫秒时间戳）
 
 import { existsSync, readFileSync } from 'node:fs'
-import { 读配置, 存配置, 生成, CONFIG_PATH, 时区现在, 今日日历 } from './life.js'
+import { 读配置, 存配置, 生成, CONFIG_PATH, 时区现在, 今日日历, 识别离场, 写状态 } from './life.js'
 import { 日程类型, 每日剧本, 剧本路径, 写剧本, 改剧本 } from './plan.js'
 import { 用模型写一天 } from './gen.js'
 
@@ -21,6 +21,14 @@ export const name = 'feiyu-life'
 export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'llm', 'tools']
 
 const 路由前缀 = '/dsh-feiyu-life'
+
+/** 从一条消息里抽出纯文本 */
+function textOfMessage(msg) {
+  if (!msg) return ''
+  const c = msg.content
+  if (!Array.isArray(c)) return ''
+  return c.map((x) => (x && x.type === 'text' ? x.text : '')).join('\n')
+}
 
 /** 经期第几天（0 = 不在） */
 function 经期天(cfg, ymd) {
@@ -98,6 +106,24 @@ export function apply(ctx) {
         } catch (e) { return '' }
       },
     }))
+    // 这轮她回完话，看有没有「要去洗澡/睡了/出门」这类离场话；
+    // 有就写进状态文件，下一轮注入时盖过时钟，别前后矛盾。
+    try {
+      const off = agent.ctx.on('agent/turn-stopping', () => {
+        try {
+          const ev = (agent.session && agent.session.snapshotEvents ? agent.session.snapshotEvents() : []) || []
+          let 回复 = ''
+          for (let i = ev.length - 1; i >= 0; i--) {
+            const e = ev[i]
+            if (e && e.type === 'assistant/message') { 回复 = textOfMessage(e.data && e.data.message); break }
+          }
+          if (!回复) return
+          const 离 = 识别离场(回复, new Date())
+          if (离) 写状态(离)
+        } catch (e) { /* 识别失败不影响对话 */ }
+      })
+      if (typeof off === 'function') 卸.push(off)
+    } catch (e) { /* 挂不上监听就算了 */ }
     // 她可以临时改主意：改今天的安排（改完下一轮注入就变）
     try {
       const off = agent.ctx.tools.register({
