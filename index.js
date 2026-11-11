@@ -22,9 +22,10 @@ import { readConfig, saveConfig, generate, CONFIG_PATH, zonedNow, todayCalendar 
 import { dayType, dailyPlan, planPath, writePlan } from './plan.js'
 import { addAdjustment } from './state.js'
 import { writeDayWithModel } from './gen.js'
+import { registerImage } from './image.js'
 
 export const name = 'feiyu-life'
-export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'llm', 'tools']
+export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'llm', 'tools', 'attachments']
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
@@ -323,4 +324,9 @@ export function apply(ctx) {
       }),
     }), 'feiyu-life: preview')
   } catch {}
+
+  // 相机（原 dsh-feiyu-image）：shoot 工具 + /dsh-feiyu-image/* 设置页接口
+  try { registerImage(ctx) } catch (e) {
+    try { ctx.logger?.warn?.('feiyu-life: 相机没挂上 ' + String((e && e.message) || e)) } catch {}
+  }
 }

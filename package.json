@@ -1,7 +1,7 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "0.5.1",
-  "description": "大肥鱼的生活线（DSH 插件）：每日剧本 + 时序状态机，注入今天/此刻/早些时候/接下来，带设置页和 24 小时时序图。",
+  "version": "0.6.0",
+  "description": "大肥鱼的生活线（DSH 插件）：每日剧本 + 时序状态机，注入今天/此刻/早些时候/接下来；带相机（shoot 出图 + 出图自检），设置页有生活线和鱼的照片两页。",
   "type": "module",
   "license": "MIT",
   "author": "Vansnc",
@@ -14,12 +14,14 @@
     "url": "https://github.com/Vansnc/dsh-feiyu-life/issues"
   },
   "keywords": [
+    "companion",
+    "deepseek-harness",
     "dsh",
     "dsh-plugin",
-    "deepseek-harness",
-    "companion",
+    "image",
     "life",
-    "persona"
+    "persona",
+    "seedream"
   ],
   "engines": {
     "node": ">=22"
@@ -34,6 +36,8 @@
   },
   "files": [
     "index.js",
+    "image.js",
+    "image-prompt.js",
     "life.js",
     "state.js",
     "plan.js",
