@@ -1,7 +1,7 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "0.4.0",
-  "description": "大肥鱼的生活线（DSH 插件）：每天用模型写一份全天剧本（在哪、做什么、穿什么），注入此刻/早些时候/接下来，带设置页。",
+  "version": "0.5.0",
+  "description": "大肥鱼的生活线（DSH 插件）：每日剧本 + 时序状态机，注入今天/此刻/早些时候/接下来，带设置页和 24 小时时序图。",
   "type": "module",
   "license": "MIT",
   "author": "Vansnc",
@@ -35,10 +35,14 @@
   "files": [
     "index.js",
     "life.js",
+    "state.js",
+    "plan.js",
+    "gen.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
+    "assets",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

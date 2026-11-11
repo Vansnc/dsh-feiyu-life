@@ -1,45 +1,38 @@
-// 大肥鱼的生活线 —— 纯本地计算，一次模型都不调。
+// dsh-feiyu-life · life line (pure local computation, no model)
 //
-// 它回答四个问题：
-//   1. 今天是什么日子？（学期 / 寒暑假 / 节日 / 考试周）
-//   2. 这套日子该走哪张作息表？（日常 / 晚起 / 假期 / 备考）
-//   3. 此刻在干什么、手机在不在手上？
-//   4. 今天身上还压着什么事？（熬夜、经期、着凉、当天的一两件小事）
+// Answers four questions:
+//   1. What kind of day is it? (term / vacation / festival / exam week)
+//   2. Which routine table applies? (日常 / 晚起 / 假期 / 备考)
+//   3. What is she doing right now, is her phone at hand?
+//   4. What is weighing on her today? (late night, period, cold, small events)
 //
-// 算完压成两行短文本，由 index.js 注入 systemPrompt.context。
+// Output is compressed into a few short lines, injected via systemPrompt.context.
 //
-// 关于"确定性"（v0.2 的改动）：
-//   早先只按日期做种子，同一天里的每一分钟都算得一模一样 —— 读起来像背日程表。
-//   现在分三层变：
-//     · 日层：每天可能"没按表走"（躺平日 / 出门日 / 翘了下午的课），按日期抽；
-//     · 小时层：这一小时的身体感觉（坐不住 / 眼睛发干 / 有点饿），按（日期, 小时）抽；
-//     · 十分层：临时小动作（去接水 / 拿快递），按（日期, 十位分钟）抽，概率很低。
-//   还是不需要状态文件：同一分钟查两次结果一样，过了这一小时自然换一句 —— 这就像
-//   你问一个真人"你在干嘛"，五分钟问两次答案一样，两小时后再问就不一样了。
+// Determinism: three layers of variation (day / hour / ten-minute) keep the
+// answer stable within a window but different across hours — like asking a real
+// person "what are you doing": same answer twice in five minutes, different two
+// hours later.
 //
-// 层级优先级（高 → 低）：特殊（考试周）→ 假期 → 学期；作息表：特殊 > 假期 > 晚起日 > 日常。
+// State is NOT inferred from chat text. State flows from the plan (advanced by
+// the clock) plus explicit life_adjust adjustments only — see state.js.
 
 import { readFileSync, writeFileSync, mkdirSync, statSync, renameSync } from 'node:fs'
-import { 日程类型, 每日剧本, 找此刻 } from './plan.js'
+import { dayType, dailyPlan } from './plan.js'
+import { readFacts, buildTimeline, segmentAt, recentSegments, nextSegment } from './state.js'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 export const CONFIG_PATH = join(homedir(), '.dsh', 'feiyu-life-config.json')
-export const 状态路径 = join(homedir(), '.dsh', 'feiyu-life-status.json')
 
-const 段门 = { 上午: 9, 中午: 12, 下午: 15, 晚上: 19 }
-const 手机说 = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
-const 手机们 = ['在手', '静音', '在床头', '不在手边']
+const sectionGate = { 上午: 9, 中午: 12, 下午: 15, 晚上: 19 }
+const phoneSuffix = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
+const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 
-export const 默认配置 = {
+export const defaultConfig = {
   总开关: true,
   时区: 'Asia/Shanghai',
-  // 只在这些目录的会话里注入（留空 = 所有顶层会话）。别的活儿不该看见「你在上课」。
   工作区: [],
-
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
-
-  // ── 年度：这几段日子决定走哪张作息表 ──────────────────────────────
   校历: {
     学期: [
       { 名: '2026 秋季学期', 起: '2026-09-07', 止: '2027-01-17' },
@@ -49,12 +42,8 @@ export const 默认配置 = {
       { 名: '寒假', 起: '2027-01-18', 止: '2027-02-21', 作息: '假期' },
       { 名: '暑假', 起: '2027-07-05', 止: '2027-08-29', 作息: '假期' },
     ],
-    特殊: [
-      { 名: '期末周', 起: '2027-01-04', 止: '2027-01-17', 作息: '备考' },
-    ],
+    特殊: [{ 名: '期末周', 起: '2027-01-04', 止: '2027-01-17', 作息: '备考' }],
   },
-
-  // 公历节日：{名, 月, 日} 每年都过；{名, 起, 止} 只那几天
   节日: [
     { 名: '元旦', 月: 1, 日: 1 },
     { 名: '清明', 月: 4, 日: 5 },
@@ -65,8 +54,6 @@ export const 默认配置 = {
     { 名: '春节', 起: '2026-02-17', 止: '2026-02-23' },
     { 名: '春节', 起: '2027-02-06', 止: '2027-02-12' },
   ],
-
-  // ── 日：四张作息表 ────────────────────────────────────────────────
   日常: [
     ['00:00', '01:30', '躺床上刷手机', '在手'],
     ['01:30', '02:00', '刚关灯，还在刷手机', '在手'],
@@ -113,7 +100,6 @@ export const 默认配置 = {
     ['18:30', '01:00', '在宿舍复习', '在手'],
   ],
   晚起日: [4],
-
   课表: {
     1: [['08:00', '11:30', '上课', '静音'], ['14:00', '17:30', '上专业课', '静音']],
     2: [['14:00', '17:30', '上专业课', '静音']],
@@ -123,8 +109,6 @@ export const 默认配置 = {
     6: [],
     7: [],
   },
-
-  // ── 事件：段决定什么时候才可能出现；条件目前支持「早课」 ──────────
   事件池: [
     ['上午', '快递说放柜子里了，去了没有'],
     ['上午', '早八差点睡过去，进门被老师看了一眼', '早课'],
@@ -137,20 +121,18 @@ export const 默认配置 = {
     ['晚上', '耳机左耳没声了'],
     ['晚上', '我妈寄的吃的到了，一箱'],
   ],
-
-  // ── 偶尔不按表走（概率，0~1，可以调成 0 关掉）─────────────────────
   偏离: { 躺平日: 0.12, 出门日: 0.1, 翘下午课: 0.08 },
 }
 
-function 到分(hhmm) {
+function toMinute(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim())
   if (!m) return -1
   return Number(m[1]) * 60 + Number(m[2])
 }
 
-function 补零(n) { return String(n).padStart(2, '0') }
+function pad2(n) { return String(n).padStart(2, '0') }
 
-export function 时区现在(now, tz) {
+export function zonedNow(now, tz) {
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz || 'Asia/Shanghai',
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -158,33 +140,30 @@ export function 时区现在(now, tz) {
   })
   const parts = {}
   for (const p of fmt.formatToParts(now)) parts[p.type] = p.value
-  const 周 = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday] || 1
-  let 时 = Number(parts.hour)
-  if (时 === 24) 时 = 0
+  const weekday = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[parts.weekday] || 1
+  let hour = Number(parts.hour)
+  if (hour === 24) hour = 0
+  const minute = Number(parts.minute)
   return {
     ymd: `${parts.year}-${parts.month}-${parts.day}`,
-    月: Number(parts.month),
-    日: Number(parts.day),
-    hh: 时,
-    mm: Number(parts.minute),
-    分: 时 * 60 + Number(parts.minute),
-    周,
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour,
+    minute,
+    minuteOfDay: hour * 60 + minute,
+    weekday,
   }
 }
 
-// 日期做种子的伪随机：同一时段永远同一套，过了这段自然变
-function 种子(ymd, salt = '') {
+function hashSeed(ymd, salt = '') {
   let h = 2166136261
   const s = ymd + '|' + salt
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
   return h >>> 0
 }
 
-function 摇(seed) {
-  let a = seed >>> 0
+function rng(seedValue) {
+  let a = seedValue >>> 0
   return function () {
     a = (a + 0x6D2B79F5) | 0
     let t = Math.imul(a ^ (a >>> 15), 1 | a)
@@ -193,330 +172,250 @@ function 摇(seed) {
   }
 }
 
-function 日数(a, b) {
+function dayDiff(a, b) {
   const x = Date.parse(a + 'T00:00:00Z')
   const y = Date.parse(b + 'T00:00:00Z')
   if (!Number.isFinite(x) || !Number.isFinite(y)) return NaN
   return Math.floor((y - x) / 86400000)
 }
 
-function 在区间(ymd, 起, 止) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(起)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(止))) return false
-  return ymd >= String(起) && ymd <= String(止)
+function inRange(ymd, start, end) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(start)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(end))) return false
+  return ymd >= String(start) && ymd <= String(end)
 }
 
-/** 今天是什么日子：特殊 / 假期 / 学期 / 节日 */
-export function 今日日历(cfg, t) {
-  const 校 = cfg.校历 || {}
-  const 特殊 = (校.特殊 || []).find((x) => 在区间(t.ymd, x.起, x.止))
-  const 假 = (校.假期 || []).find((x) => 在区间(t.ymd, x.起, x.止))
-  const 学 = (校.学期 || []).find((x) => 在区间(t.ymd, x.起, x.止))
-  let 节 = null
+/** What kind of day: special / vacation / festival / term */
+export function todayCalendar(cfg, t) {
+  const cal = cfg.校历 || {}
+  const special = (cal.特殊 || []).find((x) => inRange(t.ymd, x.起, x.止))
+  const vacation = (cal.假期 || []).find((x) => inRange(t.ymd, x.起, x.止))
+  const term = (cal.学期 || []).find((x) => inRange(t.ymd, x.起, x.止))
+  let festival = null
   for (const x of cfg.节日 || []) {
-    if (x && x.名 && Number(x.月) === t.月 && Number(x.日) === t.日) { 节 = x; break }
-    if (x && x.名 && 在区间(t.ymd, x.起, x.止)) { 节 = x; break }
+    if (x && x.名 && Number(x.月) === t.month && Number(x.日) === t.day) { festival = x; break }
+    if (x && x.名 && inRange(t.ymd, x.起, x.止)) { festival = x; break }
   }
-  let 表 = '日常'
-  let 名 = ''
-  // 放了假的节日（有起止的那种，比如国庆、春节）也当假期走，不上课
-  const 节假 = !!(节 && 节.起 && 节.止)
-  if (特殊) { 表 = 特殊.作息 || '日常'; 名 = 特殊.名 }
-  else if (假) { 表 = 假.作息 || '假期'; 名 = 假.名 }
-  else if (节假) { 表 = '假期'; 名 = 节.名 }
-  else if ((cfg.晚起日 || []).includes(t.周)) 表 = '晚起'
+  let routine = '日常'
+  let label = ''
+  const festivalHoliday = !!(festival && festival.起 && festival.止)
+  if (special) { routine = special.作息 || '日常'; label = special.名 }
+  else if (vacation) { routine = vacation.作息 || '假期'; label = vacation.名 }
+  else if (festivalHoliday) { routine = '假期'; label = festival.名 }
+  else if ((cfg.晚起日 || []).includes(t.weekday)) routine = '晚起'
   return {
-    放假: !!(假 || 节假),
-    特殊: 特殊 || null,
-    假期: 假 || null,
-    学期: 学 || null,
-    节日: 节,
-    作息表: 表,
-    名,
-    第几天: 假 ? (日数(假.起, t.ymd) + 1) : (特殊 ? (日数(特殊.起, t.ymd) + 1) : 0),
+    holiday: !!(vacation || festivalHoliday),
+    special: special || null,
+    vacation: vacation || null,
+    term: term || null,
+    festival,
+    routine,
+    label,
+    dayIndex: vacation ? (dayDiff(vacation.起, t.ymd) + 1) : (special ? (dayDiff(special.起, t.ymd) + 1) : 0),
   }
 }
 
-/** 今天"没按表走"的偏离（按日期抽，一天内不变） */
-function 今日偏离(cfg, t, 表) {
+function todayDeviation(cfg, t, routine) {
   const p = cfg.偏离 || {}
-  const r = 摇(种子(t.ymd, 'derail'))
+  const r = rng(hashSeed(t.ymd, 'derail'))
   const out = {}
-  if (表 !== '假期' && r() < Number(p.躺平日 ?? 0.12)) out.躺平 = true
-  else if (表 !== '备考' && r() < Number(p.出门日 ?? 0.1)) out.出门 = true
-  if (表 === '日常' && (cfg.课表 || {})[t.周] && r() < Number(p.翘下午课 ?? 0.08)) out.翘下午 = true
+  if (routine !== '假期' && r() < Number(p.躺平日 ?? 0.12)) out.flat = true
+  else if (routine !== '备考' && r() < Number(p.出门日 ?? 0.1)) out.outing = true
+  if (routine === '日常' && (cfg.课表 || {})[t.weekday] && r() < Number(p.翘下午课 ?? 0.08)) out.skipAfternoon = true
   return out
 }
 
-/** 现在落在哪一段：课表优先，其次作息表 */
-export function 此刻(cfg, t, 日历, 偏离 = {}) {
-  if (偏离.躺平) {
-    return { 在: t.分 < 11 * 60 ? '睡着了，今天没打算起' : '在宿舍躺着，一天没出门', 手机: t.分 < 11 * 60 ? '在床头' : '在手' }
-  }
-  const 课表 = cfg.课表 || {}
-  const 课 = 日历.放假 ? [] : (Array.isArray(课表[t.周]) ? 课表[t.周] : [])
-  const 底 = cfg[日历.作息表] || cfg.日常 || []
-  const 候选 = [...课, ...底]
-  for (const b of 候选) {
-    if (!Array.isArray(b) || b.length < 2) continue
-    const [起, 止, 在, 手机] = b
-    const a = 到分(起)
-    let z = 到分(止)
-    if (a < 0 || z < 0) continue
-    const 是课 = 课.includes(b)
-    if (是课 && 偏离.翘下午 && 到分(起) >= 12 * 60) continue
-    if (z <= a) z += 1440
-    const now = t.分 < a && z > 1440 ? t.分 + 1440 : t.分
-    if (now >= a && now < z) return { 在: String(在 || '闲着'), 手机: String(手机 || '在手') }
-  }
-  return { 在: '闲着', 手机: '在手' }
+function menstrualDay(cfg, ymd) {
+  const p = cfg.经期 || {}
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(String(p.起始 || '')) ? Date.parse(String(p.起始) + 'T00:00:00Z') : NaN
+  if (!Number.isFinite(start)) return 0
+  const now = Date.parse(ymd + 'T00:00:00Z')
+  if (!Number.isFinite(now)) return 0
+  const days = Math.floor((now - start) / 86400000)
+  const cycle = Math.max(1, Math.round(Number(p.周期) || 29))
+  const length = Math.max(1, Math.round(Number(p.天数) || 5))
+  const pos = ((days % cycle) + cycle) % cycle
+  return pos < length ? pos + 1 : 0
 }
 
-function 起床点(cfg, t, 日历) {
-  const 表 = cfg[日历.作息表] || cfg.日常 || []
-  const 起 = 表.map((b) => 到分(Array.isArray(b) ? b[0] : '')).filter((x) => x >= 0)
-  // 找到"睡着"那一段的结束点
-  for (const b of 表) {
-    if (Array.isArray(b) && /睡/.test(String(b[2] || ''))) return 到分(b[1])
-  }
-  return 起.length ? Math.min(...起) : 8 * 60
-}
-
-function 经期第几天(cfg, ymd) {
-  const 期 = cfg.经期 || {}
-  const 起 = /^\d{4}-\d{2}-\d{2}$/.test(String(期.起始 || '')) ? Date.parse(String(期.起始) + 'T00:00:00Z') : NaN
-  if (!Number.isFinite(起)) return 0
-  const 今 = Date.parse(ymd + 'T00:00:00Z')
-  if (!Number.isFinite(今)) return 0
-  const 天 = Math.floor((今 - 起) / 86400000)
-  const 周 = Math.max(1, Math.round(Number(期.周期) || 29))
-  const 长 = Math.max(1, Math.round(Number(期.天数) || 5))
-  const 位 = ((天 % 周) + 周) % 周
-  return 位 < 长 ? 位 + 1 : 0
-}
-
-/** 今天抽到哪几件小事（含段），过了那个点才算数 */
-export function 今天的小事(cfg, t, 有早课允许 = true) {
-  const 课 = Array.isArray((cfg.课表 || {})[t.周]) ? cfg.课表[t.周] : []
-  const 有早课 = 有早课允许 && 课.some((b) => Array.isArray(b) && 到分(b[0]) >= 0 && 到分(b[0]) < 10 * 60)
+function todayEvents(cfg, t, allowMorning = true) {
+  const classes = Array.isArray((cfg.课表 || {})[t.weekday]) ? cfg.课表[t.weekday] : []
+  const hasMorning = allowMorning && classes.some((b) => Array.isArray(b) && toMinute(b[0]) >= 0 && toMinute(b[0]) < 10 * 60)
   const pool = (Array.isArray(cfg.事件池) ? cfg.事件池 : [])
     .filter((x) => Array.isArray(x) && x.length >= 2 && x[1])
-    .filter((x) => x[2] !== '早课' || 有早课)
+    .filter((x) => x[2] !== '早课' || hasMorning)
   if (!pool.length) return []
-  const r = 摇(种子(t.ymd, 'events'))
-  const 要几条 = r() < 0.55 ? 2 : 1
-  const 索引 = pool.map((_, i) => i)
-  const 选中 = []
-  for (let k = 0; k < 要几条 && 索引.length; k++) {
-    const i = Math.floor(r() * 索引.length) % 索引.length
-    选中.push(pool[索引.splice(i, 1)[0]])
+  const r = rng(hashSeed(t.ymd, 'events'))
+  const count = r() < 0.55 ? 2 : 1
+  const indices = pool.map((_, i) => i)
+  const picked = []
+  for (let k = 0; k < count && indices.length; k++) {
+    const i = Math.floor(r() * indices.length) % indices.length
+    picked.push(pool[indices.splice(i, 1)[0]])
   }
-  return 选中.filter(([段]) => t.hh >= (段门[段] || 0)).map(([, 文]) => String(文))
+  return picked.filter(([section]) => t.hour >= (sectionGate[section] || 0)).map(([, text]) => String(text))
 }
 
-/** 这一小时的身体感觉（按小时抽，40% 为空） */
-function 小时变体(t, 在) {
-  const r = 摇(种子(t.ymd, 'hour' + t.hh))
+function hourVariant(t, what) {
+  const r = rng(hashSeed(t.ymd, 'hour' + t.hour))
   if (r() > 0.4) return ''
-  const 池 = /睡/.test(在) ? ['', '', '']
-    : 在.includes('课') ? ['，有点坐不住', '，眼睛发干', '，在想下课吃什么']
+  const pool = /睡/.test(what) ? ['', '', '']
+    : /课/.test(what) ? ['，有点坐不住', '，眼睛发干', '，在想下课吃什么']
       : ['，有点坐不住', '，眼睛发干', '，脖子有点僵', '，想喝冰的']
-  return 池[Math.floor(r() * 池.length) % 池.length]
+  return pool[Math.floor(r() * pool.length) % pool.length]
 }
 
-/** 十分钟级的临时小动作（概率很低） */
-function 临时动作(t) {
-  const r = 摇(种子(t.ymd, 'min' + Math.floor(t.分 / 10)))
+function tempAction(t) {
+  const r = rng(hashSeed(t.ymd, 'min' + Math.floor(t.minuteOfDay / 10)))
   if (r() > 0.07) return ''
-  const 池 = ['，刚去接了杯水', '，去楼下拿了个快递', '，在等外卖', '，顺手把衣服晾了']
-  return 池[Math.floor(r() * 池.length) % 池.length]
+  const pool = ['，刚去接了杯水', '，去楼下拿了个快递', '，在等外卖', '，顺手把衣服晾了']
+  return pool[Math.floor(r() * pool.length) % pool.length]
 }
 
-/**
- * 今日底色：不改心情数值，只给她一句「今天整个人是什么状态」。
- * 用来补上「心情只听对话」那个洞——身上不舒服的时候，她说话自然会短、会蔫。
- * 优先顺序：经期头两天 > 着凉 > 熬夜 > 今天有好事 > 平常（不出声）
- */
-function 今日底色(经, 生病, 困, 好事) {
-  // 生病不另说一句：上面「今天」里已经写了嗓子紧/着凉，再说一遍就是复读
-  if (经 === 1 || 经 === 2) return '整个人有点蔫'
-  if (困) return '眼皮沉'
-  if (好事) return '心情还不错'
+/** Today's base mood: doesn't touch the mood value, just one line about how she feels. */
+function moodTint(period, cold, tired, good) {
+  if (period === 1 || period === 2) return '整个人有点蔫'
+  if (tired) return '眼皮沉'
+  if (good) return '心情还不错'
   return ''
 }
 
-// ── 离场状态（治前后矛盾）─────────────────────────────────────────────
-// 她亲口说的「去洗澡 / 睡了 / 出门」这类，之前不被任何地方记住，
-// 下一轮时钟又把她算回「在刷图」，于是前后矛盾（说去洗澡下一秒还在回）。
-// 现在：回复里识别到这种「要进入某状态」，写进状态文件；
-// 注入时在「直到」过期前，用它盖过时钟算出来的「此刻」。
-export function 读状态() {
-  try {
-    const d = JSON.parse(readFileSync(状态路径, 'utf8'))
-    if (d && d.v === 1 && typeof d.在 === 'string' && d.在 && Number.isFinite(d.直到)) return d
-  } catch {}
-  return null
+function wakeMinute(cfg, t, calendar) {
+  const table = cfg[calendar.routine] || cfg.日常 || []
+  for (const b of table) {
+    if (Array.isArray(b) && /睡/.test(String(b[2] || ''))) return toMinute(b[1])
+  }
+  const starts = table.map((b) => toMinute(Array.isArray(b) ? b[0] : '')).filter((x) => x >= 0)
+  return starts.length ? Math.min(...starts) : 8 * 60
 }
 
-export function 写状态(状态) {
-  try {
-    mkdirSync(dirname(状态路径), { recursive: true })
-    const tmp = 状态路径 + '.tmp'
-    writeFileSync(tmp, JSON.stringify({ v: 1, ...状态 }, null, 2), 'utf8')
-    renameSync(tmp, 状态路径)
-    return true
-  } catch { return false }
-}
-
-// 保守识别：宁可漏，不可误（误了反而造出新的矛盾）。
-// 「当」命中且「否」不命中才触发；「否」负责排除「刚洗完 / 还没睡 / 没出门」这类过去式或否定。
-const 离场规则 = [
-  { 在: '在洗澡', 手机: '不在手边', 分钟: 40, 当: /洗澡|冲个?澡|冲凉/, 否: /洗完|洗好|洗过了|刚洗|洗完了|没洗/ },
-  { 在: '睡着了', 手机: '在床头', 分钟: 480, 当: /晚安|去睡|先睡|要睡|睡了|睡觉|该睡|熄灯|躺下/, 否: /睡不着|还没睡|刚醒|睡醒|没睡|睡踏实|睡不/ },
-  { 在: '出门了', 手机: '在手', 分钟: 90, 当: /出门|出去|下楼/, 否: /刚回|回来|到家|没出/ },
-  { 在: '在上课', 手机: '静音', 分钟: 90, 当: /上课了|去上课|上课去|去教室|去图书馆|去自习/, 否: /下课|放学|还没上|没课/ },
-  { 在: '在吃饭', 手机: '在手', 分钟: 40, 当: /去吃饭|去食堂|吃饭去/, 否: /刚吃|吃完|吃过了|还没吃/ },
-]
-
-export function 识别离场(文本, now = new Date()) {
-  const s = String(文本 || '')
-  if (!s || s.length > 400) return null
-  for (const r of 离场规则) {
-    if (r.当.test(s) && !r.否.test(s)) {
-      return { 在: r.在, 手机: r.手机, 直到: now.getTime() + r.分钟 * 60000 }
-    }
-  }
-  return null
-}
-
-/** 压成两行，附「为什么这么算」 */
-export function 生成(cfg, now = new Date()) {
-  const 空 = { text: '', 依据: [] }
-  if (!cfg || cfg.总开关 === false) return 空
-  const tz = String(cfg.时区 || 'Asia/Shanghai')
-  const t = 时区现在(now, tz)
-  const 日历 = 今日日历(cfg, t)
-  const 偏离 = 今日偏离(cfg, t, 日历.作息表)
-  const 类型 = 日程类型(cfg, t, 日历)
-  const 剧本 = 每日剧本(cfg, t, 日历, 偏离, 类型)
-  let 在 = 找此刻(剧本.items, t.分) || { 在: '闲着', 手机: '在手', 穿: '' }
-  // 离场状态优先：她刚亲口说过去洗澡/睡了，就认它，别被时钟拽回「在刷图」
-  const 状态 = 读状态()
-  if (状态 && 状态.直到 > now.getTime()) {
-    在 = { 在: 状态.在, 手机: 状态.手机 || '在手', 穿: 状态.穿 || '' }
-  }
-
-  const 依据 = []
-  依据.push(日历.特殊 ? `${日历.特殊.名}第 ${日历.第几天} 天`
-    : 日历.假期 ? `${日历.假期.名}第 ${日历.第几天} 天`
-      : (日历.节日 && 日历.节日.起) ? `${日历.节日.名}放假`
-        : 日历.学期 ? `学期中（${日历.学期.名}）`
-          : '不在校历里，按平常走')
-  依据.push(`日子类型：${类型.名}｜作息表：${日历.作息表}`)
-  依据.push(`此刻命中：${在.在}（手机${在.手机 || '在手'}${在.穿 ? '，穿' + 在.穿 : ''}）`)
-  if (偏离.躺平) 依据.push('今天没按表走：躺平')
-  if (偏离.翘下午) 依据.push('今天没按表走：翘了下午的课')
-
-  // ── 今天这一行：日子类型 + 身上的状况 ──
-  const r = 摇(种子(t.ymd, 'sleep'))
-  const 睡点 = [60, 120, 150][Math.floor(r() * 3) % 3]
-  const 起 = 起床点(cfg, t, 日历)
-  const 困 = 起 - 睡点 < 360
-  const 经 = 经期第几天(cfg, t.ymd)
-  const 着凉 = r() < 0.08 && [3, 4, 10, 11].includes(t.月)
-  const 小事们 = 今天的小事(cfg, t, !日历.放假)
-
-  const 状况 = []
-  if (困 && t.分 < 15 * 60) 状况.push(`昨晚${睡点 === 60 ? '一点' : 睡点 === 120 ? '两点' : '两点半'}才睡`)
-  if (经) 状况.push(经 <= 3 ? '腰有点酸' : '肚子还坠着')
-  if (着凉) 状况.push('嗓子有点紧')
-  for (const 文 of 小事们) 状况.push(文)
-  const 好事 = 小事们.some((x) => /夸|猫|寄的/.test(x))
-  const 底色 = 今日底色(经, 着凉, 困, 好事)
-  if (底色) 状况.push(底色)
-
-  const 行们 = []
-  行们.push(`（今天）${t.月}月${t.日}日 ${周名(t.周)}·${类型.名}${状况.length ? '。' + 状况.slice(0, 2).join('；') : '。'}。`)
-
-  // ── 此刻 ──
-  let 此刻行 = `（此刻）${在.在}`
-  if (在.手机 && 在.手机 !== '在手') 此刻行 += 手机说[在.手机] || ''
-  if (在.穿 && !/睡/.test(在.在)) 此刻行 += `，身上是${在.穿}`
-  if (!/睡/.test(在.在) && !偏离.躺平) 此刻行 += 小时变体(t, 在.在) + 临时动作(t)
-  行们.push(此刻行 + '。')
-
-  // ── 早些时候 / 接下来 ──
-  const 早 = 剧本.items.filter((x) => x.止 <= t.分 && x.止 > t.分 - 360 && !/睡/.test(x.在)).slice(-2)
-  if (早.length) 行们.push(`（早些时候）${早.map((x) => x.在).join('，然后')}。`)
-  const 后 = 剧本.items.filter((x) => x.起 > t.分 && !/睡/.test(x.在)).slice(0, 1)
-  if (后.length) 行们.push(`（接下来）${分钟说(后[0].起)} ${后[0].在}。`)
-
-  // ── 傍晚以后附上明天 ──
-  if (t.hh >= 18) {
-    const 明 = 时区现在(new Date(now.getTime() + 86400000), tz)
-    const 明日历 = 今日日历(cfg, 明)
-    const 明类型 = 日程类型(cfg, 明, 明日历)
-    const 明剧本 = 每日剧本(cfg, 明, 明日历, {}, 明类型)
-    const 第一醒 = 明剧本.items.find((x) => x.起 >= 6 * 60 && !/睡/.test(x.在))
-    行们.push(`（明天）${周名(明.周)}·${明类型.名}${第一醒 ? `，${分钟说(第一醒.起)} ${第一醒.在}` : ''}。`)
-  }
-
-  // ── 怎么把这段带进聊天（借 daily-schedule 的思路）──
-  行们.push('（说话）这些是你自己的日子，别当时间表念：不说"按日程/计划/安排"，不报时间段、不列清单；他问起就像闲聊挑一两件说，带点感受。你的场景以「（此刻）」这行为准；他说他在地铁/公司/家，那是他的场景，别安到自己身上。')
-  return {
-    text: 行们.join('\n'),
-    依据,
-    此刻: 在,
-    日历,
-    偏离,
-    类型,
-    今天: 状况,
-    剧本,
-  }
-}
-
-function 周名(n) {
+function weekdayName(n) {
   return ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'][n] || ''
 }
 
-function 分钟说(分) {
-  const m = ((Math.round(分) % 1440) + 1440) % 1440
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+function minuteLabel(minute) {
+  const m = ((Math.round(minute) % 1440) + 1440) % 1440
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`
 }
 
-let 缓存 = { at: 0, cfg: null }
+/** Compress into a few lines, plus "why it computed this way". */
+export function generate(cfg, now = new Date()) {
+  const empty = { text: '', evidence: [] }
+  if (!cfg || cfg.总开关 === false) return empty
+  const tz = String(cfg.时区 || 'Asia/Shanghai')
+  const t = zonedNow(now, tz)
+  const calendar = todayCalendar(cfg, t)
+  const deviation = todayDeviation(cfg, t, calendar.routine)
+  const type = dayType(cfg, t, calendar)
+  const plan = dailyPlan(cfg, t, calendar, deviation, type)
+  const dayStartMs = now.getTime() - t.minuteOfDay * 60000
+  const timeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs)
+  const current = segmentAt(timeline, now.getTime()) || { what: '闲着', phone: '在手', outfit: '' }
 
-/** 读配置：文件不在就写一份默认的；按 mtime 热更 */
-export function 读配置() {
-  try {
-    const st = statSync(CONFIG_PATH)
-    if (缓存.cfg && 缓存.at === st.mtimeMs) return 缓存.cfg
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
-    const cfg = { ...默认配置, ...raw }
-    // 老配置（0.1.x，没有校历）读进来时顺手补一份存盘，免得设置页看到的是"默认值"而文件里没有
-    if (!raw.校历) {
-      try { writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8') } catch (e2) { /* 写不了不影响读 */ }
-    }
-    缓存 = { at: statSync(CONFIG_PATH).mtimeMs || st.mtimeMs, cfg }
-    return cfg
-  } catch (e) {
-    if (e && e.code === 'ENOENT') {
-      try { mkdirSync(dirname(CONFIG_PATH), { recursive: true }); writeFileSync(CONFIG_PATH, JSON.stringify(默认配置, null, 2), 'utf8') } catch (e2) { /* 写不了就用默认值 */ }
-    }
-    缓存 = { at: 0, cfg: 默认配置 }
-    return 默认配置
+  const evidence = []
+  evidence.push(calendar.special ? `${calendar.special.名}第 ${calendar.dayIndex} 天`
+    : calendar.vacation ? `${calendar.vacation.名}第 ${calendar.dayIndex} 天`
+      : (calendar.festival && calendar.festival.起) ? `${calendar.festival.名}放假`
+        : calendar.term ? `学期中（${calendar.term.名}）`
+          : '不在校历里，按平常走')
+  evidence.push(`日子类型：${type.name}｜作息表：${calendar.routine}`)
+  evidence.push(`此刻命中：${current.what}（手机${current.phone || '在手'}${current.outfit ? '，穿' + current.outfit : ''}）`)
+  if (deviation.flat) evidence.push('今天没按表走：躺平')
+  if (deviation.skipAfternoon) evidence.push('今天没按表走：翘了下午的课')
+
+  const r = rng(hashSeed(t.ymd, 'sleep'))
+  const sleepAt = [60, 120, 150][Math.floor(r() * 3) % 3]
+  const wake = wakeMinute(cfg, t, calendar)
+  const tired = wake - sleepAt < 360
+  const period = menstrualDay(cfg, t.ymd)
+  const cold = r() < 0.08 && [3, 4, 10, 11].includes(t.month)
+  const events = todayEvents(cfg, t, !calendar.holiday)
+
+  const conditions = []
+  if (tired && t.minuteOfDay < 15 * 60) conditions.push(`昨晚${sleepAt === 60 ? '一点' : sleepAt === 120 ? '两点' : '两点半'}才睡`)
+  if (period) conditions.push(period <= 3 ? '腰有点酸' : '肚子还坠着')
+  if (cold) conditions.push('嗓子有点紧')
+  for (const e of events) conditions.push(e)
+  const good = events.some((x) => /夸|猫|寄的/.test(x))
+  const tint = moodTint(period, cold, tired, good)
+  if (tint) conditions.push(tint)
+
+  const lines = []
+  lines.push(`（今天）${t.month}月${t.day}日 ${weekdayName(t.weekday)}·${type.name}${conditions.length ? '。' + conditions.slice(0, 2).join('；') : '。'}。`)
+
+  let nowLine = `（此刻）${current.what}`
+  if (current.phone && current.phone !== '在手') nowLine += phoneSuffix[current.phone] || ''
+  if (current.outfit && !/睡/.test(current.what)) nowLine += `，身上是${current.outfit}`
+  if (!/睡/.test(current.what) && !deviation.flat) nowLine += hourVariant(t, current.what) + tempAction(t)
+  lines.push(nowLine + '。')
+
+  const recent = recentSegments(timeline, now.getTime()).slice(0, 2).reverse()
+  if (recent.length) lines.push(`（早些时候）${recent.map((x) => x.what).join('，然后')}。`)
+  const next = nextSegment(timeline, now.getTime())
+  if (next) lines.push(`（接下来）${minuteLabel(Math.round((next.start - dayStartMs) / 60000))} ${next.what}。`)
+
+  if (t.hour >= 18) {
+    const tomorrow = zonedNow(new Date(now.getTime() + 86400000), tz)
+    const tomorrowCal = todayCalendar(cfg, tomorrow)
+    const tomorrowType = dayType(cfg, tomorrow, tomorrowCal)
+    const tomorrowPlan = dailyPlan(cfg, tomorrow, tomorrowCal, {}, tomorrowType)
+    const firstWake = tomorrowPlan.items.find((x) => x.start >= 6 * 60 && !/睡/.test(x.what))
+    lines.push(`（明天）${weekdayName(tomorrow.weekday)}·${tomorrowType.name}${firstWake ? `，${minuteLabel(firstWake.start)} ${firstWake.what}` : ''}。`)
+  }
+
+  lines.push('（说话）这些是你自己的日子，别当时间表念：不说"按日程/计划/安排"，不报时间段、不列清单；他问起就像闲聊挑一两件说，带点感受。你的场景以「（此刻）」这行为准；他说他在地铁/公司/家，那是他的场景，别安到自己身上。')
+
+  return {
+    text: lines.join('\n'),
+    evidence,
+    current,
+    calendar,
+    deviation,
+    dayType: type,
+    today: conditions,
+    plan,
+    currentMinute: t.minuteOfDay,
+    timeline: timeline.map((x) => ({
+      start: Math.round((x.start - dayStartMs) / 60000),
+      end: Math.round((x.end - dayStartMs) / 60000),
+      what: x.what || '',
+      phone: x.phone || '在手',
+      outfit: x.outfit || '',
+      source: x.source || 'plan',
+    })),
   }
 }
 
-/** 合并存盘（顶层的键整体替换，跟设置页的编辑方式一致） */
-export function 存配置(patch) {
-  const 旧 = 读配置()
-  const 新 = { ...旧, ...(patch && typeof patch === 'object' ? patch : {}) }
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
-  const tmp = CONFIG_PATH + '.tmp'
-  writeFileSync(tmp, JSON.stringify(新, null, 2), 'utf8')
-  renameSync(tmp, CONFIG_PATH)
-  缓存 = { at: 0, cfg: null }
-  return 新
+let cache = { at: 0, cfg: null }
+
+export function readConfig() {
+  try {
+    const st = statSync(CONFIG_PATH)
+    if (cache.cfg && cache.at === st.mtimeMs) return cache.cfg
+    const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
+    const cfg = { ...defaultConfig, ...raw }
+    if (!raw.校历) {
+      try { writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8') } catch {}
+    }
+    cache = { at: statSync(CONFIG_PATH).mtimeMs || st.mtimeMs, cfg }
+    return cfg
+  } catch (e) {
+    if (e && e.code === 'ENOENT') {
+      try { mkdirSync(dirname(CONFIG_PATH), { recursive: true }); writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2), 'utf8') } catch {}
+    }
+    cache = { at: 0, cfg: defaultConfig }
+    return defaultConfig
+  }
 }
 
-export { 补零, 手机们 }
+export function saveConfig(patch) {
+  const prev = readConfig()
+  const next = { ...prev, ...(patch && typeof patch === 'object' ? patch : {}) }
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
+  const tmp = CONFIG_PATH + '.tmp'
+  writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8')
+  renameSync(tmp, CONFIG_PATH)
+  cache = { at: 0, cfg: null }
+  return next
+}
+
+export { pad2, phoneChoices }
