@@ -13,7 +13,7 @@ export const defaultWorldConfig = {
     { id: 'library', name: '图书馆', x: 78, y: 26, icon: '📚', 关键词: ['图书馆', '自习', '背书', '复习'] },
     { id: 'canteen', name: '食堂', x: 48, y: 70, icon: '🍜', 关键词: ['食堂', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
     { id: 'shop', name: '便利店 · 快递点', x: 80, y: 70, icon: '🏪', 关键词: ['便利店', '超市', '快递', '取件', '买东西'] },
-    { id: 'outdoor', name: '校外 · 街上', x: 17, y: 24, icon: '🌳', 关键词: ['外面', '街上', '公园', '商场', '拍照', '逛', '校门口', '地铁', '公交'] },
+    { id: 'outdoor', name: '校外 · 街上', x: 17, y: 24, icon: '🌳', 关键词: ['外面', '街上', '公园', '商场', '咖啡店', '咖啡馆', '咖啡厅', '书店', '餐厅', '电影院', '拍照', '逛', '校门口', '地铁', '公交'] },
   ],
   路径: [
     { from: 'dorm', to: 'canteen', minutes: 8 },
@@ -74,7 +74,7 @@ export function behaviorFor(what) {
   if (/睡|午睡|眯/.test(text)) return 'sleep'
   if (/走|路上|出发|去往|回宿舍|地铁|公交/.test(text)) return 'walk'
   if (/吃|食堂|早餐|午饭|晚饭|外卖|奶茶/.test(text)) return 'eat'
-  if (/上课|自习|背书|复习|看书|作业|课件|画|剪片|修图/.test(text)) return 'study'
+  if (/上课|自习|背书|复习|看书|作业|课件|写稿|改稿|写作|码字|论文|画|剪片|修图/.test(text)) return 'study'
   if (/拍照|相机|自拍/.test(text)) return 'photo'
   if (/洗澡|洗漱/.test(text)) return 'bath'
   if (/手机|刷|游戏|B站|看剧/.test(text)) return 'phone'
@@ -92,6 +92,13 @@ function locationForNormalized(what, world) {
     }
   }
   if (best) return best.id
+  // Existing v3 configs may not yet contain newly added café keywords. Explicit
+  // off-campus destinations must not silently fall back to the dorm.
+  if (/咖啡店|咖啡馆|咖啡厅|书店|餐厅|饭店|电影院|影院/.test(text)) {
+    const outdoor = world.地点.find((x) => x.id === 'outdoor')
+      || world.地点.find((x) => /校外|街上|户外/.test(String(x.name || '')))
+    if (outdoor) return outdoor.id
+  }
   return world.地点.find((x) => x.id === 'dorm')?.id || world.地点[0]?.id || ''
 }
 
@@ -228,3 +235,4 @@ export function worldStateAt(timeline, nowMs, worldConfig = defaultWorldConfig) 
     route: Array.isArray(current.route) ? current.route : [],
   }
 }
+
