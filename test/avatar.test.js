@@ -19,3 +19,11 @@ test('client animation only advances horizontally through isolated strips', () =
   assert.match(client, /\/avatar\/\$\{spriteBehavior\}/)
   assert.doesNotMatch(client, /--fl-sprite-y|background-position-y/)
 })
+
+test('map renders configured paths as layered roads with active-route state', () => {
+  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(client, /data-fl-road-base/)
+  assert.match(client, /data-fl-road-mark/)
+  assert.match(client, /routePairs\.has\(pair\)/)
+  assert.doesNotMatch(client, /data-fl-map-lines\] line/)
+})
