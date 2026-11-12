@@ -43,7 +43,7 @@ npm pack --dry-run
 
 ## 动作图集约束
 
-`assets/character-actions.png` 是 4 列 × 7 行的透明 PNG。行顺序固定为：
+运行时动作位于 `assets/actions/`，每个文件都是 4 列 × 1 行、单帧 128×128 的透明 PNG：
 
 ```text
 idle / walk / sleep / study / eat / phone / photo
@@ -58,7 +58,9 @@ idle / walk / sleep / study / eat / phone / photo
 - 更新 README、设计文档和必要的行为测试；
 - 用浅色背景合成预览，确认边缘没有蓝黑杂点。
 
-如果增加新行为行，需要同步修改 `world.js` 的行为枚举、`client.js` 的图集坐标、设计文档和回归测试，不能只替换图片。
+四帧必须分别保持水平中心和底部基线一致。`assets/character-actions.png` 仅作为兼容旧客户端的完整图集保留，不再作为当前前端的播放源。
+
+如果增加新行为，需要同步修改 `world.js` 的行为枚举、`index.js` 的动作资源接口、`client.js` 的资源映射、设计文档和回归测试，不能只增加图片。
 
 ## 代码与数据约定
 

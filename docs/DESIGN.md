@@ -65,25 +65,25 @@ flowchart TD
 
 ## 5. 行为动画契约
 
-地图角色使用 `assets/character-actions.png`。当前资源为 512×896、4 列 × 7 行，每个单元格等大且保留透明通道。
+地图角色运行时使用 `assets/actions/<behavior>.png`。每个动作是 512×128、4 列 × 1 行的独立透明动作条，每帧 128×128；完整的 `assets/character-actions.png` 仅为旧客户端保留。
 
-| 行号 | `world.behavior` | 内容 |
+| 文件 | `world.behavior` | 内容 |
 |---|---|---|
-| 0 | `idle` | 待机 |
-| 1 | `walk` | 走路 |
-| 2 | `sleep` | 睡觉 |
-| 3 | `study` | 学习/创作 |
-| 4 | `eat` | 吃东西 |
-| 5 | `phone` | 玩手机 |
-| 6 | `photo` | 拍照 |
+| `idle.png` | `idle` | 待机 |
+| `walk.png` | `walk` | 走路 |
+| `sleep.png` | `sleep` | 睡觉 |
+| `study.png` | `study` | 学习/创作 |
+| `eat.png` | `eat` | 吃东西 |
+| `phone.png` | `phone` | 玩手机 |
+| `photo.png` | `photo` | 拍照 |
 
-`client.js` 只选择行为所在的行并播放四帧，不能用白底裁图、整图旋转或上下晃动代替动作。`bath` 等没有独立行的行为保留语义和气泡，视觉暂用 `idle` 行。
+`client.js` 按行为加载独立动作条并只在水平方向播放四帧，不能从完整纵向图集中偏移裁行，也不能用白底裁图、整图旋转或上下晃动代替动作。`bath` 等没有独立资源的行为保留语义和气泡，视觉暂用 `idle` 动作条。
 
 系统启用 `prefers-reduced-motion` 时应停在当前行为首帧，并禁用位置过渡；不能回退到另一张头像。
 
 更换图集时必须保持：
 
-- 4×7 等分网格和上述行顺序；
+- 每个动作条保持 4×1 等分网格；
 - 每帧角色比例、中心和脚底基线尽量一致；
 - 透明背景，不带文字、网格、白底或外框；
 - 道具只能出现在对应动作中；
