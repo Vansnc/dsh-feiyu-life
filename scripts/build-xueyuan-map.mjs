@@ -8,10 +8,9 @@ const outputDir = resolve('assets/maps')
 const xml = readFileSync(input, 'utf8')
 const width = 1000
 const height = 560
-const bbox = { minLon: 116.3365, maxLon: 116.3480, minLat: 39.9935, maxLat: 39.9995 }
+const bbox = { minLon: 116.3355, maxLon: 116.3490, minLat: 39.9905, maxLat: 40.0015 }
 const attrs = (source) => Object.fromEntries([...source.matchAll(/([\w:]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]))
 const tagsOf = (body) => Object.fromEntries([...body.matchAll(/<tag k="([^"]+)" v="([^"]*)"\/>/g)].map((m) => [m[1], m[2]]))
-const escapeXml = (value) => String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c])
 
 const nodes = new Map()
 for (const match of xml.matchAll(/<node\b([^>]*?)(?:\/>|>([\s\S]*?)<\/node>)/g)) {
@@ -37,9 +36,169 @@ const pointsOf = (way) => way.refs.map((id) => nodes.get(id)).filter(Boolean).ma
 const visible = (points) => points.some((p) => p.x > -80 && p.x < width + 80 && p.y > -80 && p.y < height + 80)
 const line = (points, close = false) => points.length < 2 ? '' : `M${points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`
 const isArea = (way) => way.refs.length > 2 && way.refs[0] === way.refs.at(-1)
-const centroid = (points) => ({
-  x: points.reduce((sum, point) => sum + point.x, 0) / Math.max(1, points.length),
-  y: points.reduce((sum, point) => sum + point.y, 0) / Math.max(1, points.length),
+const geoCentroid = (way) => {
+  const points = way.refs.map((id) => nodes.get(id)).filter(Boolean)
+  if (!points.length) throw new Error(`way ${way.id} has no nodes`)
+  return {
+    lon: points.reduce((sum, point) => sum + point.lon, 0) / points.length,
+    lat: points.reduce((sum, point) => sum + point.lat, 0) / points.length,
+  }
+}
+const percent = (point) => {
+  const projected = project(point)
+  return { x: projected.x / width * 100, y: projected.y / height * 100 }
+}
+const distanceMeters = (a, b) => {
+  const dy = (a.lat - b.lat) * 111320
+  const dx = (a.lon - b.lon) * 111320 * Math.cos((a.lat + b.lat) / 2 * Math.PI / 180)
+  return Math.hypot(dx, dy)
+}
+
+const wayById = (id) => ways.find((way) => way.id === String(id))
+const nodeById = (id) => nodes.get(String(id))
+const nodeByName = (name) => [...nodes.values()].find((node) => node.tags.name === name)
+const seedFromWay = (id) => geoCentroid(wayById(id) || (() => { throw new Error(`missing OSM way ${id}`) })())
+const seedFromNode = (id, fallbackName) => {
+  const node = nodeById(id) || nodeByName(fallbackName)
+  if (!node) throw new Error(`missing OSM node ${id} (${fallbackName})`)
+  return { lon: node.lon, lat: node.lat }
+}
+
+// POIs are resolved from stable OSM objects, then routing snaps them onto the
+// largest connected walking graph. The displayed point remains the real POI.
+const locationSeeds = {
+  dorm: seedFromWay('247351731'),
+  classroom: seedFromWay('247351554'),
+  library: seedFromWay('247351547'),
+  canteen: seedFromWay('247351575'),
+  shop: seedFromNode('', '幸福超市'),
+  outdoor: seedFromNode('1360087364', ''),
+  cafe: seedFromNode('2783311652', '上岛咖啡'),
+  mall: seedFromWay('154079919'),
+  mcdonalds: seedFromNode('875454417', '麦当劳'),
+}
+
+const routableHighways = new Set([
+  'footway', 'path', 'pedestrian', 'cycleway', 'steps', 'living_street',
+  'residential', 'service', 'unclassified', 'tertiary', 'secondary', 'primary',
+])
+const routingGraph = new Map()
+const connect = (from, to, meters) => {
+  if (!routingGraph.has(from)) routingGraph.set(from, [])
+  routingGraph.get(from).push({ to, meters })
+}
+for (const way of ways) {
+  if (!routableHighways.has(way.tags.highway) || way.tags.highway === 'construction') continue
+  for (let i = 1; i < way.refs.length; i++) {
+    const a = nodes.get(way.refs[i - 1])
+    const b = nodes.get(way.refs[i])
+    if (!a || !b) continue
+    const inside = (point) => point.lon >= bbox.minLon - .001 && point.lon <= bbox.maxLon + .001
+      && point.lat >= bbox.minLat - .001 && point.lat <= bbox.maxLat + .001
+    if (!inside(a) || !inside(b)) continue
+    const meters = distanceMeters(a, b)
+    connect(a.id, b.id, meters)
+    connect(b.id, a.id, meters)
+  }
+}
+
+const components = []
+const unseen = new Set(routingGraph.keys())
+while (unseen.size) {
+  const first = unseen.values().next().value
+  const component = new Set([first])
+  const stack = [first]
+  unseen.delete(first)
+  while (stack.length) {
+    const current = stack.pop()
+    for (const edge of routingGraph.get(current) || []) {
+      if (!unseen.has(edge.to)) continue
+      unseen.delete(edge.to)
+      component.add(edge.to)
+      stack.push(edge.to)
+    }
+  }
+  components.push(component)
+}
+const walkingComponent = components.sort((a, b) => b.size - a.size)[0] || new Set()
+const nearestRoutingNode = (point) => {
+  let best = null
+  let bestDistance = Infinity
+  for (const id of walkingComponent) {
+    const candidate = nodes.get(id)
+    const meters = distanceMeters(point, candidate)
+    if (meters >= bestDistance) continue
+    best = id
+    bestDistance = meters
+  }
+  if (!best) throw new Error('walking graph is empty')
+  return best
+}
+const routeAnchors = Object.fromEntries(Object.entries(locationSeeds).map(([id, point]) => [id, nearestRoutingNode(point)]))
+
+const shortestWalkingPath = (from, to) => {
+  const start = routeAnchors[from]
+  const target = routeAnchors[to]
+  const dist = new Map([[start, 0]])
+  const prev = new Map()
+  const open = new Set([start])
+  while (open.size) {
+    let current = null
+    for (const id of open) if (current === null || dist.get(id) < dist.get(current)) current = id
+    open.delete(current)
+    if (current === target) break
+    for (const edge of routingGraph.get(current) || []) {
+      if (!walkingComponent.has(edge.to)) continue
+      const next = dist.get(current) + edge.meters
+      if (next >= (dist.get(edge.to) ?? Infinity)) continue
+      dist.set(edge.to, next)
+      prev.set(edge.to, current)
+      open.add(edge.to)
+    }
+  }
+  if (!dist.has(target)) throw new Error(`no walking route from ${from} to ${to}`)
+  const ids = [target]
+  while (ids[0] !== start) ids.unshift(prev.get(ids[0]))
+  return { ids, meters: dist.get(target) }
+}
+
+const pointLineDistance = (point, a, b) => {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  if (!dx && !dy) return Math.hypot(point.x - a.x, point.y - a.y)
+  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)))
+  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy))
+}
+const simplify = (points, epsilon = .28) => {
+  if (points.length <= 2) return points
+  let maxDistance = 0
+  let index = 0
+  for (let i = 1; i < points.length - 1; i++) {
+    const distance = pointLineDistance(points[i], points[0], points.at(-1))
+    if (distance > maxDistance) { maxDistance = distance; index = i }
+  }
+  if (maxDistance <= epsilon) return [points[0], points.at(-1)]
+  return [...simplify(points.slice(0, index + 1), epsilon).slice(0, -1), ...simplify(points.slice(index), epsilon)]
+}
+const trimRoutePoints = (points, limit = 30) => {
+  if (points.length <= limit) return points
+  return Array.from({ length: limit }, (_, index) => points[Math.round(index * (points.length - 1) / (limit - 1))])
+}
+const routePairs = [
+  ['dorm', 'canteen'], ['dorm', 'library'], ['dorm', 'classroom'],
+  ['canteen', 'library'], ['classroom', 'library'], ['canteen', 'shop'],
+  ['library', 'shop'], ['shop', 'outdoor'], ['classroom', 'cafe'],
+  ['outdoor', 'cafe'], ['cafe', 'mall'], ['outdoor', 'mcdonalds'],
+]
+const generatedLocations = Object.fromEntries(Object.entries(locationSeeds).map(([id, point]) => {
+  const p = percent(point)
+  return [id, { x: Number(p.x.toFixed(1)), y: Number(p.y.toFixed(1)) }]
+}))
+const generatedPaths = routePairs.map(([from, to]) => {
+  const route = shortestWalkingPath(from, to)
+  const points = route.ids.map((id) => percent(nodes.get(id)))
+  const via = trimRoutePoints(simplify(points)).map((point) => ({ x: Number(point.x.toFixed(1)), y: Number(point.y.toFixed(1)) }))
+  return { from, to, minutes: Math.max(2, Math.round(route.meters / 75)), via }
 })
 
 const campus = ways.find((way) => way.id === '1003833559')
@@ -56,7 +215,7 @@ const waters = ways.filter((way) => isArea(way) && visible(pointsOf(way)) && (
 
 const majorHighways = new Set(['primary', 'primary_link', 'secondary', 'tertiary'])
 const walkHighways = new Set(['footway', 'path', 'pedestrian', 'cycleway', 'steps'])
-const namedBuildings = new Set(['矿大图书馆', '综合楼', '教学楼', '裕园餐厅', '体育馆', '理化楼', '科技楼', '矿大交流中心', '学生公寓10号楼', '矿大体育场'])
+const highlightedBuildings = new Set(['矿大图书馆', '综合楼', '教学楼', '裕园餐厅', '体育馆', '理化楼', '科技楼', '矿大交流中心', '学生公寓10号楼', '矿大体育场'])
 const svgOpen = (label) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">`
 
 const campusPath = campus ? line(pointsOf(campus), true) : ''
@@ -64,12 +223,14 @@ const majorRoads = roads.filter((way) => majorHighways.has(way.tags.highway))
 const minorRoads = roads.filter((way) => !majorHighways.has(way.tags.highway) && !walkHighways.has(way.tags.highway))
 const walkRoads = roads.filter((way) => walkHighways.has(way.tags.highway))
 const animeTrees = [
-  [255, 132, 25], [303, 233, 22], [365, 152, 19], [449, 198, 23], [520, 184, 18],
-  [692, 190, 22], [742, 287, 19], [785, 347, 23], [672, 386, 18], [520, 389, 21],
-  [419, 391, 18], [291, 383, 21], [171, 322, 18], [809, 228, 17],
-]
-const animeBushes = [[270, 120], [331, 197], [481, 221], [620, 188], [726, 252], [750, 365], [600, 393], [347, 389], [205, 343]]
-
+  [116.3393, 39.9990, 25], [116.3400, 39.9979, 22], [116.3408, 39.9987, 19], [116.3422, 39.9979, 23],
+  [116.3430, 39.9977, 18], [116.3449, 39.9977, 22], [116.3456, 39.9968, 19], [116.3462, 39.9958, 23],
+  [116.3447, 39.9953, 18], [116.3430, 39.9953, 21], [116.3418, 39.9953, 18], [116.3400, 39.9955, 21],
+].map(([lon, lat, size]) => ({ ...project({ lon, lat }), size }))
+const animeBushes = [
+  [116.3395, 39.9988], [116.3404, 39.9978], [116.3425, 39.9975], [116.3440, 39.9976],
+  [116.3453, 39.9969], [116.3457, 39.9957], [116.3438, 39.9952], [116.3410, 39.9954],
+].map(([lon, lat]) => project({ lon, lat }))
 const baseSvg = `${svgOpen('学院路真实地图底层')}
   <rect width="1000" height="560" fill="#dfe5de"/>
   ${campusPath ? `<path d="${campusPath}" fill="#e9eee6" stroke="#788a82" stroke-width="2"/>` : ''}
@@ -78,10 +239,6 @@ const baseSvg = `${svgOpen('学院路真实地图底层')}
     ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#aeb9b2" stroke-width="16"/>`).join('')}
     ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#d9ded9" stroke-width="11"/>`).join('')}
     ${walkRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#c5cec6" stroke-width="2" stroke-dasharray="3 4"/>`).join('')}
-  </g>
-  <g font-family="system-ui,sans-serif" font-size="14" fill="#687870" font-weight="600">
-    <text x="890" y="315" transform="rotate(88 890 315)">学院路</text>
-    <text x="48" y="22">清华东路</text>
   </g>
 </svg>`
 
@@ -116,30 +273,25 @@ const animeSvg = `${svgOpen('学院路二次元渲染中层')}
     ${walkRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#4f997a" stroke-width="2" stroke-dasharray="4 5" opacity=".72"/>`).join('')}
   </g>
   <g opacity=".92">
-    ${animeTrees.map(([x, y, size]) => `<use href="#tree" x="${x - size / 2}" y="${y - size}" width="${size}" height="${(size * 42 / 36).toFixed(1)}"/>`).join('')}
-    ${animeBushes.map(([x, y]) => `<use href="#bush" x="${x - 18}" y="${y - 8}" width="36" height="17"/>`).join('')}
+    ${animeTrees.map(({ x, y, size }) => `<use href="#tree" x="${(x - size / 2).toFixed(1)}" y="${(y - size).toFixed(1)}" width="${size}" height="${(size * 42 / 36).toFixed(1)}"/>`).join('')}
+    ${animeBushes.map(({ x, y }) => `<use href="#bush" x="${(x - 18).toFixed(1)}" y="${(y - 8).toFixed(1)}" width="36" height="17"/>`).join('')}
   </g>
   <g fill="#fff4ad" stroke="#e2a7a1" stroke-width="1" opacity=".86">
-    <circle cx="347" cy="118" r="3"/><circle cx="357" cy="112" r="2"/><circle cx="641" cy="401" r="3"/><circle cx="650" cy="396" r="2"/><circle cx="247" cy="364" r="2.5"/>
+    <circle cx="347" cy="188" r="3"/><circle cx="357" cy="182" r="2"/><circle cx="641" cy="326" r="3"/><circle cx="650" cy="321" r="2"/><circle cx="247" cy="306" r="2.5"/>
   </g>
 </svg>`
 
-const buildingPaths = buildings.map((way) => ({ way, points: pointsOf(way), d: line(pointsOf(way), true) })).filter((item) => item.d)
-const labels = buildingPaths.flatMap(({ way, points }) => {
-  const name = way.tags.name
-  if (!name || !namedBuildings.has(name)) return []
-  const point = centroid(points)
-  const label = name === '学生公寓10号楼' ? '学生公寓' : name
-  return [`<text x="${point.x.toFixed(1)}" y="${(point.y + 3).toFixed(1)}">${escapeXml(label)}</text>`]
-})
+const buildingPaths = buildings.map((way) => ({ way, d: line(pointsOf(way), true) })).filter((item) => item.d)
 const buildingsSvg = `${svgOpen('学院路建筑上层')}
   <g fill="#698173" opacity=".18" transform="translate(3 5)">${buildingPaths.map(({ d }) => `<path d="${d}"/>`).join('')}</g>
-  <g fill="#f0d7bd" stroke="#fff8ec" stroke-width="2">${buildingPaths.map(({ way, d }) => `<path d="${d}"${namedBuildings.has(way.tags.name) ? ' fill="#dcae8b"' : ''}/>`).join('')}</g>
-  <g font-family="system-ui,'PingFang SC',sans-serif" font-size="9" text-anchor="middle" fill="#4c5d54" font-weight="650" paint-order="stroke" stroke="#fffaf0" stroke-width="3" stroke-linejoin="round">${labels.join('')}</g>
+  <g fill="#f0d7bd" stroke="#fff8ec" stroke-width="2">${buildingPaths.map(({ way, d }) => `<path d="${d}"${highlightedBuildings.has(way.tags.name) ? ' fill="#dcae8b"' : ''}/>`).join('')}</g>
 </svg>`
 
 mkdirSync(outputDir, { recursive: true })
-for (const [name, content] of [['xueyuan-base.svg', baseSvg], ['xueyuan-anime.svg', animeSvg], ['xueyuan-buildings.svg', buildingsSvg]]) {
+const worldModule = `// Generated from OpenStreetMap by scripts/build-xueyuan-map.mjs.\nexport const xueyuanGeometry = ${JSON.stringify({ bbox, locations: generatedLocations, paths: generatedPaths }, null, 2)}\n`
+for (const [name, content] of [
+  ['xueyuan-base.svg', baseSvg], ['xueyuan-anime.svg', animeSvg], ['xueyuan-buildings.svg', buildingsSvg], ['xueyuan-world.js', worldModule],
+]) {
   const target = resolve(outputDir, name)
   mkdirSync(dirname(target), { recursive: true })
   writeFileSync(target, content)

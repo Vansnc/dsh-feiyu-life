@@ -1,3 +1,5 @@
+import { xueyuanGeometry } from './assets/maps/xueyuan-world.js'
+
 // Spatial layer for the character's life.
 //
 // The timeline remains the source of truth. This module adds a logical map,
@@ -9,25 +11,17 @@ export const defaultWorldConfig = {
   自动通勤: true,
   底图: 'xueyuan-road',
   地点: [
-    { id: 'dorm', name: '学生公寓', x: 43, y: 61, icon: '🛏️', 关键词: ['宿舍', '公寓', '床', '睡', '起床', '洗澡', '洗漱', '刷手机', '剪片', '修图', '游戏', '看剧', '外卖'] },
-    { id: 'classroom', name: '教学楼', x: 73, y: 31, icon: '🏫', 关键词: ['上课', '教室', '教学楼', '专业课', '讲座', '点名', '课件'] },
-    { id: 'library', name: '矿大图书馆', x: 58, y: 37, icon: '📚', 关键词: ['图书馆', '自习', '背书', '复习'] },
-    { id: 'canteen', name: '裕园餐厅', x: 55, y: 68, icon: '🍜', 关键词: ['食堂', '裕园', '餐厅', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
-    { id: 'shop', name: '便利店 · 快递点', x: 84, y: 55, icon: '🏪', 关键词: ['便利店', '超市', '快递', '取件', '买东西'] },
-    { id: 'outdoor', name: '学院路 · 校外', x: 93, y: 55, icon: '🌳', 关键词: ['外面', '街上', '学院路', '公园', '商场', '咖啡店', '咖啡馆', '咖啡厅', '书店', '餐厅', '电影院', '拍照', '逛', '校门口', '地铁', '公交'] },
+    { id: 'dorm', name: '学生公寓', ...xueyuanGeometry.locations.dorm, 关键词: ['宿舍', '公寓', '床', '睡', '起床', '洗澡', '洗漱', '刷手机', '剪片', '修图', '游戏', '看剧', '外卖'] },
+    { id: 'classroom', name: '教学楼', ...xueyuanGeometry.locations.classroom, 关键词: ['上课', '教室', '教学楼', '专业课', '讲座', '点名', '课件'] },
+    { id: 'library', name: '矿大图书馆', ...xueyuanGeometry.locations.library, 关键词: ['图书馆', '自习', '背书', '复习'] },
+    { id: 'canteen', name: '裕园餐厅', ...xueyuanGeometry.locations.canteen, 关键词: ['食堂', '裕园', '餐厅', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
+    { id: 'shop', name: '幸福超市 · 快递点', ...xueyuanGeometry.locations.shop, 关键词: ['幸福超市', '便利店', '超市', '快递', '取件', '买东西'] },
+    { id: 'outdoor', name: '学院路校门', ...xueyuanGeometry.locations.outdoor, 关键词: ['外面', '街上', '学院路', '公园', '书店', '电影院', '拍照', '校门口', '地铁', '公交'] },
+    { id: 'cafe', name: '咖啡屋 · 上岛咖啡', ...xueyuanGeometry.locations.cafe, 关键词: ['上岛咖啡', '咖啡屋', '咖啡店', '咖啡馆', '咖啡厅', '喝咖啡'] },
+    { id: 'mall', name: 'BOM 嘻番里', ...xueyuanGeometry.locations.mall, 关键词: ['BOM嘻番里', '嘻番里', '商场', '逛商场', '买谷', '谷子店', '手办', '桌游'] },
+    { id: 'mcdonalds', name: '麦当劳 · 成府路', ...xueyuanGeometry.locations.mcdonalds, 关键词: ['麦当劳', '麦门', '成府路麦当劳', '汉堡', '薯条', '麦旋风'] },
   ],
-  路径: [
-    { from: 'dorm', to: 'canteen', minutes: 8, via: [{ x: 40, y: 60 }, { x: 47, y: 67 }, { x: 57, y: 73 }] },
-    { from: 'dorm', to: 'classroom', minutes: 14, via: [{ x: 40, y: 60 }, { x: 38, y: 57 }, { x: 47, y: 47 }, { x: 54, y: 43 }, { x: 70, y: 42 }, { x: 70, y: 26 }] },
-    { from: 'dorm', to: 'outdoor', minutes: 10, via: [{ x: 40, y: 60 }, { x: 38, y: 57 }, { x: 47, y: 47 }, { x: 54, y: 43 }, { x: 70, y: 42 }, { x: 81, y: 47 }, { x: 86, y: 48 }, { x: 92, y: 52 }, { x: 92, y: 55 }] },
-    { from: 'canteen', to: 'classroom', minutes: 9, via: [{ x: 57, y: 73 }, { x: 64, y: 58 }, { x: 70, y: 26 }] },
-    { from: 'canteen', to: 'library', minutes: 10, via: [{ x: 57, y: 73 }, { x: 55, y: 43 }] },
-    { from: 'canteen', to: 'shop', minutes: 7, via: [{ x: 57, y: 73 }, { x: 85, y: 72 }, { x: 86, y: 63 }, { x: 86, y: 56 }] },
-    { from: 'classroom', to: 'library', minutes: 8, via: [{ x: 70, y: 26 }, { x: 55, y: 43 }] },
-    { from: 'library', to: 'shop', minutes: 9, via: [{ x: 55, y: 43 }, { x: 71, y: 47 }, { x: 86, y: 46 }, { x: 86, y: 53 }, { x: 86, y: 56 }] },
-    { from: 'outdoor', to: 'classroom', minutes: 12, via: [{ x: 92, y: 55 }, { x: 86, y: 52 }, { x: 86, y: 46 }, { x: 77, y: 47 }, { x: 70, y: 26 }] },
-    { from: 'outdoor', to: 'shop', minutes: 5, via: [{ x: 92, y: 55 }, { x: 86, y: 52 }, { x: 86, y: 56 }] },
-  ],
+  路径: xueyuanGeometry.paths,
 }
 
 export const BEHAVIOR_RULES = [
@@ -67,6 +61,7 @@ const clamp = (value, min, max, fallback) => {
   const n = Number(value)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
 }
+const tenth = (value) => Math.round(value * 10) / 10
 
 export function normalizeWorldConfig(input) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
@@ -80,9 +75,8 @@ export function normalizeWorldConfig(input) {
     return [{
       id,
       name: String(node.name || id).trim().slice(0, 40) || id,
-      x: Math.round(clamp(node.x, 4, 96, 50)),
-      y: Math.round(clamp(node.y, 8, 92, 50)),
-      icon: String(node.icon || '📍').slice(0, 8),
+      x: tenth(clamp(node.x, 4, 96, 50)),
+      y: tenth(clamp(node.y, 8, 92, 50)),
       关键词: Array.isArray(node.关键词)
         ? node.关键词.map((x) => String(x || '').trim().slice(0, 24)).filter(Boolean).slice(0, 30)
         : [],
@@ -94,7 +88,7 @@ export function normalizeWorldConfig(input) {
     if (!edge || !ids.has(String(edge.from)) || !ids.has(String(edge.to)) || edge.from === edge.to) return []
     const via = Array.isArray(edge.via) ? edge.via.flatMap((point) => {
       if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) return []
-      return [{ x: Math.round(clamp(point.x, 0, 100, 50)), y: Math.round(clamp(point.y, 0, 100, 50)) }]
+      return [{ x: tenth(clamp(point.x, 0, 100, 50)), y: tenth(clamp(point.y, 0, 100, 50)) }]
     }).slice(0, 32) : []
     return [{ from: String(edge.from), to: String(edge.to), minutes: Math.round(clamp(edge.minutes, 1, 180, 10)), ...(via.length ? { via } : {}) }]
   })
@@ -304,8 +298,8 @@ export function worldStateAt(timeline, nowMs, worldConfig = defaultWorldConfig) 
     behavior: current.behavior || behaviorFor(current.what),
     moving,
     progress,
-    location: location ? { id: location.id, name: location.name, icon: location.icon } : null,
-    destination: destination ? { id: destination.id, name: destination.name, icon: destination.icon } : null,
+    location: location ? { id: location.id, name: location.name } : null,
+    destination: destination ? { id: destination.id, name: destination.name } : null,
     position: moving ? interpolateRoute(world, current, progress) : { x: location?.x ?? 50, y: location?.y ?? 50 },
     what: String(current.what || ''),
     route: Array.isArray(current.route) ? current.route : [],

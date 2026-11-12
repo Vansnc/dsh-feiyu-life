@@ -17,7 +17,7 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
-  assert.equal(cfg.配置版本, 4)
+  assert.equal(cfg.配置版本, 5)
   assert.equal(cfg.模型超时秒, 60)
   assert.equal(cfg.历史保留天数, 180)
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
@@ -25,7 +25,7 @@ test('configuration is normalized at the save boundary', () => {
   assert.ok(issues.length >= 2)
 })
 
-test('v4 migrates only the untouched stock map onto Xueyuan Road', () => {
+test('v5 migrates only untouched stock maps to routed neighbourhood POIs', () => {
   const legacyMap = {
     启用: true,
     自动通勤: true,
@@ -37,12 +37,14 @@ test('v4 migrates only the untouched stock map onto Xueyuan Road', () => {
     路径: [{ from: 'dorm', to: 'canteen', minutes: 8 }],
   }
   const migrated = migrateConfig({ 配置版本: 3, 地图: legacyMap }).value
-  assert.equal(migrated.配置版本, 4)
+  assert.equal(migrated.配置版本, 5)
   assert.equal(migrated.地图.底图, 'xueyuan-road')
   assert.deepEqual(migrated.地图.地点.map(({ id, x, y }) => ({ id, x, y })), [
-    { id: 'dorm', x: 43, y: 61 }, { id: 'classroom', x: 73, y: 31 },
-    { id: 'library', x: 58, y: 37 }, { id: 'canteen', x: 55, y: 68 },
-    { id: 'shop', x: 84, y: 55 }, { id: 'outdoor', x: 93, y: 55 },
+    { id: 'dorm', x: 44.3, y: 51.3 }, { id: 'classroom', x: 69.6, y: 30 },
+    { id: 'library', x: 57, y: 38.2 }, { id: 'canteen', x: 54.3, y: 55.3 },
+    { id: 'shop', x: 77.1, y: 41.3 }, { id: 'outdoor', x: 79.8, y: 57.3 },
+    { id: 'cafe', x: 77.7, y: 25.6 }, { id: 'mall', x: 88.7, y: 8.8 },
+    { id: 'mcdonalds', x: 81.1, y: 89.3 },
   ])
   assert.ok(migrated.地图.路径.some((edge) => edge.via && edge.via.length))
 
@@ -51,6 +53,11 @@ test('v4 migrates only the untouched stock map onto Xueyuan Road', () => {
   const kept = migrateConfig({ 配置版本: 3, 地图: custom }).value
   assert.equal(kept.地图.地点[0].x, 24)
   assert.deepEqual(kept.地图.路径, custom.路径)
+
+  const v4 = structuredClone(legacyMap)
+  const v4Coordinates = [[43, 61], [73, 31], [58, 37], [55, 68], [84, 55], [93, 55]]
+  v4.地点.forEach((node, index) => { [node.x, node.y] = v4Coordinates[index] })
+  assert.equal(migrateConfig({ 配置版本: 4, 地图: v4 }).value.地图.地点.length, 9)
 })
 
 test('validation explains a routine without sleep', () => {

@@ -14,8 +14,8 @@ test('a location change creates a deterministic travel segment', () => {
   assert.ok(travel)
   assert.equal(travel.from, 'dorm')
   assert.equal(travel.to, 'canteen')
-  assert.equal(travel.end - travel.start, 8 * 60000)
-  const state = worldStateAt(timeline, travel.start + 4 * 60000, defaultWorldConfig)
+  assert.equal(travel.end - travel.start, 3 * 60000)
+  const state = worldStateAt(timeline, travel.start + (travel.end - travel.start) / 2, defaultWorldConfig)
   assert.equal(state.moving, true)
   assert.equal(state.destination.id, 'canteen')
   assert.equal(Math.round(state.progress * 100), 50)
@@ -55,10 +55,10 @@ test('default world follows real Xueyuan Road geometry and route bends', () => {
     defaultWorldConfig.地点.filter((node) => ['dorm', 'classroom', 'library', 'canteen'].includes(node.id))
       .map(({ id, x, y }) => ({ id, x, y })),
     [
-      { id: 'dorm', x: 43, y: 61 },
-      { id: 'classroom', x: 73, y: 31 },
-      { id: 'library', x: 58, y: 37 },
-      { id: 'canteen', x: 55, y: 68 },
+      { id: 'dorm', x: 44.3, y: 51.3 },
+      { id: 'classroom', x: 69.6, y: 30 },
+      { id: 'library', x: 57, y: 38.2 },
+      { id: 'canteen', x: 54.3, y: 55.3 },
     ],
   )
   const timeline = addWorldToTimeline([
@@ -67,15 +67,18 @@ test('default world follows real Xueyuan Road geometry and route bends', () => {
   ], defaultWorldConfig)
   const travel = timeline.find((item) => item.source === 'travel')
   const midpoint = worldStateAt(timeline, travel.start + (travel.end - travel.start) / 2, defaultWorldConfig).position
-  const straightMidpoint = { x: (43 + 73) / 2, y: (61 + 31) / 2 }
-  assert.ok(Math.hypot(midpoint.x - straightMidpoint.x, midpoint.y - straightMidpoint.y) > 3)
+  const straightMidpoint = { x: (44.3 + 69.6) / 2, y: (51.3 + 30) / 2 }
+  assert.ok(travel.legs[0].via.length >= 5)
+  assert.ok(Math.hypot(midpoint.x - straightMidpoint.x, midpoint.y - straightMidpoint.y) > 1)
 })
 
 
 test('cafe writing stays off campus and uses the study animation', () => {
   const text = '去咖啡店接着改稿'
-  assert.equal(locationFor(text, defaultWorldConfig), 'outdoor')
+  assert.equal(locationFor(text, defaultWorldConfig), 'cafe')
   assert.equal(behaviorFor(text), 'study')
+  assert.equal(locationFor('去嘻番里逛谷子店', defaultWorldConfig), 'mall')
+  assert.equal(locationFor('去麦当劳吃汉堡', defaultWorldConfig), 'mcdonalds')
 
   const existingV3Config = {
     ...defaultWorldConfig,
@@ -93,8 +96,8 @@ test('cafe writing stays off campus and uses the study animation', () => {
   const travel = timeline.find((x) => x.source === 'travel')
   assert.ok(travel)
   assert.equal(travel.from, 'shop')
-  assert.equal(travel.to, 'outdoor')
-  assert.equal(timeline.at(-1).locationId, 'outdoor')
+  assert.equal(travel.to, 'cafe')
+  assert.equal(timeline.at(-1).locationId, 'cafe')
   assert.equal(timeline.at(-1).behavior, 'study')
 })
 
