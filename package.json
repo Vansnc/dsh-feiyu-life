@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "大肥鱼的生活（DSH 插件）：每日剧本 + 时序状态机，注入今天/此刻/早些时候/接下来；相机（shoot 出图 + 出图自检）复用同一份生活状态，设置页「鱼的生活」里带此刻/课表/身体/照片等页签。",
   "type": "module",
   "license": "MIT",
@@ -26,6 +26,10 @@
   "engines": {
     "node": ">=22"
   },
+  "scripts": {
+    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check client.js",
+    "test": "node --test"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -47,6 +51,7 @@
     "locale/*.json",
     "icon.svg",
     "assets",
+    "docs",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -72,3 +77,4 @@
     "access": "public"
   }
 }
+

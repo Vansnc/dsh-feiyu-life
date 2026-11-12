@@ -27,6 +27,9 @@ export const CONFIG_PATH = join(homedir(), '.dsh', 'feiyu-life-config.json')
 const sectionGate = { 上午: 9, 中午: 12, 下午: 15, 晚上: 19 }
 const phoneSuffix = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
 const phoneChoices = ['在手', '静音', '在床头', '不在手边']
+const routineNames = ['日常', '晚起', '假期', '备考']
+const datePattern = /^\d{4}-\d{2}-\d{2}$/
+const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
 
 export const defaultConfig = {
   总开关: true,
@@ -124,6 +127,124 @@ export const defaultConfig = {
   偏离: { 躺平日: 0.12, 出门日: 0.1, 翘下午课: 0.08 },
 }
 
+const copy = (value) => JSON.parse(JSON.stringify(value))
+const clamp = (value, min, max, fallback) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
+}
+
+function validTimeZone(value) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: String(value) }).format(new Date())
+    return true
+  } catch { return false }
+}
+
+function normalizeRows(rows, path, issues) {
+  if (!Array.isArray(rows)) {
+    issues.push(`${path} 不是数组，已恢复为空`)
+    return []
+  }
+  return rows.flatMap((row, i) => {
+    if (!Array.isArray(row) || !timePattern.test(String(row[0] || '')) || !timePattern.test(String(row[1] || ''))) {
+      issues.push(`${path}[${i}] 的时间无效，已忽略`)
+      return []
+    }
+    const phone = phoneChoices.includes(String(row[3])) ? String(row[3]) : '在手'
+    if (phone !== row[3]) issues.push(`${path}[${i}] 的手机状态已改为「在手」`)
+    return [[String(row[0]), String(row[1]), String(row[2] || '闲着').trim().slice(0, 80) || '闲着', phone]]
+  })
+}
+
+function normalizeRanges(rows, path, withRoutine, issues) {
+  if (!Array.isArray(rows)) return []
+  return rows.flatMap((row, i) => {
+    const start = String(row && row.起 || '')
+    const end = String(row && row.止 || '')
+    if (!row || !datePattern.test(start) || !datePattern.test(end) || start > end) {
+      issues.push(`${path}[${i}] 的日期范围无效，已忽略`)
+      return []
+    }
+    const out = { 名: String(row.名 || '未命名').trim().slice(0, 40) || '未命名', 起: start, 止: end }
+    if (withRoutine) out.作息 = routineNames.includes(row.作息) ? row.作息 : (path.endsWith('假期') ? '假期' : '日常')
+    return [out]
+  })
+}
+
+/** Normalize all user-editable configuration at the persistence boundary. */
+export function normalizeConfig(input, issues = []) {
+  const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  const cfg = { ...copy(defaultConfig), ...raw }
+
+  cfg.总开关 = raw.总开关 !== false
+  cfg.时区 = validTimeZone(raw.时区 || defaultConfig.时区) ? String(raw.时区 || defaultConfig.时区) : defaultConfig.时区
+  if (raw.时区 && cfg.时区 !== raw.时区) issues.push(`时区「${raw.时区}」无效，已恢复为 ${defaultConfig.时区}`)
+  cfg.工作区 = Array.isArray(raw.工作区)
+    ? [...new Set(raw.工作区.map((x) => String(x || '').trim()).filter(Boolean))]
+    : copy(defaultConfig.工作区)
+
+  const period = raw.经期 && typeof raw.经期 === 'object' ? raw.经期 : {}
+  const cycle = Math.round(clamp(period.周期, 1, 120, defaultConfig.经期.周期))
+  cfg.经期 = {
+    起始: datePattern.test(String(period.起始 || '')) ? String(period.起始) : defaultConfig.经期.起始,
+    周期: cycle,
+    天数: Math.round(clamp(period.天数, 1, cycle, defaultConfig.经期.天数)),
+  }
+
+  const calendar = raw.校历 && typeof raw.校历 === 'object' ? raw.校历 : defaultConfig.校历
+  cfg.校历 = {
+    学期: normalizeRanges(calendar.学期, '校历.学期', false, issues),
+    假期: normalizeRanges(calendar.假期, '校历.假期', true, issues),
+    特殊: normalizeRanges(calendar.特殊, '校历.特殊', true, issues),
+  }
+
+  cfg.节日 = (Array.isArray(raw.节日) ? raw.节日 : defaultConfig.节日).flatMap((row, i) => {
+    if (!row || typeof row !== 'object') return []
+    const name = String(row.名 || '未命名').trim().slice(0, 40) || '未命名'
+    if (row.起 || row.止) {
+      const start = String(row.起 || '')
+      const end = String(row.止 || '')
+      if (datePattern.test(start) && datePattern.test(end) && start <= end) return [{ 名: name, 起: start, 止: end }]
+    } else {
+      const month = Math.round(Number(row.月))
+      const day = Math.round(Number(row.日))
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) return [{ 名: name, 月: month, 日: day }]
+    }
+    issues.push(`节日[${i}] 无效，已忽略`)
+    return []
+  })
+
+  for (const name of routineNames) cfg[name] = normalizeRows(raw[name] ?? defaultConfig[name], name, issues)
+  const timetable = raw.课表 && typeof raw.课表 === 'object' ? raw.课表 : defaultConfig.课表
+  cfg.课表 = {}
+  for (let day = 1; day <= 7; day++) cfg.课表[day] = normalizeRows(timetable[day] || [], `课表.${day}`, issues)
+  cfg.晚起日 = [...new Set((Array.isArray(raw.晚起日) ? raw.晚起日 : defaultConfig.晚起日)
+    .map(Number).filter((x) => Number.isInteger(x) && x >= 1 && x <= 7))].sort((a, b) => a - b)
+
+  cfg.事件池 = (Array.isArray(raw.事件池) ? raw.事件池 : defaultConfig.事件池).flatMap((row) => {
+    if (!Array.isArray(row) || !sectionGate[row[0]] || !String(row[1] || '').trim()) return []
+    const out = [row[0], String(row[1]).trim().slice(0, 100)]
+    if (row[2] === '早课') out.push('早课')
+    return [out]
+  })
+  const deviation = raw.偏离 && typeof raw.偏离 === 'object' ? raw.偏离 : {}
+  cfg.偏离 = {
+    躺平日: clamp(deviation.躺平日, 0, 1, defaultConfig.偏离.躺平日),
+    出门日: clamp(deviation.出门日, 0, 1, defaultConfig.偏离.出门日),
+    翘下午课: clamp(deviation.翘下午课, 0, 1, defaultConfig.偏离.翘下午课),
+  }
+  return cfg
+}
+
+export function validateConfig(input) {
+  const issues = []
+  const config = normalizeConfig(input, issues)
+  for (const name of routineNames) {
+    if (!config[name].some((row) => /睡/.test(row[2]))) issues.push(`${name}作息里没有包含「睡」的时段`)
+  }
+  return { config, issues }
+}
+
 function toMinute(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim())
   if (!m) return -1
@@ -153,6 +274,11 @@ export function zonedNow(now, tz) {
     minuteOfDay: hour * 60 + minute,
     weekday,
   }
+}
+
+/** Epoch milliseconds for 00:00 in the already-resolved local day. */
+export function zonedDayStartMs(now, zoned) {
+  return now.getTime() - zoned.minuteOfDay * 60000 - now.getSeconds() * 1000 - now.getMilliseconds()
 }
 
 function hashSeed(ymd, salt = '') {
@@ -214,7 +340,7 @@ export function todayCalendar(cfg, t) {
   }
 }
 
-function todayDeviation(cfg, t, routine) {
+export function todayDeviation(cfg, t, routine) {
   const p = cfg.偏离 || {}
   const r = rng(hashSeed(t.ymd, 'derail'))
   const out = {}
@@ -307,7 +433,7 @@ export function generate(cfg, now = new Date()) {
   const deviation = todayDeviation(cfg, t, calendar.routine)
   const type = dayType(cfg, t, calendar)
   const plan = dailyPlan(cfg, t, calendar, deviation, type)
-  const dayStartMs = now.getTime() - t.minuteOfDay * 60000
+  const dayStartMs = zonedDayStartMs(now, t)
   const timeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs)
   const current = segmentAt(timeline, now.getTime()) || { what: '闲着', phone: '在手', outfit: '' }
 
@@ -320,6 +446,7 @@ export function generate(cfg, now = new Date()) {
   evidence.push(`日子类型：${type.name}｜作息表：${calendar.routine}`)
   evidence.push(`此刻命中：${current.what}（手机${current.phone || '在手'}${current.outfit ? '，穿' + current.outfit : ''}）`)
   if (deviation.flat) evidence.push('今天没按表走：躺平')
+  if (deviation.outing) evidence.push('今天没按表走：临时出门')
   if (deviation.skipAfternoon) evidence.push('今天没按表走：翘了下午的课')
 
   const r = rng(hashSeed(t.ymd, 'sleep'))
@@ -392,7 +519,7 @@ export function readConfig() {
     const st = statSync(CONFIG_PATH)
     if (cache.cfg && cache.at === st.mtimeMs) return cache.cfg
     const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
-    const cfg = { ...defaultConfig, ...raw }
+    const cfg = normalizeConfig(raw)
     if (!raw.校历) {
       try { writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8') } catch {}
     }
@@ -409,7 +536,7 @@ export function readConfig() {
 
 export function saveConfig(patch) {
   const prev = readConfig()
-  const next = { ...prev, ...(patch && typeof patch === 'object' ? patch : {}) }
+  const next = normalizeConfig({ ...prev, ...(patch && typeof patch === 'object' ? patch : {}) })
   mkdirSync(dirname(CONFIG_PATH), { recursive: true })
   const tmp = CONFIG_PATH + '.tmp'
   writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8')
@@ -419,3 +546,4 @@ export function saveConfig(patch) {
 }
 
 export { pad2, phoneChoices }
+

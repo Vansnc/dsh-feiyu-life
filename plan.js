@@ -10,7 +10,7 @@
 // Everything is seeded pseudo-random: no network, no tokens, survives restarts.
 // Identifiers are English. Persisted config keys stay Chinese.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -18,7 +18,11 @@ const plansDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'fe
 
 export function toMinute(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim())
-  return m ? Number(m[1]) * 60 + Number(m[2]) : -1
+  if (!m) return -1
+  const hour = Number(m[1])
+  const minute = Number(m[2])
+  if (minute > 59 || hour > 24 || (hour === 24 && minute !== 0)) return -1
+  return hour * 60 + minute
 }
 
 function hashSeed(s, salt = '') {
@@ -102,7 +106,7 @@ export function timeline(cfg, t, calendar, deviation = {}, type = null) {
     segs.push({ start, end, what: String(b[2] || '闲着'), phone: String(b[3] || '在手'), timetabled: classes.includes(b) })
   }
   if (deviation.skipAfternoon) for (const x of segs) if (x.timetabled && x.start >= 12 * 60) x.what = '翘了，在宿舍躺着'
-  if (type && type.id === 'outing' && !deviation.flat) {
+  if ((deviation.outing || (type && type.id === 'outing')) && !deviation.flat) {
     segs.push({ start: 15 * 60, end: 18 * 60, what: '出门了，带着相机', phone: '在手', inserted: true })
   }
   segs.sort((a, b) => a.start - b.start)
@@ -158,9 +162,16 @@ export function planPath(ymd) {
 export function writePlan(ymd, data) {
   try {
     mkdirSync(plansDir(), { recursive: true })
-    writeFileSync(planPath(ymd), JSON.stringify({ v: 1, date: ymd, ...data }, null, 2), 'utf8')
+    const target = planPath(ymd)
+    const tmp = target + '.tmp'
+    writeFileSync(tmp, JSON.stringify({ v: 1, date: ymd, ...data }, null, 2), 'utf8')
+    renameSync(tmp, target)
     return true
   } catch { return false }
+}
+
+export function deletePlan(ymd) {
+  try { unlinkSync(planPath(ymd)); return true } catch (e) { return e && e.code === 'ENOENT' }
 }
 
 /** Accept both the new English shape and older Chinese-shaped plans. */
@@ -204,3 +215,4 @@ export function dailyPlan(cfg, t, calendar, deviation, type) {
     wardrobe: cfg.衣柜 ? 'cfg' : 'default',
   }
 }
+
