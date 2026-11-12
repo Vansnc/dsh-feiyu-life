@@ -73,10 +73,14 @@ export function readImageConfig() {
 
 export function saveImageConfig(patch) {
   const next = { ...readImageConfig(), ...(patch && typeof patch === 'object' ? patch : {}) }
-  try {
-    mkdirSync(dshHome(), { recursive: true })
-    writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2), 'utf8')
-  } catch {}
+  next.每日上限 = Math.max(1, Math.min(100, Math.round(Number(next.每日上限) || DEFAULT_CONFIG.每日上限)))
+  next.最短间隔秒 = Math.max(0, Math.min(86400, Math.round(Number(next.最短间隔秒) || 0)))
+  next.自检重拍 = Math.max(0, Math.min(2, Math.round(Number(next.自检重拍) || 0)))
+  if (!Object.hasOwn(sizeByAspect, next.画幅)) next.画幅 = DEFAULT_CONFIG.画幅
+  mkdirSync(dshHome(), { recursive: true })
+  const tmp = CONFIG_PATH + '.tmp'
+  writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8')
+  renameSync(tmp, CONFIG_PATH)
   return next
 }
 
@@ -277,7 +281,10 @@ function registerRoutes(ctx) {
   }
   const readBody = async (req) => {
     let b = ''
-    for await (const c of req) b += c
+    for await (const c of req) {
+      b += c
+      if (b.length > 1024 * 1024) throw new Error('request body too large')
+    }
     try { return JSON.parse(b || '{}') } catch { return undefined }
   }
 
@@ -308,11 +315,14 @@ function registerRoutes(ctx) {
     kind: 'exact', path: ROUTE_PREFIX + '/save',
     handler: onlyOwner(async (req, res) => {
       if (req.method !== 'POST') return reply(res, 405, { ok: false })
-      const body = await readBody(req)
+      let body
+      try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
       if (!body || typeof body !== 'object') return reply(res, 400, { ok: false, error: 'bad json' })
       const patch = body.config && typeof body.config === 'object' ? body.config : body
-      const cfg = saveImageConfig(patch)
-      return reply(res, 200, { ok: true, config: cfg })
+      try {
+        const cfg = saveImageConfig(patch)
+        return reply(res, 200, { ok: true, config: cfg })
+      } catch (e) { return reply(res, 500, { ok: false, error: String(e.message || e) }) }
     }),
   }), 'feiyu-life: image save')
 
@@ -320,7 +330,8 @@ function registerRoutes(ctx) {
     kind: 'exact', path: ROUTE_PREFIX + '/test',
     handler: onlyOwner(async (req, res) => {
       if (req.method !== 'POST') return reply(res, 405, { ok: false })
-      const body = await readBody(req) || {}
+      let body
+      try { body = await readBody(req) || {} } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
       const cfg = readImageConfig()
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, {
@@ -433,3 +444,4 @@ export function registerImage(ctx) {
     },
   }), 'feiyu-life: shoot')
 }
+

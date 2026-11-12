@@ -18,8 +18,11 @@
 //   GET  /dsh-feiyu-life/preview  preview at ?ts=ms
 
 import { existsSync, readFileSync } from 'node:fs'
-import { readConfig, saveConfig, generate, CONFIG_PATH, zonedNow, todayCalendar } from './life.js'
-import { dayType, dailyPlan, planPath, writePlan } from './plan.js'
+import {
+  readConfig, saveConfig, generate, validateConfig, CONFIG_PATH,
+  zonedNow, zonedDayStartMs, todayCalendar, todayDeviation,
+} from './life.js'
+import { dayType, dailyPlan, planPath, writePlan, deletePlan } from './plan.js'
 import { addAdjustment } from './state.js'
 import { writeDayWithModel } from './gen.js'
 import { registerImage } from './image.js'
@@ -45,11 +48,14 @@ function periodDay(cfg, ymd) {
 }
 
 /** Body/state hint passed to the model when writing a day. */
-function bodyHint(cfg, t) {
+function bodyHint(cfg, t, deviation = {}) {
+  const detour = deviation.flat ? '今天想躺平，基本不出门'
+    : deviation.outing ? '今天临时想出门走走'
+      : deviation.skipAfternoon ? '今天不想去下午的课' : ''
   const d = periodDay(cfg, t.ymd)
-  if (d && d <= 3) return '经期头几天，腰酸、想吃甜的、没力气'
-  if (d) return '经期后段，肚子还坠着'
-  return ''
+  const body = d && d <= 3 ? '经期头几天，腰酸、想吃甜的、没力气'
+    : d ? '经期后段，肚子还坠着' : ''
+  return [body, detour].filter(Boolean).join('；')
 }
 
 /** Last three days' plans, so the model does not repeat the same beats. */
@@ -142,9 +148,9 @@ export function apply(ctx) {
             if (!what) return { ok: false, say: '没说要改成什么' }
             let startMinute = t.minuteOfDay
             const m = /^(\d{1,2}):(\d{2})$/.exec(String(args.from || '').trim())
-            if (m) startMinute = Number(m[1]) * 60 + Number(m[2])
+            if (m && Number(m[1]) <= 23 && Number(m[2]) <= 59) startMinute = Number(m[1]) * 60 + Number(m[2])
             const duration = Math.max(15, Math.min(360, Number(args.duration) || 90))
-            const dayStartMs = now.getTime() - t.minuteOfDay * 60000
+            const dayStartMs = zonedDayStartMs(now, t)
             addAdjustment(t.ymd, {
               start: dayStartMs + startMinute * 60000,
               end: dayStartMs + Math.min(1440, startMinute + duration) * 60000,
@@ -170,46 +176,44 @@ export function apply(ctx) {
       return roots[0]
     } catch { return undefined }
   }
-  const ensurePlan = async (now) => {
+  const ensurePlanFor = async (when) => {
     const cfg = readConfig()
     const tz = String(cfg.时区 || 'Asia/Shanghai')
-    for (const offset of [0, 1]) {
-      const when = offset === 0 ? now : new Date(now.getTime() + 86400000)
-      const t = zonedNow(when, tz)
-      if (existsSync(planPath(t.ymd))) continue
-      if (writing.has(t.ymd)) continue
-      writing.add(t.ymd)
-      ;(async () => {
-        try {
-          const calendar = todayCalendar(cfg, t)
-          const type = dayType(cfg, t, calendar)
-          const agent = modelAgent()
-          let result = null
-          if (agent) {
-            result = await writeDayWithModel(ctx, agent, {
-              cfg,
-              date: t.ymd,
-              weekdayLabel: WEEKDAY[t.weekday],
-              typeName: type.name,
-              classes: ((cfg.课表 || {})[t.weekday] || []).map((x) => [x[0], x[1], x[2]]),
-              calendarLabel: calendarLabel(calendar),
-              body: bodyHint(cfg, t),
-              recent: recentSummary(cfg, t),
-            })
-          }
-          if (result) {
-            writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })
-            try { console.log('[feiyu-life] plan written by model: ' + t.ymd) } catch {}
-          } else {
-            const fallback = dailyPlan(cfg, t, calendar, {}, type)
-            writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })
-            try { console.log('[feiyu-life] plan fell back to template: ' + t.ymd) } catch {}
-          }
-        } catch (e) {
-          try { console.log('[feiyu-life] plan write failed: ' + String((e && e.message) || e)) } catch {}
-        } finally { writing.delete(t.ymd) }
-      })()
-    }
+    const t = zonedNow(when, tz)
+    if (existsSync(planPath(t.ymd)) || writing.has(t.ymd)) return
+    writing.add(t.ymd)
+    try {
+      const calendar = todayCalendar(cfg, t)
+      const deviation = todayDeviation(cfg, t, calendar.routine)
+      const type = dayType(cfg, t, calendar)
+      const agent = modelAgent()
+      let result = null
+      if (agent) {
+        result = await writeDayWithModel(ctx, agent, {
+          cfg,
+          date: t.ymd,
+          weekdayLabel: WEEKDAY[t.weekday],
+          typeName: type.name,
+          classes: ((cfg.课表 || {})[t.weekday] || []).map((x) => [x[0], x[1], x[2]]),
+          calendarLabel: calendarLabel(calendar),
+          body: bodyHint(cfg, t, deviation),
+          recent: recentSummary(cfg, t),
+        })
+      }
+      if (result) {
+        writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })
+        try { console.log('[feiyu-life] plan written by model: ' + t.ymd) } catch {}
+      } else {
+        const fallback = dailyPlan(cfg, t, calendar, deviation, type)
+        writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })
+        try { console.log('[feiyu-life] plan fell back to template: ' + t.ymd) } catch {}
+      }
+    } catch (e) {
+      try { console.log('[feiyu-life] plan write failed: ' + String((e && e.message) || e)) } catch {}
+    } finally { writing.delete(t.ymd) }
+  }
+  const ensurePlan = async (now) => {
+    await Promise.all([ensurePlanFor(now), ensurePlanFor(new Date(now.getTime() + 86400000))])
   }
 
   const tick = () => {
@@ -256,7 +260,10 @@ export function apply(ctx) {
 
   const readBody = async (req) => {
     let body = ''
-    for await (const chunk of req) body += chunk
+    for await (const chunk of req) {
+      body += chunk
+      if (body.length > 1024 * 1024) throw new Error('request body too large')
+    }
     try { return JSON.parse(body || '{}') } catch { return undefined }
   }
 
@@ -269,6 +276,19 @@ export function apply(ctx) {
       preview: { text: r.text, evidence: r.evidence },
       timeline: r.timeline || [],
       currentMinute: r.currentMinute || 0,
+      current: r.current || null,
+      meta: {
+        dayType: r.dayType || null,
+        calendar: calendarLabel(r.calendar || {}),
+        routine: (r.calendar && r.calendar.routine) || '日常',
+        deviation: r.deviation || {},
+        plan: r.plan ? {
+          date: r.plan.date || '',
+          source: r.plan.source || 'preview',
+          title: r.plan.title || '',
+          model: r.plan.model || '',
+        } : null,
+      },
       configPath: CONFIG_PATH,
       time: (now instanceof Date ? now : new Date()).toISOString(),
     }
@@ -291,12 +311,14 @@ export function apply(ctx) {
       path: ROUTE_PREFIX + '/save',
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        const body = await readBody(req)
+        let body
+        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
         if (!body || typeof body !== 'object') return reply(res, 400, { ok: false, error: 'bad json' })
         try {
           const patch = body.config && typeof body.config === 'object' ? body.config : body
-          saveConfig(patch)
-          return reply(res, 200, statePayload(new Date()))
+          const checked = validateConfig(patch)
+          saveConfig(checked.config)
+          return reply(res, 200, { ...statePayload(new Date()), issues: checked.issues })
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: save')
@@ -318,6 +340,17 @@ export function apply(ctx) {
             preview: { text: r.text, evidence: r.evidence },
             timeline: r.timeline || [],
             currentMinute: r.currentMinute || 0,
+            current: r.current || null,
+            meta: {
+              dayType: r.dayType || null,
+              calendar: calendarLabel(r.calendar || {}),
+              routine: (r.calendar && r.calendar.routine) || '日常',
+              deviation: r.deviation || {},
+              plan: r.plan ? {
+                date: r.plan.date || '', source: r.plan.source || 'preview',
+                title: r.plan.title || '', model: r.plan.model || '',
+              } : null,
+            },
             time: at.toISOString(),
           })
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
@@ -325,8 +358,27 @@ export function apply(ctx) {
     }), 'feiyu-life: preview')
   } catch {}
 
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/regenerate',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const cfg = readConfig()
+          const now = new Date()
+          const t = zonedNow(now, String(cfg.时区 || 'Asia/Shanghai'))
+          deletePlan(t.ymd)
+          await ensurePlanFor(now)
+          return reply(res, 200, statePayload(now))
+        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
+      }),
+    }), 'feiyu-life: regenerate')
+  } catch {}
+
   // 相机（原 dsh-feiyu-image）：shoot 工具 + /dsh-feiyu-image/* 设置页接口
   try { registerImage(ctx) } catch (e) {
     try { ctx.logger?.warn?.('feiyu-life: 相机没挂上 ' + String((e && e.message) || e)) } catch {}
   }
 }
+

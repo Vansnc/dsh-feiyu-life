@@ -29,26 +29,40 @@ window.__ModuleLoader__.load({
     const tabs = [['now', '此刻'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['events', '事件'], ['photo', '照片']]
 
     const CSS = `
-[data-fl-wrap]{display:flex;flex-direction:column;gap:14px;padding:4px 2px 24px;color-scheme:light dark;font-size:13px;}
+[data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
 [data-fl-wrap] select{background:Canvas;color:CanvasText;}
 [data-fl-wrap] select option{background:Canvas;color:CanvasText;}
 [data-fl-sec]{display:flex;flex-direction:column;gap:8px;}
-[data-fl-h]{font-size:13px;font-weight:600;opacity:.85;padding-top:8px;border-top:1px solid rgba(127,127,127,.18);}
+[data-fl-hero]{position:relative;overflow:hidden;padding:20px;border:1px solid var(--fl-line);border-radius:16px;background:linear-gradient(135deg,var(--fl-accent-soft),rgba(217,119,50,.08));}
+[data-fl-hero]::after{content:'◌';position:absolute;right:18px;top:-22px;font-size:92px;color:var(--fl-accent);opacity:.10;}
+[data-fl-title]{font-size:22px;font-weight:750;letter-spacing:-.02em;}
+[data-fl-subtitle]{margin-top:5px;font-size:12.5px;opacity:.66;line-height:1.55;}
+[data-fl-stats]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px;}
+[data-fl-stat]{min-width:0;padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.46);border:1px solid rgba(127,127,127,.12);}
+@media (prefers-color-scheme:dark){[data-fl-stat]{background:rgba(0,0,0,.16);}}
+[data-fl-stat-k]{font-size:10.5px;opacity:.55;margin-bottom:3px;}
+[data-fl-stat-v]{font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+[data-fl-actions]{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;background:Canvas;border-bottom:1px solid var(--fl-line);}
+[data-fl-dirty]{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--fl-warm);}
+[data-fl-dirty]::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;}
+[data-fl-h]{font-size:13px;font-weight:650;opacity:.9;padding-top:10px;border-top:1px solid var(--fl-line);}
 [data-fl-note]{font-size:12px;opacity:.62;line-height:1.55;}
 [data-fl-row]{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 [data-fl-tabs]{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid rgba(127,127,127,.2);}
 [data-fl-tab]{padding:5px 12px;border-radius:7px;border:1px solid transparent;background:transparent;color:inherit;font-size:13px;cursor:pointer;opacity:.72;}
 [data-fl-tab]:hover{background:rgba(127,127,127,.10);opacity:1;}
-[data-fl-tab][data-fl-on]{background:rgba(127,127,127,.16);border-color:rgba(127,127,127,.28);opacity:1;font-weight:600;}
+[data-fl-tab][data-fl-on]{background:var(--fl-accent-soft);border-color:rgba(22,127,120,.35);color:var(--fl-accent);opacity:1;font-weight:650;}
 [data-fl-input]{padding:5px 8px;border-radius:7px;border:1px solid rgba(127,127,127,.35);background:transparent;color:inherit;font-size:12.5px;}
-[data-fl-input]:focus{outline:2px solid rgba(127,127,127,.35);outline-offset:1px;}
+[data-fl-input]:focus{outline:2px solid rgba(22,127,120,.35);border-color:var(--fl-accent);outline-offset:1px;}
 [data-fl-btn]{padding:6px 12px;border-radius:7px;border:1px solid rgba(127,127,127,.35);background:transparent;color:inherit;font-size:13px;cursor:pointer;}
 [data-fl-btn]:hover{background:rgba(127,127,127,.12);}
 [data-fl-btn][disabled]{opacity:.5;cursor:default;}
-[data-fl-btn][data-fl-main]{border-color:rgba(127,127,127,.55);font-weight:600;}
+[data-fl-btn][data-fl-main]{border-color:var(--fl-accent);background:var(--fl-accent);color:white;font-weight:650;}
+[data-fl-btn][data-fl-main]:hover{filter:brightness(.95);background:var(--fl-accent);}
 [data-fl-del]{padding:3px 8px;border-radius:6px;border:1px solid transparent;background:transparent;color:rgba(210,90,90,.9);cursor:pointer;font-size:12px;}
 [data-fl-del]:hover{background:rgba(210,90,90,.12);}
 [data-fl-msg]{font-size:12px;opacity:.8;min-height:16px;}
+[data-fl-warn]{padding:9px 11px;border-radius:9px;border:1px solid rgba(217,119,50,.32);background:rgba(217,119,50,.09);font-size:12px;line-height:1.55;}
 [data-fl-prev]{padding:10px 12px;border-radius:10px;background:rgba(127,127,127,.08);white-space:pre-wrap;line-height:1.7;font-size:13px;}
 [data-fl-why]{display:flex;gap:6px;flex-wrap:wrap;}
 [data-fl-chip]{padding:2px 8px;border-radius:999px;background:rgba(127,127,127,.12);font-size:11.5px;opacity:.85;}
@@ -79,6 +93,7 @@ window.__ModuleLoader__.load({
 [data-fl-lg]::before{content:'';width:10px;height:10px;border-radius:3px;display:inline-block;}
 [data-fl-lg][data-fl-src='plan']::before{background:#8b93a1;}
 [data-fl-lg][data-fl-src='adjust']::before{background:#e08a1e;}
+@media(max-width:720px){[data-fl-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fl-table]{display:block;overflow-x:auto;}[data-fl-tl-time]{flex-basis:78px;}[data-fl-track],[data-fl-ticks]{flex-basis:48%;}}
 `
 
     // ── utilities ────────────────────────────────────────────────
@@ -136,6 +151,7 @@ window.__ModuleLoader__.load({
 
     // ── timeline chart ──────────────────────────────────────────
     const clockOf = (minute) => {
+      if (Math.round(minute) === 1440) return '24:00'
       const m = ((Math.round(minute) % 1440) + 1440) % 1440
       return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
     }
@@ -171,8 +187,10 @@ window.__ModuleLoader__.load({
     // ── panel ───────────────────────────────────────────────────
     function Panel() {
       const [config, setConfig] = useState(null)
+      const [savedConfig, setSavedConfig] = useState(null)
       const [error, setError] = useState('')
       const [message, setMessage] = useState('')
+      const [issues, setIssues] = useState([])
       const [tab, setTab] = useState('now')
       const [tableName, setTableName] = useState('日常')
       const [weekday, setWeekday] = useState('1')
@@ -182,19 +200,33 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [timeline, setTimeline] = useState([])
       const [currentMinute, setCurrentMinute] = useState(0)
+      const [current, setCurrent] = useState(null)
+      const [meta, setMeta] = useState(null)
+      const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
 
-      const load = async () => {
+      const load = async (preserveConfig = false) => {
         try {
           const data = await getJson(API + '/state')
-          setConfig(data.config)
+          if (!preserveConfig) {
+            setConfig(data.config)
+            setSavedConfig(clone(data.config))
+            setIssues([])
+          }
           setPreview(data.preview)
           setConfigPath(data.configPath || '')
           setTimeline(data.timeline || [])
           setCurrentMinute(data.currentMinute || 0)
+          setCurrent(data.current || null)
+          setMeta(data.meta || null)
           setError('')
         } catch (e) { setError('读不到配置：' + e.message) }
       }
       useEffect(() => { load() }, [])
+      useEffect(() => {
+        const warn = (e) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
+        window.addEventListener('beforeunload', warn)
+        return () => window.removeEventListener('beforeunload', warn)
+      }, [dirty])
 
       const patch = (path, value) => setConfig((prev) => (prev ? setPath(prev, path, value) : prev))
 
@@ -205,8 +237,28 @@ window.__ModuleLoader__.load({
           const data = await postJson(API + '/save', { config })
           setConfig(data.config); setPreview(data.preview)
           setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
-          setMessage('已保存，下一轮就用新配置')
+          setSavedConfig(clone(data.config)); setCurrent(data.current || null); setMeta(data.meta || null)
+          setIssues(data.issues || [])
+          setMessage((data.issues || []).length ? `已保存，并自动修正 ${(data.issues || []).length} 项` : '已保存，下一轮就用新配置')
         } catch (e) { setMessage('保存失败：' + e.message) }
+        setBusy(false)
+      }
+
+      const reload = async () => {
+        if (dirty && !window.confirm('还有未保存的修改，确定重新读取并放弃它们吗？')) return
+        await load(); setMessage('已重新读取')
+      }
+
+      const regenerate = async () => {
+        if (dirty) { setMessage('请先保存修改，再重新生成今日剧本'); return }
+        if (!window.confirm('重新生成会替换今天已经固定下来的剧本，继续吗？')) return
+        setBusy(true); setMessage('正在重新生成今日剧本…')
+        try {
+          const data = await postJson(API + '/regenerate', {})
+          setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
+          setCurrent(data.current || null); setMeta(data.meta || null)
+          setMessage('今日剧本已重新生成')
+        } catch (e) { setMessage('重新生成失败：' + e.message) }
         setBusy(false)
       }
 
@@ -215,6 +267,7 @@ window.__ModuleLoader__.load({
           const ts = previewAt ? new Date(previewAt).getTime() : Date.now()
           const data = await getJson(API + '/preview?ts=' + ts)
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
+          setCurrent(data.current || null); setMeta(data.meta || null)
           setMessage('以下是在 ' + new Date(ts).toLocaleString() + ' 算出来的')
         } catch (e) { setMessage('预览失败：' + e.message) }
       }
@@ -230,7 +283,7 @@ window.__ModuleLoader__.load({
           h('span', { 'data-fl-note': '' }, '想看别的日子：'),
           h('input', { 'data-fl-input': '', type: 'datetime-local', value: previewAt, onChange: (e) => setPreviewAt(e.target.value) }),
           h('button', { 'data-fl-btn': '', onClick: previewOther }, '预览这个时间'),
-          h('button', { 'data-fl-btn': '', onClick: async () => { setPreviewAt(''); await load(); setMessage('回到此刻') } }, '回到此刻')),
+          h('button', { 'data-fl-btn': '', onClick: async () => { setPreviewAt(''); await load(true); setMessage('回到此刻') } }, '回到此刻')),
         h('div', { 'data-fl-note': '' }, '时序图里红线是此刻；灰色的段是按计划走，橙色的段是你用 life_adjust 改过的。'))
 
       const nowPage = h('div', { 'data-fl-sec': '' },
@@ -419,11 +472,26 @@ window.__ModuleLoader__.load({
           },
         }))
 
+      const planMeta = (meta && meta.plan) || {}
+      const detour = meta && meta.deviation && (meta.deviation.flat ? '躺平' : meta.deviation.outing ? '临时出门' : meta.deviation.skipAfternoon ? '翘下午课' : '')
       return h('div', { 'data-fl-wrap': '' },
-        h('div', { 'data-fl-row': '' },
+        h('div', { 'data-fl-hero': '' },
+          h('div', { 'data-fl-title': '' }, '鱼的生活'),
+          h('div', { 'data-fl-subtitle': '' }, '让角色拥有会自然流动的一天；计划、临时调整和相机共用同一份真实状态。'),
+          h('div', { 'data-fl-stats': '' },
+            h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '此刻'), h('div', { 'data-fl-stat-v': '', title: current && current.what }, (current && current.what) || '等待状态')),
+            h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '今天'), h('div', { 'data-fl-stat-v': '' }, (meta && meta.dayType && meta.dayType.name) || '平常')),
+            h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '作息来源'), h('div', { 'data-fl-stat-v': '' }, (meta && meta.calendar) || '平时')),
+            h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '今日剧本'), h('div', { 'data-fl-stat-v': '', title: planMeta.title || '' }, detour || (planMeta.source === 'llm' ? '模型生成' : planMeta.source === 'template' ? '本地模板' : '即时预览'))))),
+        h('div', { 'data-fl-actions': '' },
           h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
-          h('button', { 'data-fl-btn': '', onClick: load }, '重新读取'),
+          h('button', { 'data-fl-btn': '', disabled: busy, onClick: reload }, '重新读取'),
+          tab === 'now' ? h('button', { 'data-fl-btn': '', disabled: busy, onClick: regenerate }, '重新生成今日剧本') : null,
+          dirty ? h('span', { 'data-fl-dirty': '' }, '有未保存修改') : null,
           h('span', { 'data-fl-msg': '' }, message)),
+        issues.length ? h('div', { 'data-fl-warn': '' },
+          h('strong', null, '保存时自动修正：'),
+          ' ' + issues.slice(0, 4).join('；') + (issues.length > 4 ? `；另有 ${issues.length - 4} 项` : '')) : null,
         h('div', { 'data-fl-tabs': '' }, tabs.map(([k, t]) => h('button', {
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
@@ -444,8 +512,9 @@ window.__ModuleLoader__.load({
       const API = '/dsh-feiyu-life/image'
 
       const CSS = `
-  [data-fi-wrap]{display:flex;flex-direction:column;gap:14px;padding:4px 2px 24px;color-scheme:light dark;font-size:13px;}
-  [data-fi-wrap] input,[data-fi-wrap] select,[data-fi-wrap] textarea{background:Canvas;color:CanvasText;border:1px solid rgba(127,127,127,.35);border-radius:6px;padding:5px 8px;font-size:13px;font-family:inherit;}
+  [data-fi-wrap]{--fi-accent:#167f78;display:flex;flex-direction:column;gap:14px;padding:4px 2px 24px;color-scheme:light dark;font-size:13px;}
+  [data-fi-wrap] input,[data-fi-wrap] select,[data-fi-wrap] textarea{background:Canvas;color:CanvasText;border:1px solid rgba(127,127,127,.35);border-radius:7px;padding:6px 8px;font-size:13px;font-family:inherit;}
+  [data-fi-wrap] input:focus,[data-fi-wrap] select:focus,[data-fi-wrap] textarea:focus{outline:2px solid rgba(22,127,120,.35);border-color:var(--fi-accent);outline-offset:1px;}
   [data-fi-wrap] textarea{width:100%;min-height:64px;resize:vertical;line-height:1.5;}
   [data-fi-wrap] input[type=number]{width:88px;}
   [data-fi-sec]{display:flex;flex-direction:column;gap:8px;}
@@ -455,7 +524,7 @@ window.__ModuleLoader__.load({
   [data-fi-btn]{padding:5px 12px;border-radius:7px;border:1px solid rgba(127,127,127,.35);background:rgba(127,127,127,.08);color:inherit;cursor:pointer;font-size:13px;}
   [data-fi-btn]:hover{background:rgba(127,127,127,.16);}
   [data-fi-btn][disabled]{opacity:.45;cursor:default;}
-  [data-fi-btn][data-primary]{background:rgba(64,128,255,.16);border-color:rgba(64,128,255,.5);}
+  [data-fi-btn][data-primary]{background:var(--fi-accent);border-color:var(--fi-accent);color:white;font-weight:650;}
   [data-fi-grid]{display:flex;gap:8px;flex-wrap:wrap;}
   [data-fi-grid] img{width:104px;height:104px;object-fit:cover;border-radius:8px;border:1px solid rgba(127,127,127,.3);}
   [data-fi-chip]{font-size:12px;padding:2px 8px;border-radius:999px;background:rgba(127,127,127,.14);}
@@ -690,3 +759,4 @@ window.__ModuleLoader__.load({
     }
   },
 })
+

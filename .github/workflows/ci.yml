@@ -14,6 +14,9 @@ jobs:
         with:
           node-version: 22
       - name: 语法检查
-        run: for f in index.js life.js client.js; do node --check "$f"; done
+        run: npm run check
+      - name: 单元测试
+        run: npm test
       - name: 打包自检（看会发出去哪些文件）
         run: npm pack --dry-run
+

@@ -85,7 +85,10 @@ function parseJson(text) {
 function toMinute(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim())
   if (!m) return null
-  const v = Number(m[1]) * 60 + Number(m[2])
+  const hour = Number(m[1])
+  const minute = Number(m[2])
+  if (minute > 59 || hour > 24 || (hour === 24 && minute !== 0)) return null
+  const v = hour * 60 + minute
   return Number.isFinite(v) ? v : null
 }
 
@@ -124,7 +127,7 @@ export function normalizePlan(raw) {
   const last = clean[clean.length - 1]
   if (last && last.end < 1440) clean.push({ start: last.end, end: 1440, what: /睡/.test(last.what) ? '还睡着' : '躺床上刷手机', phone: '在床头', outfit: last.outfit || '睡衣' })
   const sleep = clean.filter((x) => /睡/.test(x.what)).reduce((n, x) => n + (x.end - x.start), 0)
-  if (sleep < 240) return null
+  if (sleep < 360) return null
   return { title: String(raw.title || '').slice(0, 40), mood: String(raw.mood || '').slice(0, 80), items: clean }
 }
 
@@ -161,3 +164,4 @@ export async function writeDayWithModel(ctx, agent, params) {
   if (!ok) { log('normalize failed: ' + String(out).slice(0, 300)); return null }
   return { ...ok, source: 'llm', model: target.model }
 }
+
