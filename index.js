@@ -218,6 +218,7 @@ export function apply(ctx) {
           date: t.ymd,
           weekdayLabel: WEEKDAY[t.weekday],
           typeName: type.name,
+          routine: (cfg[calendar.routine] || []).map((x) => [x[0], x[1], x[2]]),
           classes: ((cfg.课表 || {})[t.weekday] || []).map((x) => [x[0], x[1], x[2]]),
           calendarLabel: calendarLabel(calendar),
           body: bodyHint(cfg, t, deviation),

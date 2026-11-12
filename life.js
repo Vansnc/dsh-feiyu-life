@@ -4,7 +4,7 @@
 //   1. What kind of day is it? (term / vacation / festival / exam week)
 //   2. Which routine table applies? (日常 / 晚起 / 假期 / 备考)
 //   3. What is she doing right now, is her phone at hand?
-//   4. What is weighing on her today? (late night, period, cold, small events)
+//   4. What is weighing on her today? (late night, period, cold)
 //
 // Output is compressed into a few short lines, injected via systemPrompt.context.
 //
@@ -26,13 +26,12 @@ import { homedir } from 'node:os'
 const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
 export const CONFIG_PATH = join(dshHome(), 'feiyu-life-config.json')
 
-const sectionGate = { 上午: 9, 中午: 12, 下午: 15, 晚上: 19 }
 const phoneSuffix = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
 const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 5
+export const LIFE_CONFIG_VERSION = 6
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
@@ -119,18 +118,6 @@ export const defaultConfig = {
     6: [],
     7: [],
   },
-  事件池: [
-    ['上午', '快递说放柜子里了，去了没有'],
-    ['上午', '早八差点睡过去，进门被老师看了一眼', '早课'],
-    ['中午', '食堂新出的窗口，难吃得有点好笑'],
-    ['中午', '排队排到门口，最后没吃上'],
-    ['下午', '剪的片子被老师夸了一句'],
-    ['下午', '图书馆抢到靠窗的座'],
-    ['下午', '手机膜又裂了一条'],
-    ['晚上', '楼下那只猫又蹲在台阶上'],
-    ['晚上', '耳机左耳没声了'],
-    ['晚上', '我妈寄的吃的到了，一箱'],
-  ],
   偏离: { 躺平日: 0.12, 出门日: 0.1, 翘下午课: 0.08 },
 }
 
@@ -232,12 +219,9 @@ export function normalizeConfig(input, issues = []) {
   cfg.晚起日 = [...new Set((Array.isArray(raw.晚起日) ? raw.晚起日 : defaultConfig.晚起日)
     .map(Number).filter((x) => Number.isInteger(x) && x >= 1 && x <= 7))].sort((a, b) => a - b)
 
-  cfg.事件池 = (Array.isArray(raw.事件池) ? raw.事件池 : defaultConfig.事件池).flatMap((row) => {
-    if (!Array.isArray(row) || !sectionGate[row[0]] || !String(row[1] || '').trim()) return []
-    const out = [row[0], String(row[1]).trim().slice(0, 100)]
-    if (row[2] === '早课') out.push('早课')
-    return [out]
-  })
+  // v6 removed the parallel event pool: the daily model plan is the sole source
+  // of story beats, and life_adjust is the sole post-generation mutation path.
+  delete cfg.事件池
   const deviation = raw.偏离 && typeof raw.偏离 === 'object' ? raw.偏离 : {}
   cfg.偏离 = {
     躺平日: clamp(deviation.躺平日, 0, 1, defaultConfig.偏离.躺平日),
@@ -409,24 +393,6 @@ export function menstrualDay(cfg, ymd) {
   return pos < length ? pos + 1 : 0
 }
 
-function todayEvents(cfg, t, allowMorning = true) {
-  const classes = Array.isArray((cfg.课表 || {})[t.weekday]) ? cfg.课表[t.weekday] : []
-  const hasMorning = allowMorning && classes.some((b) => Array.isArray(b) && toMinute(b[0]) >= 0 && toMinute(b[0]) < 10 * 60)
-  const pool = (Array.isArray(cfg.事件池) ? cfg.事件池 : [])
-    .filter((x) => Array.isArray(x) && x.length >= 2 && x[1])
-    .filter((x) => x[2] !== '早课' || hasMorning)
-  if (!pool.length) return []
-  const r = rng(hashSeed(t.ymd, 'events'))
-  const count = r() < 0.55 ? 2 : 1
-  const indices = pool.map((_, i) => i)
-  const picked = []
-  for (let k = 0; k < count && indices.length; k++) {
-    const i = Math.floor(r() * indices.length) % indices.length
-    picked.push(pool[indices.splice(i, 1)[0]])
-  }
-  return picked.filter(([section]) => t.hour >= (sectionGate[section] || 0)).map(([, text]) => String(text))
-}
-
 function hourVariant(t, what) {
   const r = rng(hashSeed(t.ymd, 'hour' + t.hour))
   if (r() > 0.4) return ''
@@ -436,18 +402,10 @@ function hourVariant(t, what) {
   return pool[Math.floor(r() * pool.length) % pool.length]
 }
 
-function tempAction(t) {
-  const r = rng(hashSeed(t.ymd, 'min' + Math.floor(t.minuteOfDay / 10)))
-  if (r() > 0.07) return ''
-  const pool = ['，刚去接了杯水', '，去楼下拿了个快递', '，在等外卖', '，顺手把衣服晾了']
-  return pool[Math.floor(r() * pool.length) % pool.length]
-}
-
 /** Today's base mood: doesn't touch the mood value, just one line about how she feels. */
-function moodTint(period, cold, tired, good) {
+function moodTint(period, cold, tired) {
   if (period === 1 || period === 2) return '整个人有点蔫'
   if (tired) return '眼皮沉'
-  if (good) return '心情还不错'
   return ''
 }
 
@@ -511,15 +469,11 @@ export function generate(cfg, now = new Date()) {
   const tired = wake - sleepAt < 360
   const period = menstrualDay(cfg, t.ymd)
   const cold = r() < 0.08 && [3, 4, 10, 11].includes(t.month)
-  const events = todayEvents(cfg, t, !calendar.holiday)
-
   const conditions = []
   if (tired && t.minuteOfDay < 15 * 60) conditions.push(`昨晚${sleepAt === 60 ? '一点' : sleepAt === 120 ? '两点' : '两点半'}才睡`)
   if (period) conditions.push(period <= 3 ? '腰有点酸' : '肚子还坠着')
   if (cold) conditions.push('嗓子有点紧')
-  for (const e of events) conditions.push(e)
-  const good = events.some((x) => /夸|猫|寄的/.test(x))
-  const tint = moodTint(period, cold, tired, good)
+  const tint = moodTint(period, cold, tired)
   if (tint) conditions.push(tint)
 
   const lines = []
@@ -528,7 +482,7 @@ export function generate(cfg, now = new Date()) {
   let nowLine = `（此刻）${current.what}`
   if (current.phone && current.phone !== '在手') nowLine += phoneSuffix[current.phone] || ''
   if (current.outfit && !/睡/.test(current.what)) nowLine += `，身上是${current.outfit}`
-  if (!/睡/.test(current.what) && !deviation.flat) nowLine += hourVariant(t, current.what) + tempAction(t)
+  if (!/睡/.test(current.what) && !deviation.flat) nowLine += hourVariant(t, current.what)
   lines.push(nowLine + '。')
 
   const recent = recentSegments(timeline, now.getTime()).slice(0, 2).reverse()
@@ -605,8 +559,11 @@ export function migrateConfig(raw) {
       next.地图 = { ...copy(defaultWorldConfig), 启用: enabled, 自动通勤: commute }
     } else if (!next.地图.底图) next.地图.底图 = 'xueyuan-road'
   }
+  // v6 removes the legacy event pool. Daily-plan details now come only from
+  // the model plan (or template fallback), and later changes use life_adjust.
+  delete next.事件池
   next.配置版本 = LIFE_CONFIG_VERSION
-  return { value: next, changed: version !== LIFE_CONFIG_VERSION }
+  return { value: next, changed: version !== LIFE_CONFIG_VERSION || Object.hasOwn(source, '事件池') }
 }
 
 function writeConfigFile(value) {

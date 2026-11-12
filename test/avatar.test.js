@@ -18,6 +18,7 @@ test('client animation only advances horizontally through isolated strips', () =
   assert.match(client, /background-size:320px 80px/)
   assert.match(client, /\/avatar\/\$\{spriteBehavior\}/)
   assert.doesNotMatch(client, /--fl-sprite-y|background-position-y/)
+  assert.doesNotMatch(client, /sectionOptions|config\.事件池|tab === 'events'/)
 })
 
 test('real map assets share one viewport and keep OpenStreetMap attribution', () => {

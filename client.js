@@ -9,7 +9,6 @@
  *   · week   : timetable per weekday.
  *   · day    : routine tables (日常 / 晚起 / 假期 / 备考), late-rise days.
  *   · body   : cycle, deviation probabilities.
- *   · events : small events by section (上午/中午/下午/晚上).
  *
  * Edits live on the local config first; "保存" persists. Identifiers are English;
  * persisted config keys stay Chinese (they are the settings contract).
@@ -23,10 +22,9 @@ window.__ModuleLoader__.load({
 
     const API = '/dsh-feiyu-life'
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
-    const sectionOptions = ['上午', '中午', '下午', '晚上']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['events', '事件'], ['photo', '照片']]
+    const tabs = [['now', '此刻'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -741,24 +739,6 @@ window.__ModuleLoader__.load({
           h(Field, { value: deviation.翘下午课, type: 'number', width: 'data-fl-num', step: '0.01', onChange: (v) => patch(['偏离', '翘下午课'], Number(v) || 0) })),
         h('div', { 'data-fl-note': '' }, '注意：这些都是按日期抽的种子，同一天里不会变来变去 —— 变的是"今天是不是这种日子"。'))
 
-      const eventsPage = h('div', { 'data-fl-sec': '' },
-        h('div', { 'data-fl-note': '' }, '一天里可能发生的小事。段决定它什么时候才可能出现（上午的小事不会凌晨就冒出来）；条件「早课」表示那天有早八才可能抽到。'),
-        h(Table, {
-          columns: [{ k: 'a', t: '段' }, { k: 'b', t: '内容' }, { k: 'c', t: '条件' }, { k: 'x', t: '' }],
-          rows: config.事件池 || [],
-          emptyLabel: '还没有',
-          add: () => patch(['事件池'], [...(config.事件池 || []), ['下午', '新的一件小事']]),
-          render: (r, i) => {
-            const base = ['事件池', i]
-            return [
-              h('td', { key: 'a' }, h(Select, { value: r[0], options: sectionOptions, onChange: (v) => patch([...base, 0], v) })),
-              h('td', { key: 'b' }, h(Field, { value: r[1], width: 'data-fl-wide', onChange: (v) => patch([...base, 1], v) })),
-              h('td', { key: 'c' }, h(Select, { value: r[2] || '任意', options: ['任意', '早课'], onChange: (v) => patch([...base, 2], v === '任意' ? undefined : v) })),
-              h('td', { key: 'x' }, h('button', { 'data-fl-del': '', onClick: () => patch(['事件池'], (config.事件池 || []).filter((_, k) => k !== i)) }, '删')),
-            ]
-          },
-        }))
-
       const planMeta = (meta && meta.plan) || {}
       const detour = meta && meta.deviation && (meta.deviation.flat ? '躺平' : meta.deviation.outing ? '临时出门' : meta.deviation.skipAfternoon ? '翘下午课' : '')
       return h('div', { 'data-fl-wrap': '' },
@@ -792,7 +772,6 @@ window.__ModuleLoader__.load({
         tab === 'week' ? weekPage : null,
         tab === 'day' ? dayPage : null,
         tab === 'body' ? bodyPage : null,
-        tab === 'events' ? eventsPage : null,
         tab === 'photo' ? h(ImagePanel.Panel) : null,
         h('div', { 'data-fl-msg': '' }, message))
     }

@@ -43,10 +43,12 @@ export function pickModel(agent, cfg = {}) {
   return null
 }
 
-function buildPrompt(o) {
-  const { cfg, date, weekdayLabel, typeName, classes, calendarLabel, body, recent } = o
+export function buildPrompt(o) {
+  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, recent } = o
   const persona = String(cfg.角色设定 || '大肥鱼：21 岁，在北京读大三，学视觉传达；懒、嘴硬心软、爱损人；室友阿岚（考研）和小满（恋爱脑）；周日晚上跟妈妈视频。')
   const schedule = classes.length ? classes.map((x) => `${x[0]}-${x[1]} ${x[2]}`).join('；') : '这天没课'
+  const routineRows = Array.isArray(routine) ? routine : []
+  const routineSkeleton = routineRows.length ? routineRows.map((x) => `${x[0]}-${x[1]} ${x[2]}`).join('；') : '没有额外作息约束'
   const world = normalizeWorldConfig(cfg.地图 || defaultWorldConfig)
   const locations = world.地点.map((x) => `${x.id}=${x.name}`).join('；')
   const behaviors = BEHAVIOR_RULES.map((x) => `${x.id}=${x.label}`).concat('idle=发呆').join('；')
@@ -58,6 +60,7 @@ function buildPrompt(o) {
     '',
     '## 这一天',
     `- 日子类型：${typeName}`,
+    `- 作息骨架：${routineSkeleton}`,
     `- 课表：${schedule}`,
     `- ${calendarLabel}`,
     `- 身体/状态：${body || '平常'}`,
@@ -71,8 +74,8 @@ function buildPrompt(o) {
     '3. 「what」是口语短句，10–18 字，带细节（「刚起，脸还有点肿」「啃面包看课件」），不要写「上课」两个字就完事；',
     '4. 「outfit」写一件具体的衣服（睡衣 / 藏青卫衣 / 黑大衣 / 牛仔外套…），睡觉那几段写睡衣；',
     '5. 「phone」只能是：在手 / 静音 / 在床头 / 不在手边；',
-    '6. 全天要有起伏：赖床、走神、临时出门、被老师点名、快递、猫，都可以有，但别夸张、别写成小说；',
-    '7. 最近三天里出现过的事件不要这周再出现第二次；',
+    '6. 以作息骨架为主，课表覆盖冲突时段；可以细化生活细节，但不要擅自改变睡醒、上课和用餐的大致区间，身体/状态要求优先；',
+    '7. 全天要有起伏：赖床、走神、临时出门、被老师点名、快递、猫，都可以有，但别夸张；最近三天出现过的具体桥段不要重复；',
     '8. 每段都填写 locationId 和 behavior；locationId 只能从下面地点中选，behavior 只能从下面行为中选；',
     `   地点：${locations}`,
     `   行为：${behaviors}`,

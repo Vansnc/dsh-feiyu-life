@@ -6,7 +6,7 @@ import {
   zonedNow, zonedDayStartMs, zonedDateTimeMs, addZonedDays,
 } from '../life.js'
 import { timeline, toMinute } from '../plan.js'
-import { normalizePlan } from '../gen.js'
+import { buildPrompt, normalizePlan } from '../gen.js'
 import { buildTimeline, segmentAt } from '../state.js'
 
 test('configuration is normalized at the save boundary', () => {
@@ -17,15 +17,16 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
-  assert.equal(cfg.配置版本, 5)
+  assert.equal(cfg.配置版本, 6)
   assert.equal(cfg.模型超时秒, 60)
   assert.equal(cfg.历史保留天数, 180)
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
   assert.deepEqual(cfg.日常, [])
+  assert.equal(Object.hasOwn(cfg, '事件池'), false)
   assert.ok(issues.length >= 2)
 })
 
-test('v5 migrates only untouched stock maps to routed neighbourhood POIs', () => {
+test('v6 migrates stock maps and removes the legacy event pool', () => {
   const legacyMap = {
     启用: true,
     自动通勤: true,
@@ -36,8 +37,9 @@ test('v5 migrates only untouched stock maps to routed neighbourhood POIs', () =>
     ],
     路径: [{ from: 'dorm', to: 'canteen', minutes: 8 }],
   }
-  const migrated = migrateConfig({ 配置版本: 3, 地图: legacyMap }).value
-  assert.equal(migrated.配置版本, 5)
+  const migrated = migrateConfig({ 配置版本: 3, 地图: legacyMap, 事件池: [['下午', '重复的小事']] }).value
+  assert.equal(migrated.配置版本, 6)
+  assert.equal(Object.hasOwn(migrated, '事件池'), false)
   assert.equal(migrated.地图.底图, 'xueyuan-road')
   assert.deepEqual(migrated.地图.地点.map(({ id, x, y }) => ({ id, x, y })), [
     { id: 'dorm', x: 44.3, y: 51.3 }, { id: 'classroom', x: 69.6, y: 30 },
@@ -70,6 +72,17 @@ test('time parser accepts only real clock values', () => {
   assert.equal(toMinute('24:00'), 1440)
   assert.equal(toMinute('24:01'), -1)
   assert.equal(toMinute('09:61'), -1)
+})
+
+test('model prompt uses the selected routine as its upstream skeleton', () => {
+  const prompt = buildPrompt({
+    cfg: {}, date: '2026-11-12', weekdayLabel: '四', typeName: '没课日',
+    routine: [['02:00', '08:30', '睡着了'], ['11:40', '12:40', '食堂吃饭']],
+    classes: [], calendarLabel: '学期：2026 秋季学期', body: '平常', recent: '',
+  })
+  assert.match(prompt, /作息骨架：02:00-08:30 睡着了；11:40-12:40 食堂吃饭/)
+  assert.match(prompt, /以作息骨架为主，课表覆盖冲突时段/)
+  assert.doesNotMatch(prompt, /事件池/)
 })
 
 test('outing deviation actually changes the generated timeline', () => {
