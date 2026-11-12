@@ -5,6 +5,8 @@
 [![license](https://img.shields.io/npm/l/dsh-feiyu-life)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-informational)](https://nodejs.org/)
 
+![鱼的生活：每日剧本、二维地图、行为动画与同源相机](./assets/banner.jpg)
+
 让角色拥有一条独立于聊天、会随时间和地点自然推进的生活线。
 
 它不只是回答“现在在干什么”：每天会形成稳定的剧本，临时改变会留下可撤销的调整；同一份世界状态同时驱动对话、二维地图、角色动作和相机，避免角色在聊天里位于图书馆、地图却停在宿舍。
