@@ -11,12 +11,15 @@
 
 import {
   readFileSync, writeFileSync, mkdirSync, statSync, readdirSync, renameSync,
-  appendFileSync, existsSync, copyFileSync,
+  existsSync, copyFileSync, unlinkSync,
 } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { promisify } from 'node:util'
 import { generatePrompt, checkImage } from './image-prompt.js'
+import { readConfig as readLifeConfig, zonedNow } from './life.js'
+import { appendRotatingLog, timeoutSignal } from './runtime.js'
 
 const dshHome = () => process.env.DSH_HOME ?? join(homedir(), '.dsh')
 
@@ -26,9 +29,18 @@ const OUT_DIR = join(dshHome(), 'feiyu-life-image')
 const LEGACY_OUT_DIR = join(dshHome(), 'feiyu-image')
 const ARK_CFG = join(dshHome(), 'ark', 'config.json')
 const LOG_FILE = join(dshHome(), 'feiyu-life-image.log')
-const log = (m) => { try { appendFileSync(LOG_FILE, new Date().toISOString() + '  ' + m + '\n') } catch {} }
+const execFileAsync = promisify(execFile)
+const log = (m) => {
+  try {
+    mkdirSync(dshHome(), { recursive: true })
+    appendRotatingLog(LOG_FILE, new Date().toISOString() + '  ' + m + '\n')
+  } catch {}
+}
+
+export const IMAGE_CONFIG_VERSION = 2
 
 const DEFAULT_CONFIG = {
+  配置版本: IMAGE_CONFIG_VERSION,
   总开关: true,
   模型: 'doubao-seedream-5-0-pro-260628',
   备用模型: 'doubao-seedream-5-0-flash-260915',
@@ -46,6 +58,9 @@ const DEFAULT_CONFIG = {
   自检重拍: 1,
   每日上限: 8,
   最短间隔秒: 30,
+  模型超时秒: 60,
+  生图超时秒: 120,
+  照片保留天数: 90,
   存图目录: '',
   兜底Provider: 'deepseek-official',
   兜底模型: 'deepseek-flash',
@@ -62,35 +77,75 @@ export function readImageConfig() {
   migrateLegacyConfig()
   try {
     const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
-    return { ...DEFAULT_CONFIG, ...raw }
+    const migrated = migrateImageConfig(raw)
+    const next = normalizeImageConfig(migrated.value)
+    if (migrated.changed) writeImageConfig(next)
+    return next
   } catch {
     try {
       const raw = JSON.parse(readFileSync(LEGACY_CONFIG_PATH, 'utf8'))
-      return { ...DEFAULT_CONFIG, ...raw }
-    } catch { return { ...DEFAULT_CONFIG } }
+      const next = normalizeImageConfig(migrateImageConfig(raw).value)
+      try { writeImageConfig(next) } catch {}
+      return next
+    } catch {
+      const next = normalizeImageConfig({})
+      try { writeImageConfig(next) } catch {}
+      return next
+    }
   }
 }
 
 export function saveImageConfig(patch) {
-  const next = { ...readImageConfig(), ...(patch && typeof patch === 'object' ? patch : {}) }
-  next.每日上限 = Math.max(1, Math.min(100, Math.round(Number(next.每日上限) || DEFAULT_CONFIG.每日上限)))
-  next.最短间隔秒 = Math.max(0, Math.min(86400, Math.round(Number(next.最短间隔秒) || 0)))
-  next.自检重拍 = Math.max(0, Math.min(2, Math.round(Number(next.自检重拍) || 0)))
-  if (!Object.hasOwn(sizeByAspect, next.画幅)) next.画幅 = DEFAULT_CONFIG.画幅
+  const next = normalizeImageConfig({ ...readImageConfig(), ...(patch && typeof patch === 'object' ? patch : {}) })
+  writeImageConfig(next)
+  return next
+}
+
+function writeImageConfig(next) {
   mkdirSync(dshHome(), { recursive: true })
   const tmp = CONFIG_PATH + '.tmp'
   writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8')
   renameSync(tmp, CONFIG_PATH)
-  return next
 }
 
 const sizeByAspect = { 竖幅: '1440x1920', 方形: '2048x2048', 横幅: '1920x1440' }
+
+function migrateImageConfig(raw) {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  const version = Math.max(0, Math.round(Number(source.配置版本) || 0))
+  const next = { ...source }
+  if (version < 2) {
+    delete next.种子
+    delete next.后端
+    if (next.模型超时秒 === undefined) next.模型超时秒 = DEFAULT_CONFIG.模型超时秒
+    if (next.生图超时秒 === undefined) next.生图超时秒 = DEFAULT_CONFIG.生图超时秒
+    if (next.照片保留天数 === undefined) next.照片保留天数 = DEFAULT_CONFIG.照片保留天数
+  }
+  next.配置版本 = IMAGE_CONFIG_VERSION
+  return { value: next, changed: version !== IMAGE_CONFIG_VERSION || '种子' in source || '后端' in source }
+}
+
+export function normalizeImageConfig(raw) {
+  const next = { ...DEFAULT_CONFIG, ...(raw && typeof raw === 'object' ? raw : {}) }
+  next.配置版本 = IMAGE_CONFIG_VERSION
+  next.每日上限 = Math.max(1, Math.min(100, Math.round(Number(next.每日上限) || DEFAULT_CONFIG.每日上限)))
+  next.最短间隔秒 = Math.max(0, Math.min(86400, Math.round(Number(next.最短间隔秒) || 0)))
+  next.自检重拍 = Math.max(0, Math.min(2, Math.round(Number(next.自检重拍) || 0)))
+  next.模型超时秒 = Math.max(10, Math.min(300, Math.round(Number(next.模型超时秒) || DEFAULT_CONFIG.模型超时秒)))
+  next.生图超时秒 = Math.max(30, Math.min(600, Math.round(Number(next.生图超时秒) || DEFAULT_CONFIG.生图超时秒)))
+  next.照片保留天数 = Math.max(1, Math.min(3650, Math.round(Number(next.照片保留天数) || DEFAULT_CONFIG.照片保留天数)))
+  if (!Object.hasOwn(sizeByAspect, next.画幅)) next.画幅 = DEFAULT_CONFIG.画幅
+  return next
+}
 
 function readRefImage(cfg) {
   const p = cfg.参考图 || join(OUT_DIR, '角色设定', '正面.jpg')
   const candidates = [p, join(LEGACY_OUT_DIR, '角色设定', '正面.jpg')]
   for (const x of candidates) {
-    try { return 'data:image/jpeg;base64,' + readFileSync(x).toString('base64') } catch {}
+    try {
+      const mime = /\.png$/i.test(x) ? 'image/png' : /\.webp$/i.test(x) ? 'image/webp' : 'image/jpeg'
+      return `data:${mime};base64,` + readFileSync(x).toString('base64')
+    } catch {}
   }
   return ''
 }
@@ -98,6 +153,22 @@ function readRefImage(cfg) {
 function photoDirs(cfg) {
   const custom = String(cfg.存图目录 || '').trim()
   return custom ? [custom] : [OUT_DIR, LEGACY_OUT_DIR]
+}
+
+/** Remove only files produced by this plugin; reference images are never touched. */
+export function cleanupPhotos(cfg = readImageConfig(), now = Date.now()) {
+  const cutoff = now - Math.max(1, Number(cfg.照片保留天数) || 90) * 86400000
+  let removed = 0
+  for (const dir of new Set(photoDirs(cfg))) {
+    let names = []
+    try { names = readdirSync(dir) } catch {}
+    for (const name of names) {
+      if (!/^feiyu-(?:retry-)?\d+\.(?:png|jpe?g|webp)$/i.test(name)) continue
+      const path = join(dir, name)
+      try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
+    }
+  }
+  return removed
 }
 
 function listPhotos(cfg) {
@@ -117,7 +188,9 @@ function listPhotos(cfg) {
 /** Saved-today count and last shot time (retakes and character refs don't count). */
 function todayUsage(cfg) {
   try {
-    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
+    let tz = 'Asia/Shanghai'
+    try { tz = String(readLifeConfig().时区 || tz) } catch {}
+    const today = zonedNow(new Date(), tz).ymd
     let n = 0
     let last = 0
     for (const dir of photoDirs(cfg)) {
@@ -126,7 +199,7 @@ function todayUsage(cfg) {
       for (const f of files) {
         if (!/^feiyu-\d+\.png$/.test(f)) continue
         const st = statSync(join(dir, f))
-        if (new Date(st.mtimeMs + 8 * 3600e3).toISOString().slice(0, 10) === today) n++
+        if (zonedNow(new Date(st.mtimeMs), tz).ymd === today) n++
         last = Math.max(last, st.mtimeMs)
       }
     }
@@ -135,10 +208,10 @@ function todayUsage(cfg) {
 }
 
 /** QQ renders large images poorly: save a small copy (long edge 1440, JPEG q88). */
-function shrink(pngPath) {
+async function shrink(pngPath) {
   try {
     const jpg = pngPath.replace(/\.png$/i, '.jpg')
-    execFileSync('convert', [pngPath, '-resize', '1440x1440>', '-quality', '88', jpg], { stdio: 'ignore' })
+    await execFileAsync('convert', [pngPath, '-resize', '1440x1440>', '-quality', '88', jpg], { timeout: 30000 })
     const st = statSync(jpg)
     return st.size > 0 ? jpg : pngPath
   } catch { return pngPath }
@@ -166,29 +239,31 @@ async function arkGenerate(cfg, prompt, opts = {}) {
   }
   const ref = (cfg.用参考图 && opts.useRef !== false) ? readRefImage(cfg) : ''
   if (ref) body.image = [ref]
+  const timeoutMs = Math.max(30, Math.min(600, Number(cfg.生图超时秒) || 120)) * 1000
   const r = await fetch(ark.baseUrl.replace(/\/+$/, '') + '/images/generations', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + ark.apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: timeoutSignal(timeoutMs),
   })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw new Error('方舟 ' + r.status + '：' + JSON.stringify(data).slice(0, 220))
   const url = data?.data?.[0]?.url
   if (!url) throw new Error('方舟返回里没有图片：' + JSON.stringify(data).slice(0, 200))
-  const img = await fetch(url)
+  const img = await fetch(url, { signal: timeoutSignal(timeoutMs) })
   if (!img.ok) throw new Error('下载失败 ' + img.status)
   const buf = Buffer.from(await img.arrayBuffer())
   const dir = String(cfg.存图目录 || '').trim() || OUT_DIR
   mkdirSync(dir, { recursive: true })
   const path = join(dir, `feiyu-${Date.now()}.png`)
   writeFileSync(path, buf)
-  const small = shrink(path)
+  const small = await shrink(path)
   return { path: small, original: path, bytes: statSync(small).size, prompt }
 }
 
 /** Rename a retaken bad shot so it keeps for review but doesn't count against today's limit. */
 function markRetake(result) {
-  const rename = (p) => String(p).replace(/(\/feiyu-)(\d+)\.(png|jpg)$/, '$1retry-$2.$3')
+  const rename = (p) => String(p).replace(/([\\/]feiyu-)(\d+)\.(png|jpg)$/, '$1retry-$2.$3')
   if (!result) return
   const nextOriginal = rename(result.original)
   const nextSmall = rename(result.path)
@@ -244,6 +319,7 @@ async function fetchModels() {
     const ark = JSON.parse(readFileSync(ARK_CFG, 'utf8'))
     const r = await fetch(ark.baseUrl.replace(/\/+$/, '') + '/models', {
       headers: { Authorization: 'Bearer ' + ark.apiKey },
+      signal: timeoutSignal(30000),
     })
     const d = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error('方舟 ' + r.status + '：' + JSON.stringify(d).slice(0, 160))
@@ -259,20 +335,34 @@ async function fetchModels() {
   return { list, cached: false, error }
 }
 
+let shooting = false
+
+function shotBlocked(cfg) {
+  const usage = todayUsage(cfg)
+  if (usage.n >= cfg.每日上限) return `今天已经拍了 ${usage.n} 张，达到上限`
+  const waitMs = cfg.最短间隔秒 * 1000 - (Date.now() - usage.last)
+  if (waitMs > 0) return `刚拍过，再等 ${Math.ceil(waitMs / 1000)} 秒`
+  return ''
+}
+
 // ── settings routes ─────────────────────────────────────────────────
 const ROUTE_PREFIX = '/dsh-feiyu-life/image'
 
 function registerRoutes(ctx) {
   const onlyOwner = (handler) => async (req, res) => {
     try {
-      const connection = ctx.get('connection')
-      const rejection = connection && typeof connection.requestRejection === 'function' ? connection.requestRejection(req) : undefined
-      if (rejection === 401 || rejection === 403) {
-        res.writeHead(rejection, { 'content-type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify({ ok: false, error: String(rejection) }))
+      const rejection = ctx.connection.requestRejection(req)
+      if (rejection !== undefined) {
+        const code = Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403
+        res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ ok: false, error: String(code) }))
         return
       }
-    } catch {}
+    } catch {
+      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ ok: false, error: 'connection_guard_unavailable' }))
+      return
+    }
     return handler(req, res)
   }
   const reply = (res, code, obj) => {
@@ -333,6 +423,10 @@ function registerRoutes(ctx) {
       let body
       try { body = await readBody(req) || {} } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
       const cfg = readImageConfig()
+      const blocked = shotBlocked(cfg)
+      if (blocked) return reply(res, 429, { ok: false, error: blocked })
+      if (shooting) return reply(res, 409, { ok: false, error: '已有一张照片正在生成' })
+      shooting = true
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, {
           type: body.type || 'selfie',
@@ -345,6 +439,7 @@ function registerRoutes(ctx) {
         const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
         return reply(res, 200, { ok: true, image: r.path, prompt: r.prompt, bytes: r.bytes, check: r.check, notes: r.notes })
       } catch (e) { return reply(res, 500, { ok: false, error: String((e && e.message) || e).slice(0, 300) }) }
+      finally { shooting = false }
     }),
   }), 'feiyu-life: image test')
 
@@ -418,13 +513,14 @@ export function registerImage(ctx) {
     async execute(args = {}) {
       const cfg = readImageConfig()
       if (!cfg.总开关) return { ok: false, say: '相机没开' }
-      const usage = todayUsage(cfg)
-      if (usage.n >= cfg.每日上限) return { ok: false, say: `今天已经拍了 ${usage.n} 张，够了` }
-      if (Date.now() - usage.last < cfg.最短间隔秒 * 1000) return { ok: false, say: '刚拍过，等会儿再拍' }
-      const expanded = await generatePrompt(ctx, findSession(ctx), cfg, args)
-      const useRef = String(args.type || 'selfie') !== 'scene' && cfg.用参考图
-      const prompt = (useRef ? '保持参考图里这个角色的长相、发色渐变、鲸鱼鳍耳、呆毛、瞳色、鲸鱼尾不变；' : '') + expanded.prompt
+      const blocked = shotBlocked(cfg)
+      if (blocked) return { ok: false, say: blocked }
+      if (shooting) return { ok: false, say: '已经有一张照片正在生成，等它拍完' }
+      shooting = true
       try {
+        const expanded = await generatePrompt(ctx, findSession(ctx), cfg, args)
+        const useRef = String(args.type || 'selfie') !== 'scene' && cfg.用参考图
+        const prompt = (useRef ? '保持参考图里这个角色的长相、发色渐变、鲸鱼鳍耳、呆毛、瞳色、鲸鱼尾不变；' : '') + expanded.prompt
         const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
         const flawed = r.check && r.check.pass === false
           ? `（这张还不太对：${(r.check.problems[0] || '画面有问题')}）`
@@ -440,7 +536,7 @@ export function registerImage(ctx) {
         return out
       } catch (e) {
         return { ok: false, say: '没拍成：' + String((e && e.message) || e).slice(0, 160) }
-      }
+      } finally { shooting = false }
     },
   }), 'feiyu-life: shoot')
 }

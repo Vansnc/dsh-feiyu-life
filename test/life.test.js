@@ -1,7 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { normalizeConfig, validateConfig, todayDeviation } from '../life.js'
+import {
+  normalizeConfig, validateConfig, todayDeviation,
+  zonedNow, zonedDayStartMs, zonedDateTimeMs, addZonedDays,
+} from '../life.js'
 import { timeline, toMinute } from '../plan.js'
 import { normalizePlan } from '../gen.js'
 import { buildTimeline, segmentAt } from '../state.js'
@@ -14,6 +17,9 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
+  assert.equal(cfg.配置版本, 3)
+  assert.equal(cfg.模型超时秒, 60)
+  assert.equal(cfg.历史保留天数, 180)
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
   assert.deepEqual(cfg.日常, [])
   assert.ok(issues.length >= 2)
@@ -61,4 +67,36 @@ test('an adjustment cleanly overlays the base plan', () => {
   const adjusted = buildTimeline(base, [{ start: 30 * 60000, end: 60 * 60000, what: '醒了', phone: '在手', source: 'adjust' }], 0)
   assert.equal(segmentAt(adjusted, 45 * 60000).what, '醒了')
   assert.equal(segmentAt(adjusted, 90 * 60000).what, '睡觉')
+})
+
+test('a newer overlapping adjustment wins without double-matching', () => {
+  const timeline = buildTimeline(
+    [{ start: 0, end: 180, what: '原计划', phone: '在手' }],
+    [
+      { start: 30 * 60000, end: 120 * 60000, what: '先出门', source: 'adjust' },
+      { start: 60 * 60000, end: 90 * 60000, what: '临时吃饭', source: 'adjust' },
+    ],
+    0,
+  )
+  const at75 = timeline.filter((x) => 75 * 60000 >= x.start && 75 * 60000 < x.end)
+  assert.equal(at75.length, 1)
+  assert.equal(at75[0].what, '临时吃饭')
+  assert.equal(segmentAt(timeline, 100 * 60000).what, '先出门')
+})
+
+test('zoned day boundaries and tomorrow survive DST transitions', () => {
+  const tz = 'America/New_York'
+  const spring = new Date('2026-03-08T16:00:00Z')
+  const springLocal = zonedNow(spring, tz)
+  assert.equal(new Date(zonedDayStartMs(spring, springLocal, tz)).toISOString(), '2026-03-08T05:00:00.000Z')
+  const springTimeline = buildTimeline(
+    [{ start: 90, end: 210, what: '跨过跳时', phone: '在手' }],
+    [],
+    zonedDayStartMs(spring, springLocal, tz),
+    (minute) => zonedDateTimeMs('2026-03-08', minute, tz),
+  )
+  assert.equal(springTimeline[0].end - springTimeline[0].start, 60 * 60000)
+
+  const fall = new Date('2026-11-01T04:30:00Z')
+  assert.equal(zonedNow(addZonedDays(fall, tz, 1), tz).ymd, '2026-11-02')
 })

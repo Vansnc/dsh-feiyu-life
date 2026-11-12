@@ -13,15 +13,23 @@
 // source as the injected context — the camera does not read the plan file on
 // its own.
 
-import { readFileSync, appendFileSync, unlinkSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { readFileSync, mkdirSync, unlinkSync } from 'node:fs'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
+import { promisify } from 'node:util'
 import { generate, readConfig, zonedNow } from './life.js'
+import { appendRotatingLog, withStreamTimeout } from './runtime.js'
 
 const dshHome = () => process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const logFile = () => join(dshHome(), 'feiyu-life-image.log')
-const log = (m) => { try { appendFileSync(logFile(), new Date().toISOString() + '  ' + m + '\n') } catch {} }
+const execFileAsync = promisify(execFile)
+const log = (m) => {
+  try {
+    mkdirSync(dshHome(), { recursive: true })
+    appendRotatingLog(logFile(), new Date().toISOString() + '  ' + m + '\n')
+  } catch {}
+}
 
 // place -> props that belong there (used by template expansion)
 const propsByPlace = {
@@ -93,13 +101,16 @@ export function liveState(now = new Date()) {
                 : t.hour < 22 ? '天已经黑了，室内开着顶灯和台灯'
                   : '深夜，只开着台灯，窗外是零星的窗'
     const what = r.current?.what || ''
+    const worldPlace = r.world?.moving && r.world?.destination
+      ? `${r.world.location?.name || '路上'}去${r.world.destination.name}的路上`
+      : r.world?.location?.name
     return {
       what,
       outfit: r.current?.outfit || '',
       clock,
       light,
       hour: t.hour,
-      location: locationHint(what),
+      location: worldPlace || locationHint(what),
     }
   } catch {
     return { what: '', outfit: '', clock: '', light: '自然光', hour: 12, location: '宿舍书桌' }
@@ -178,10 +189,12 @@ export async function modelPrompt(ctx, agent, cfg, elements) {
   // Reasoning budget eats the whole allowance on some models; expansion needs none.
   let result
   try {
-    result = await collectStream(ctx, target, system, user, agent, { maxTokens: 2400, reasoningEffort: 'low' })
+    const timeoutMs = Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000
+    result = await collectStream(ctx, target, system, user, agent, { maxTokens: 2400, reasoningEffort: 'low', timeoutMs })
   } catch (e) {
+    if (e && e.code === 'ETIMEDOUT') { log('prompt expand timed out'); return null }
     log('prompt expand with reasoning=low failed, retrying bare: ' + String((e && e.message) || e).slice(0, 140))
-    try { result = await collectStream(ctx, target, system, user, agent, { maxTokens: 3000 }) }
+    try { result = await collectStream(ctx, target, system, user, agent, { maxTokens: 3000, timeoutMs: Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000 }) }
     catch (e2) { log('prompt expand failed: ' + String((e2 && e2.message) || e2)); return null }
   }
   const finish = result.finish && result.finish.kind
@@ -213,7 +226,8 @@ async function collectStream(ctx, target, system, user, agent, opts = {}) {
   let out = ''
   let finish
   let usage
-  for await (const chunk of ctx.llm.stream(req)) {
+  const stream = ctx.llm.stream(req)
+  for await (const chunk of withStreamTimeout(stream, opts.timeoutMs || 60000, 'image prompt model')) {
     if (!chunk) continue
     if (chunk.type === 'text-delta') out += chunk.text
     else if (chunk.type === 'finish') finish = chunk.reason
@@ -243,7 +257,7 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
   let toCheck = imagePath
   try {
     tempImage = join(tmpdir(), `feiyu-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`)
-    execFileSync('convert', [imagePath, '-resize', '768x768>', '-quality', '85', tempImage], { stdio: 'ignore' })
+    await execFileAsync('convert', [imagePath, '-resize', '768x768>', '-quality', '85', tempImage], { timeout: 30000 })
     toCheck = tempImage
   } catch { toCheck = imagePath }
   let imageRef
@@ -287,10 +301,12 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
 
   let result
   try {
-    result = await collectStream(ctx, target, system, user, agent, { maxTokens: 4000, reasoningEffort: 'low', image: imageRef })
+    const timeoutMs = Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000
+    result = await collectStream(ctx, target, system, user, agent, { maxTokens: 4000, reasoningEffort: 'low', image: imageRef, timeoutMs })
   } catch (e) {
     log('check call failed: ' + String((e && e.message) || e).slice(0, 160))
-    try { result = await collectStream(ctx, target, system, user, agent, { maxTokens: 5000, image: imageRef }) } catch { return null }
+    if (e && e.code === 'ETIMEDOUT') return null
+    try { result = await collectStream(ctx, target, system, user, agent, { maxTokens: 5000, image: imageRef, timeoutMs: Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000 }) } catch { return null }
   }
   const text = String(result?.out || '').trim()
   const block = text.match(/\{[\s\S]*\}/)
@@ -316,3 +332,4 @@ export async function generatePrompt(ctx, agent, cfg, args) {
   }
   return { prompt: templatePrompt(cfg, elements), elements, usedModel: false }
 }
+

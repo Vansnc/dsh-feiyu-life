@@ -12,9 +12,10 @@
 // Identifiers are English. Persisted config keys stay Chinese because they
 // are the settings contract shown in the UI.
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 
 const factsDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'feiyu-life-facts')
 
@@ -43,7 +44,41 @@ export function writeFacts(ymd, list) {
 /** One adjustment segment (start/end in ms). An older adjustment with the same start is replaced. */
 export function addAdjustment(ymd, fact) {
   const kept = readFacts(ymd).filter((x) => !(x.source === 'adjust' && x.start === fact.start))
-  return writeFacts(ymd, [...kept, fact])
+  const next = {
+    ...fact,
+    id: String(fact.id || randomUUID()),
+    createdAt: Number(fact.createdAt) || Date.now(),
+    source: 'adjust',
+  }
+  return writeFacts(ymd, [...kept, next])
+}
+
+export function listAdjustments(ymd) {
+  return readFacts(ymd).map((fact, index) => ({ ...fact, index }))
+}
+
+/** Delete one explicit adjustment. Old files without ids remain deletable by index. */
+export function removeAdjustment(ymd, selector = {}) {
+  const list = readFacts(ymd)
+  const index = Number.isInteger(selector.index) ? selector.index : -1
+  const id = String(selector.id || '')
+  const next = list.filter((fact, i) => id ? String(fact.id || '') !== id : i !== index)
+  if (next.length === list.length) return false
+  return writeFacts(ymd, next)
+}
+
+/** Remove expired per-day adjustment files. */
+export function cleanupFacts(retentionDays = 180, now = Date.now()) {
+  const cutoff = now - Math.max(7, Number(retentionDays) || 180) * 86400000
+  let removed = 0
+  try {
+    for (const name of readdirSync(factsDir())) {
+      if (!/^\d{4}-\d{2}-\d{2}\.json$/.test(name)) continue
+      const path = join(factsDir(), name)
+      try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
+    }
+  } catch {}
+  return removed
 }
 
 /** Punch holes in base segments wherever cover segments overlap. */
@@ -70,16 +105,34 @@ function overlay(base, cover) {
  * Plan items (minute units) + adjustments (ms) -> real timeline (ms segments).
  * The plan is the default truth; adjustments override it.
  */
-export function buildTimeline(planItems, facts, dayStartMs) {
-  const base = (planItems || []).map((x) => ({
-    start: dayStartMs + (Number(x.start) || 0) * 60000,
-    end: dayStartMs + (Number(x.end) || 0) * 60000,
-    what: x.what || '',
-    phone: x.phone || '在手',
-    outfit: x.outfit || '',
-    source: 'plan',
-  }))
-  const cover = (facts || []).filter((f) => f && Number.isFinite(f.end) && f.end > f.start)
+export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute) => dayStartMs + minute * 60000) {
+  const base = (planItems || []).flatMap((x) => {
+    const start = Number(x && x.start)
+    const end = Number(x && x.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return []
+    return [{
+      start: minuteToMs(start),
+      end: minuteToMs(end),
+      what: String(x.what || ''),
+      phone: String(x.phone || '在手'),
+      outfit: String(x.outfit || ''),
+      source: 'plan',
+    }]
+  })
+  const valid = (facts || []).filter((f) => f && Number.isFinite(f.start) && Number.isFinite(f.end) && f.end > f.start)
+  // Facts are stored oldest -> newest. Each newer adjustment punches a hole in
+  // older ones too, so one instant can never match two adjustment segments.
+  let cover = []
+  for (const fact of valid) {
+    cover = overlay(cover, [{
+      start: fact.start,
+      end: fact.end,
+      what: String(fact.what || ''),
+      phone: String(fact.phone || '在手'),
+      outfit: String(fact.outfit || ''),
+      source: 'adjust',
+    }])
+  }
   return overlay(base, cover)
 }
 
@@ -99,3 +152,4 @@ export function nextSegment(timeline, nowMs) {
   const upcoming = timeline.filter((x) => x.start > nowMs && !/睡/.test(x.what)).sort((a, b) => a.start - b.start)
   return upcoming[0] || null
 }
+

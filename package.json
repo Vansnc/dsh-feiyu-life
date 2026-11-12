@@ -1,7 +1,7 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "0.8.0",
-  "description": "大肥鱼的生活（DSH 插件）：每日剧本 + 时序状态机，注入今天/此刻/早些时候/接下来；相机（shoot 出图 + 出图自检）复用同一份生活状态，设置页「鱼的生活」里带此刻/课表/身体/照片等页签。",
+  "version": "0.10.0",
+  "description": "大肥鱼的生活（DSH 插件）：每日剧本 + 时序状态机 + 二维生活地图；角色会在地点间移动并显示行为动效，对话与相机复用同一份世界状态。",
   "type": "module",
   "license": "MIT",
   "author": "Vansnc",
@@ -27,7 +27,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check client.js",
+    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check client.js",
     "test": "node --test"
   },
   "exports": {
@@ -44,6 +44,8 @@
     "image-prompt.js",
     "life.js",
     "state.js",
+    "world.js",
+    "runtime.js",
     "plan.js",
     "gen.js",
     "client.js",

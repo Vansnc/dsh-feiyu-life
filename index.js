@@ -20,39 +20,29 @@
 import { existsSync, readFileSync } from 'node:fs'
 import {
   readConfig, saveConfig, generate, validateConfig, CONFIG_PATH,
-  zonedNow, zonedDayStartMs, todayCalendar, todayDeviation,
+  zonedNow, zonedDateTimeMs, addZonedDays, todayCalendar, todayDeviation, menstrualDay,
 } from './life.js'
-import { dayType, dailyPlan, planPath, writePlan, deletePlan } from './plan.js'
-import { addAdjustment } from './state.js'
+import {
+  dayType, dailyPlan, planPath, writePlan, deletePlan, archivePlan,
+  restoreLatestPlan, listPlanHistory, cleanupPlans,
+} from './plan.js'
+import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
-import { registerImage } from './image.js'
+import { registerImage, readImageConfig, cleanupPhotos } from './image.js'
 
 export const name = 'feiyu-life'
-export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'llm', 'tools', 'attachments']
+export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connection', 'llm', 'tools', 'attachments']
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
-
-/** Menstrual cycle day (0 = not on period). */
-function periodDay(cfg, ymd) {
-  const p = cfg.经期 || {}
-  const start = /^\d{4}-\d{2}-\d{2}$/.test(String(p.起始 || '')) ? Date.parse(String(p.起始) + 'T00:00:00Z') : NaN
-  if (!Number.isFinite(start)) return 0
-  const now = Date.parse(ymd + 'T00:00:00Z')
-  if (!Number.isFinite(now)) return 0
-  const days = Math.floor((now - start) / 86400000)
-  const cycle = Math.max(1, Math.round(Number(p.周期) || 29))
-  const length = Math.max(1, Math.round(Number(p.天数) || 5))
-  const pos = ((days % cycle) + cycle) % cycle
-  return pos < length ? pos + 1 : 0
-}
+const AVATAR_FILE = new URL('./assets/character-actions.png', import.meta.url)
 
 /** Body/state hint passed to the model when writing a day. */
 function bodyHint(cfg, t, deviation = {}) {
   const detour = deviation.flat ? '今天想躺平，基本不出门'
     : deviation.outing ? '今天临时想出门走走'
       : deviation.skipAfternoon ? '今天不想去下午的课' : ''
-  const d = periodDay(cfg, t.ymd)
+  const d = menstrualDay(cfg, t.ymd)
   const body = d && d <= 3 ? '经期头几天，腰酸、想吃甜的、没力气'
     : d ? '经期后段，肚子还坠着' : ''
   return [body, detour].filter(Boolean).join('；')
@@ -131,6 +121,8 @@ export function apply(ctx) {
             what: { type: 'string', description: '改成在做什么（短句，例如：在便利店买布丁）' },
             from: { type: 'string', description: '从几点开始（HH:MM，不填=现在）' },
             duration: { type: 'number', description: '持续多少分钟，默认 90' },
+            outfit: { type: 'string', description: '这段时间穿什么（可选）' },
+            phone: { type: 'string', enum: ['在手', '静音', '在床头', '不在手边'], description: '这段时间的手机状态（可选）' },
           },
           required: ['what'],
           additionalProperties: false,
@@ -148,17 +140,19 @@ export function apply(ctx) {
             if (!what) return { ok: false, say: '没说要改成什么' }
             let startMinute = t.minuteOfDay
             const m = /^(\d{1,2}):(\d{2})$/.exec(String(args.from || '').trim())
-            if (m && Number(m[1]) <= 23 && Number(m[2]) <= 59) startMinute = Number(m[1]) * 60 + Number(m[2])
+            if (args.from && (!m || Number(m[1]) > 23 || Number(m[2]) > 59)) return { ok: false, say: '开始时间要写成有效的 HH:MM' }
+            if (m) startMinute = Number(m[1]) * 60 + Number(m[2])
             const duration = Math.max(15, Math.min(360, Number(args.duration) || 90))
-            const dayStartMs = zonedDayStartMs(now, t)
-            addAdjustment(t.ymd, {
-              start: dayStartMs + startMinute * 60000,
-              end: dayStartMs + Math.min(1440, startMinute + duration) * 60000,
+            const tz = String(cfg.时区 || 'Asia/Shanghai')
+            const ok = addAdjustment(t.ymd, {
+              start: zonedDateTimeMs(t.ymd, startMinute, tz),
+              end: zonedDateTimeMs(t.ymd, Math.min(1440, startMinute + duration), tz),
               what,
-              phone: '在手',
-              outfit: '',
+              phone: ['在手', '静音', '在床头', '不在手边'].includes(args.phone) ? args.phone : '在手',
+              outfit: String(args.outfit || '').trim().slice(0, 24),
               source: 'adjust',
             })
+            if (!ok) return { ok: false, say: '没能把调整写进状态文件' }
             return { ok: true, say: `记下了：${clockOf(startMinute)} 起，${what}` }
           } catch (e) { return { ok: false, say: '改失败：' + String((e && e.message) || e) } }
         },
@@ -180,7 +174,8 @@ export function apply(ctx) {
     const cfg = readConfig()
     const tz = String(cfg.时区 || 'Asia/Shanghai')
     const t = zonedNow(when, tz)
-    if (existsSync(planPath(t.ymd)) || writing.has(t.ymd)) return
+    if (existsSync(planPath(t.ymd))) return true
+    if (writing.has(t.ymd)) return false
     writing.add(t.ymd)
     try {
       const calendar = todayCalendar(cfg, t)
@@ -201,19 +196,22 @@ export function apply(ctx) {
         })
       }
       if (result) {
-        writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })
+        if (!writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })) return false
         try { console.log('[feiyu-life] plan written by model: ' + t.ymd) } catch {}
       } else {
         const fallback = dailyPlan(cfg, t, calendar, deviation, type)
-        writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })
+        if (!writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })) return false
         try { console.log('[feiyu-life] plan fell back to template: ' + t.ymd) } catch {}
       }
+      return true
     } catch (e) {
       try { console.log('[feiyu-life] plan write failed: ' + String((e && e.message) || e)) } catch {}
+      return false
     } finally { writing.delete(t.ymd) }
   }
   const ensurePlan = async (now) => {
-    await Promise.all([ensurePlanFor(now), ensurePlanFor(new Date(now.getTime() + 86400000))])
+    const tz = String(readConfig().时区 || 'Asia/Shanghai')
+    await Promise.all([ensurePlanFor(now), ensurePlanFor(addZonedDays(now, tz, 1))])
   }
 
   const tick = () => {
@@ -242,14 +240,18 @@ export function apply(ctx) {
   // ── Settings page endpoints ──────────────────────────────────────────
   const onlyOwner = (handler) => async (req, res) => {
     try {
-      const connection = ctx.get('connection')
-      const rejection = connection && typeof connection.requestRejection === 'function' ? connection.requestRejection(req) : undefined
-      if (rejection === 401 || rejection === 403) {
-        res.writeHead(rejection, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-        res.end(JSON.stringify({ ok: false, error: rejection === 401 ? 'authentication_required' : 'forbidden' }))
+      const rejection = ctx.connection.requestRejection(req)
+      if (rejection !== undefined) {
+        const code = Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403
+        res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ ok: false, error: code === 401 ? 'authentication_required' : 'forbidden' }))
         return
       }
-    } catch {}
+    } catch {
+      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ ok: false, error: 'connection_guard_unavailable' }))
+      return
+    }
     return handler(req, res)
   }
 
@@ -267,9 +269,26 @@ export function apply(ctx) {
     try { return JSON.parse(body || '{}') } catch { return undefined }
   }
 
+  const adjustmentPayload = (cfg, at) => {
+    const tz = String(cfg.时区 || 'Asia/Shanghai')
+    const day = zonedNow(at instanceof Date ? at : new Date(at), tz)
+    return listAdjustments(day.ymd).map((fact) => {
+      const start = zonedNow(new Date(fact.start), tz)
+      const end = zonedNow(new Date(fact.end), tz)
+      return {
+        id: String(fact.id || ''), index: fact.index, date: day.ymd,
+        start: start.minuteOfDay,
+        end: end.ymd === day.ymd ? end.minuteOfDay : 1440,
+        what: String(fact.what || ''), phone: String(fact.phone || '在手'),
+        outfit: String(fact.outfit || ''), createdAt: Number(fact.createdAt) || 0,
+      }
+    })
+  }
+
   const statePayload = (now) => {
     const cfg = readConfig()
     const r = generate(cfg, now)
+    const t = zonedNow(now instanceof Date ? now : new Date(now), String(cfg.时区 || 'Asia/Shanghai'))
     return {
       ok: true,
       config: cfg,
@@ -277,6 +296,8 @@ export function apply(ctx) {
       timeline: r.timeline || [],
       currentMinute: r.currentMinute || 0,
       current: r.current || null,
+      world: r.world || null,
+      adjustments: adjustmentPayload(cfg, now),
       meta: {
         dayType: r.dayType || null,
         calendar: calendarLabel(r.calendar || {}),
@@ -288,6 +309,7 @@ export function apply(ctx) {
           title: r.plan.title || '',
           model: r.plan.model || '',
         } : null,
+        planHistoryCount: listPlanHistory(t.ymd).length,
       },
       configPath: CONFIG_PATH,
       time: (now instanceof Date ? now : new Date()).toISOString(),
@@ -303,6 +325,25 @@ export function apply(ctx) {
         try { return reply(res, 200, statePayload(new Date())) } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: state')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/avatar',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const data = readFileSync(AVATAR_FILE)
+          res.writeHead(200, {
+            'content-type': 'image/png',
+            'content-length': data.length,
+            'cache-control': 'private, max-age=86400',
+          })
+          res.end(data)
+        } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_not_found' }) }
+      }),
+    }), 'feiyu-life: avatar')
   } catch {}
 
   try {
@@ -341,6 +382,8 @@ export function apply(ctx) {
             timeline: r.timeline || [],
             currentMinute: r.currentMinute || 0,
             current: r.current || null,
+            world: r.world || null,
+            adjustments: adjustmentPayload(readConfig(), at),
             meta: {
               dayType: r.dayType || null,
               calendar: calendarLabel(r.calendar || {}),
@@ -350,6 +393,7 @@ export function apply(ctx) {
                 date: r.plan.date || '', source: r.plan.source || 'preview',
                 title: r.plan.title || '', model: r.plan.model || '',
               } : null,
+              planHistoryCount: listPlanHistory(zonedNow(at, String(readConfig().时区 || 'Asia/Shanghai')).ymd).length,
             },
             time: at.toISOString(),
           })
@@ -368,17 +412,71 @@ export function apply(ctx) {
           const cfg = readConfig()
           const now = new Date()
           const t = zonedNow(now, String(cfg.时区 || 'Asia/Shanghai'))
+          const hadPlan = existsSync(planPath(t.ymd))
+          const archived = archivePlan(t.ymd)
+          if (hadPlan && !archived) return reply(res, 500, { ok: false, error: 'could_not_archive_current_plan' })
           deletePlan(t.ymd)
-          await ensurePlanFor(now)
+          const ok = await ensurePlanFor(now)
+          if (!ok || !existsSync(planPath(t.ymd))) {
+            if (archived) restoreLatestPlan(t.ymd)
+            return reply(res, 500, { ok: false, error: 'regeneration_failed_previous_plan_restored' })
+          }
           return reply(res, 200, statePayload(now))
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: regenerate')
   } catch {}
 
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/undo-regenerate',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const now = new Date()
+          const cfg = readConfig()
+          const t = zonedNow(now, String(cfg.时区 || 'Asia/Shanghai'))
+          if (!restoreLatestPlan(t.ymd)) return reply(res, 404, { ok: false, error: 'no_plan_history' })
+          return reply(res, 200, statePayload(now))
+        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
+      }),
+    }), 'feiyu-life: undo regenerate')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/adjustments/delete',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        let body
+        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
+        if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(String(body.date || ''))) return reply(res, 400, { ok: false, error: 'bad date' })
+        const selector = { id: String(body.id || ''), index: Number.isInteger(body.index) ? body.index : -1 }
+        if (!selector.id && selector.index < 0) return reply(res, 400, { ok: false, error: 'bad selector' })
+        if (!removeAdjustment(String(body.date), selector)) return reply(res, 404, { ok: false, error: 'adjustment_not_found' })
+        return reply(res, 200, statePayload(new Date()))
+      }),
+    }), 'feiyu-life: delete adjustment')
+  } catch {}
+
   // 相机（原 dsh-feiyu-image）：shoot 工具 + /dsh-feiyu-image/* 设置页接口
   try { registerImage(ctx) } catch (e) {
     try { ctx.logger?.warn?.('feiyu-life: 相机没挂上 ' + String((e && e.message) || e)) } catch {}
   }
+
+  const maintain = () => {
+    try {
+      const cfg = readConfig()
+      cleanupPlans(cfg.历史保留天数)
+      cleanupFacts(cfg.历史保留天数)
+      cleanupPhotos(readImageConfig())
+    } catch (e) {
+      try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}
+    }
+  }
+  try { setTimeout(maintain, 15000) } catch {}
+  try { ctx.effect(() => ctx.interval(maintain, 24 * 60 * 60 * 1000)) } catch {}
 }
 
