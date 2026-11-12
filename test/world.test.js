@@ -47,3 +47,31 @@ test('map configuration clamps coordinates and can disable commuting', () => {
     { start: 10, end: 20, what: '乙' },
   ], cfg).some((x) => x.source === 'travel'), false)
 })
+
+
+test('cafe writing stays off campus and uses the study animation', () => {
+  const text = '去咖啡店接着改稿'
+  assert.equal(locationFor(text, defaultWorldConfig), 'outdoor')
+  assert.equal(behaviorFor(text), 'study')
+
+  const existingV3Config = {
+    ...defaultWorldConfig,
+    地点: defaultWorldConfig.地点.map((node) => ({
+      ...node,
+      关键词: node.关键词.filter((word) => !/咖啡/.test(word)),
+    })),
+  }
+  assert.equal(locationFor(text, existingV3Config), 'outdoor')
+
+  const timeline = addWorldToTimeline([
+    { start: 0, end: 15 * 60000, what: '在便利店拆快递', phone: '在手', source: 'plan' },
+    { start: 15 * 60000, end: 105 * 60000, what: text, phone: '在手', source: 'plan' },
+  ], defaultWorldConfig)
+  const travel = timeline.find((x) => x.source === 'travel')
+  assert.ok(travel)
+  assert.equal(travel.from, 'shop')
+  assert.equal(travel.to, 'outdoor')
+  assert.equal(timeline.at(-1).locationId, 'outdoor')
+  assert.equal(timeline.at(-1).behavior, 'study')
+})
+
