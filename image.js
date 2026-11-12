@@ -516,7 +516,15 @@ export function registerImage(ctx) {
       schema: { type: 'object', properties: { ok: { type: 'boolean' }, image: { type: 'string' }, say: { type: 'string' }, prompt: { type: 'string' }, check: { type: 'object' }, notes: { type: 'array' } }, additionalProperties: true },
       render: (_a, v) => [{ type: 'text', text: String(v?.say || '') + (v?.image ? '\n图片：' + v.image : '') }],
     },
-    async execute(args = {}) {
+    async execute(rawArgs = {}) {
+      // 模型有时会按描述里的中文字段名传参（类型/提示/穿着…），两种都认
+      const args = {
+        type: rawArgs.type ?? rawArgs.类型,
+        hint: rawArgs.hint ?? rawArgs.提示,
+        location: rawArgs.location ?? rawArgs.地点,
+        outfit: rawArgs.outfit ?? rawArgs.穿着,
+        expression: rawArgs.expression ?? rawArgs.表情,
+      }
       const cfg = readImageConfig()
       if (!cfg.总开关) return { ok: false, say: '相机没开' }
       const blocked = shotBlocked(cfg)
