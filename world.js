@@ -73,7 +73,9 @@ export function behaviorFor(what) {
   const text = String(what || '')
   if (/睡|午睡|眯/.test(text)) return 'sleep'
   if (/走|路上|出发|去往|回宿舍|地铁|公交/.test(text)) return 'walk'
-  if (/吃|食堂|早餐|午饭|晚饭|外卖|奶茶/.test(text)) return 'eat'
+  // 宠物语境里的「吃」是猫在吃（「看它吃完半根火腿肠」），不是她在吃
+  const watchingPet = /猫|狗|喂|看它|摸它|撸它/.test(text)
+  if (!watchingPet && /吃饭|吃早饭|吃午饭|吃晚饭|吃面|吃零食|吃外卖|食堂|早餐|午饭|晚饭|奶茶/.test(text)) return 'eat'
   if (/上课|自习|背书|复习|看书|作业|课件|写稿|改稿|写作|码字|论文|画|剪片|修图/.test(text)) return 'study'
   if (/拍照|相机|自拍/.test(text)) return 'photo'
   if (/洗澡|洗漱/.test(text)) return 'bath'
