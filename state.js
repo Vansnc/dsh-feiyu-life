@@ -12,9 +12,10 @@
 // Identifiers are English. Persisted config keys stay Chinese because they
 // are the settings contract shown in the UI.
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 
 const factsDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'feiyu-life-facts')
 
@@ -43,7 +44,41 @@ export function writeFacts(ymd, list) {
 /** One adjustment segment (start/end in ms). An older adjustment with the same start is replaced. */
 export function addAdjustment(ymd, fact) {
   const kept = readFacts(ymd).filter((x) => !(x.source === 'adjust' && x.start === fact.start))
-  return writeFacts(ymd, [...kept, fact])
+  const next = {
+    ...fact,
+    id: String(fact.id || randomUUID()),
+    createdAt: Number(fact.createdAt) || Date.now(),
+    source: 'adjust',
+  }
+  return writeFacts(ymd, [...kept, next])
+}
+
+export function listAdjustments(ymd) {
+  return readFacts(ymd).map((fact, index) => ({ ...fact, index }))
+}
+
+/** Delete one explicit adjustment. Old files without ids remain deletable by index. */
+export function removeAdjustment(ymd, selector = {}) {
+  const list = readFacts(ymd)
+  const index = Number.isInteger(selector.index) ? selector.index : -1
+  const id = String(selector.id || '')
+  const next = list.filter((fact, i) => id ? String(fact.id || '') !== id : i !== index)
+  if (next.length === list.length) return false
+  return writeFacts(ymd, next)
+}
+
+/** Remove expired per-day adjustment files. */
+export function cleanupFacts(retentionDays = 180, now = Date.now()) {
+  const cutoff = now - Math.max(7, Number(retentionDays) || 180) * 86400000
+  let removed = 0
+  try {
+    for (const name of readdirSync(factsDir())) {
+      if (!/^\d{4}-\d{2}-\d{2}\.json$/.test(name)) continue
+      const path = join(factsDir(), name)
+      try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
+    }
+  } catch {}
+  return removed
 }
 
 /** Punch holes in base segments wherever cover segments overlap. */

@@ -202,6 +202,7 @@ window.__ModuleLoader__.load({
       const [currentMinute, setCurrentMinute] = useState(0)
       const [current, setCurrent] = useState(null)
       const [meta, setMeta] = useState(null)
+      const [adjustments, setAdjustments] = useState([])
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
 
       const load = async (preserveConfig = false) => {
@@ -218,6 +219,7 @@ window.__ModuleLoader__.load({
           setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null)
           setMeta(data.meta || null)
+          setAdjustments(data.adjustments || [])
           setError('')
         } catch (e) { setError('读不到配置：' + e.message) }
       }
@@ -238,6 +240,7 @@ window.__ModuleLoader__.load({
           setConfig(data.config); setPreview(data.preview)
           setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setSavedConfig(clone(data.config)); setCurrent(data.current || null); setMeta(data.meta || null)
+          setAdjustments(data.adjustments || [])
           setIssues(data.issues || [])
           setMessage((data.issues || []).length ? `已保存，有 ${(data.issues || []).length} 项配置提示` : '已保存，下一轮就用新配置')
         } catch (e) { setMessage('保存失败：' + e.message) }
@@ -257,8 +260,32 @@ window.__ModuleLoader__.load({
           const data = await postJson(API + '/regenerate', {})
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null); setMeta(data.meta || null)
+          setAdjustments(data.adjustments || [])
           setMessage('今日剧本已重新生成')
         } catch (e) { setMessage('重新生成失败：' + e.message) }
+        setBusy(false)
+      }
+
+      const undoRegenerate = async () => {
+        setBusy(true); setMessage('正在恢复上一次剧本…')
+        try {
+          const data = await postJson(API + '/undo-regenerate', {})
+          setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
+          setCurrent(data.current || null); setMeta(data.meta || null); setAdjustments(data.adjustments || [])
+          setMessage('已撤销上一次重新生成')
+        } catch (e) { setMessage('撤销失败：' + e.message) }
+        setBusy(false)
+      }
+
+      const deleteAdjustment = async (item) => {
+        if (!window.confirm(`撤销 ${clockOf(item.start)}–${clockOf(item.end)} 的「${item.what}」吗？`)) return
+        setBusy(true); setMessage('正在撤销临时调整…')
+        try {
+          const data = await postJson(API + '/adjustments/delete', { date: item.date, id: item.id, index: item.index })
+          setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
+          setCurrent(data.current || null); setMeta(data.meta || null); setAdjustments(data.adjustments || [])
+          setMessage('这条临时调整已撤销')
+        } catch (e) { setMessage('撤销调整失败：' + e.message) }
         setBusy(false)
       }
 
@@ -268,6 +295,7 @@ window.__ModuleLoader__.load({
           const data = await getJson(API + '/preview?ts=' + ts)
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null); setMeta(data.meta || null)
+          setAdjustments(data.adjustments || [])
           setMessage('以下是在 ' + new Date(ts).toLocaleString() + ' 算出来的')
         } catch (e) { setMessage('预览失败：' + e.message) }
       }
@@ -289,6 +317,16 @@ window.__ModuleLoader__.load({
       const nowPage = h('div', { 'data-fl-sec': '' },
         h('div', { 'data-fl-h': '' }, '今天的时序'),
         h(TimelineChart, { timeline, currentMinute }),
+        h('div', { 'data-fl-h': '' }, '临时调整记录'),
+        adjustments.length ? h('table', { 'data-fl-table': '' },
+          h('thead', null, h('tr', null,
+            h('th', null, '时间'), h('th', null, '调整为'), h('th', null, '手机 / 穿着'), h('th', null, ''))),
+          h('tbody', null, adjustments.map((item) => h('tr', { key: item.id || item.index },
+            h('td', null, `${clockOf(item.start)}–${clockOf(item.end)}`),
+            h('td', null, item.what),
+            h('td', null, [item.phone, item.outfit].filter(Boolean).join(' / ') || '—'),
+            h('td', null, h('button', { 'data-fl-del': '', disabled: busy, onClick: () => deleteAdjustment(item) }, '撤销'))))))
+          : h('div', { 'data-fl-empty': '' }, '今天还没有用 life_adjust 改过安排'),
         previewBlock,
         h('div', { 'data-fl-sec': '' },
           h('div', { 'data-fl-h': '' }, '总开关与时间'),
@@ -299,6 +337,11 @@ window.__ModuleLoader__.load({
           h('div', { 'data-fl-row': '' },
             h('span', { 'data-fl-note': '' }, '时区'),
             h(Field, { value: config.时区, width: 'data-fl-narrow', onChange: (v) => patch(['时区'], v) })),
+          h('div', { 'data-fl-row': '' },
+            h('span', { 'data-fl-note': '' }, '模型硬超时（秒）'),
+            h(Field, { value: config.模型超时秒, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['模型超时秒'], Number(v) || 60) }),
+            h('span', { 'data-fl-note': '' }, '剧本与调整保留（天）'),
+            h(Field, { value: config.历史保留天数, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['历史保留天数'], Number(v) || 180) })),
           h('label', { 'data-fl-sec': '' },
             h('span', { 'data-fl-note': '' }, '只在这些工作区注入（每行一个目录；留空 = 所有顶层会话）'),
             h('textarea', {
@@ -496,6 +539,10 @@ window.__ModuleLoader__.load({
           h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
           h('button', { 'data-fl-btn': '', disabled: busy, onClick: reload }, '重新读取'),
           tab === 'now' ? h('button', { 'data-fl-btn': '', disabled: busy, onClick: regenerate }, '重新生成今日剧本') : null,
+          tab === 'now' ? h('button', {
+            'data-fl-btn': '', disabled: busy || !(meta && meta.planHistoryCount), onClick: undoRegenerate,
+            title: meta && meta.planHistoryCount ? `可恢复 ${meta.planHistoryCount} 个历史版本` : '暂无可恢复版本',
+          }, '撤销上次重生成') : null,
           dirty ? h('span', { 'data-fl-dirty': '' }, '有未保存修改') : null,
           h('span', { 'data-fl-msg': '' }, message)),
         issues.length ? h('div', { 'data-fl-warn': '' },
@@ -683,11 +730,15 @@ window.__ModuleLoader__.load({
               h('div', { 'data-fi-note': '', style: { flex: 1 } }, '穿着默认取生活线里「此刻」那一段（不用填）；一张 60–100 秒。'))),
 
           h('div', { 'data-fi-sec': '' },
-            h('div', { 'data-fi-h': '' }, '节流'),
+            h('div', { 'data-fi-h': '' }, '节流与存储'),
             h('div', { 'data-fi-row': '' },
               h(Label, { label: '每天最多' }, h('input', { type: 'number', value: config.每日上限, onChange: editNum('每日上限') })),
               h(Label, { label: '两次最短间隔（秒）' }, h('input', { type: 'number', value: config.最短间隔秒, onChange: editNum('最短间隔秒') })),
               h(Label, { label: '存图目录（留空=默认）' }, h('input', { value: config.存图目录 || '', onChange: edit('存图目录'), style: { width: 320 } }))),
+            h('div', { 'data-fi-row': '' },
+              h(Label, { label: '提示词/自检超时（秒）' }, h('input', { type: 'number', min: 10, max: 300, value: config.模型超时秒, onChange: editNum('模型超时秒') })),
+              h(Label, { label: '生图/下载超时（秒）' }, h('input', { type: 'number', min: 30, max: 600, value: config.生图超时秒, onChange: editNum('生图超时秒') })),
+              h(Label, { label: '照片保留（天）' }, h('input', { type: 'number', min: 1, max: 3650, value: config.照片保留天数, onChange: editNum('照片保留天数') }))),
             h('div', { 'data-fi-row': '' },
               h('label', { 'data-fi-row': '' },
                 h('input', { type: 'checkbox', checked: config.出图自检 !== false, onChange: editCheck('出图自检') }),

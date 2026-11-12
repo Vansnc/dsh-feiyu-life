@@ -10,11 +10,16 @@
 // Everything is seeded pseudo-random: no network, no tokens, survives restarts.
 // Identifiers are English. Persisted config keys stay Chinese.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync } from 'node:fs'
+import {
+  readFileSync, writeFileSync, mkdirSync, existsSync, renameSync, unlinkSync,
+  readdirSync, statSync, copyFileSync, rmdirSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
 const plansDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'feiyu-life-days')
+const historyDir = (ymd) => join(plansDir(), 'history', ymd)
+const dateFile = /^\d{4}-\d{2}-\d{2}\.json$/
 
 export function toMinute(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim())
@@ -172,6 +177,73 @@ export function writePlan(ymd, data) {
 
 export function deletePlan(ymd) {
   try { unlinkSync(planPath(ymd)); return true } catch (e) { return e && e.code === 'ENOENT' }
+}
+
+/** Keep the current file before regeneration so the user can undo it. */
+export function archivePlan(ymd) {
+  const source = planPath(ymd)
+  if (!existsSync(source)) return null
+  try {
+    const dir = historyDir(ymd)
+    mkdirSync(dir, { recursive: true })
+    const target = join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`)
+    copyFileSync(source, target)
+    return target
+  } catch { return null }
+}
+
+export function listPlanHistory(ymd) {
+  try {
+    return readdirSync(historyDir(ymd))
+      .filter((name) => /^\d{10,}-[a-z0-9]+\.json$/.test(name))
+      .map((name) => {
+        const path = join(historyDir(ymd), name)
+        const st = statSync(path)
+        return { name, path, time: st.mtimeMs }
+      })
+      .sort((a, b) => b.time - a.time)
+  } catch { return [] }
+}
+
+/** Restore and consume the latest pre-regeneration copy. */
+export function restoreLatestPlan(ymd) {
+  const latest = listPlanHistory(ymd)[0]
+  if (!latest) return false
+  try {
+    const data = JSON.parse(readFileSync(latest.path, 'utf8'))
+    if (!normalizePlan(data) || !writePlan(ymd, data)) return false
+    unlinkSync(latest.path)
+    return true
+  } catch { return false }
+}
+
+/** Remove expired plans and regeneration snapshots. Returns the number removed. */
+export function cleanupPlans(retentionDays = 180, now = Date.now()) {
+  const cutoff = now - Math.max(7, Number(retentionDays) || 180) * 86400000
+  let removed = 0
+  try {
+    for (const name of readdirSync(plansDir())) {
+      if (!dateFile.test(name)) continue
+      const path = join(plansDir(), name)
+      try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
+    }
+  } catch {}
+  const root = join(plansDir(), 'history')
+  try {
+    for (const ymd of readdirSync(root)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue
+      const dir = join(root, ymd)
+      try {
+        for (const name of readdirSync(dir)) {
+          if (!/^\d{10,}-[a-z0-9]+\.json$/.test(name)) continue
+          const path = join(dir, name)
+          try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
+        }
+        if (!readdirSync(dir).length) rmdirSync(dir)
+      } catch {}
+    }
+  } catch {}
+  return removed
 }
 
 /** Accept both the new English shape and older Chinese-shaped plans. */

@@ -31,11 +31,15 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
+export const LIFE_CONFIG_VERSION = 2
 
 export const defaultConfig = {
+  配置版本: LIFE_CONFIG_VERSION,
   总开关: true,
   时区: 'Asia/Shanghai',
   工作区: [],
+  模型超时秒: 60,
+  历史保留天数: 180,
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
   校历: {
     学期: [
@@ -177,12 +181,15 @@ export function normalizeConfig(input, issues = []) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
   const cfg = { ...copy(defaultConfig), ...raw }
 
+  cfg.配置版本 = LIFE_CONFIG_VERSION
   cfg.总开关 = raw.总开关 !== false
   cfg.时区 = validTimeZone(raw.时区 || defaultConfig.时区) ? String(raw.时区 || defaultConfig.时区) : defaultConfig.时区
   if (raw.时区 && cfg.时区 !== raw.时区) issues.push(`时区「${raw.时区}」无效，已恢复为 ${defaultConfig.时区}`)
   cfg.工作区 = Array.isArray(raw.工作区)
     ? [...new Set(raw.工作区.map((x) => String(x || '').trim()).filter(Boolean))]
     : copy(defaultConfig.工作区)
+  cfg.模型超时秒 = Math.round(clamp(raw.模型超时秒, 10, 300, defaultConfig.模型超时秒))
+  cfg.历史保留天数 = Math.round(clamp(raw.历史保留天数, 7, 3650, defaultConfig.历史保留天数))
 
   const period = raw.经期 && typeof raw.经期 === 'object' ? raw.经期 : {}
   const cycle = Math.round(clamp(period.周期, 1, 120, defaultConfig.经期.周期))
@@ -555,20 +562,41 @@ export function generate(cfg, now = new Date()) {
 
 let cache = { at: 0, cfg: null }
 
+function migrateConfig(raw) {
+  const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  const version = Math.max(0, Math.round(Number(source.配置版本) || 0))
+  const next = { ...source }
+  // v1: calendar/routine defaults became explicit; normalizeConfig fills them.
+  // v2: workspace, timeout and retention became first-class persisted fields.
+  if (version < 2) {
+    if (!Array.isArray(next.工作区)) next.工作区 = []
+    if (next.模型超时秒 === undefined) next.模型超时秒 = defaultConfig.模型超时秒
+    if (next.历史保留天数 === undefined) next.历史保留天数 = defaultConfig.历史保留天数
+  }
+  next.配置版本 = LIFE_CONFIG_VERSION
+  return { value: next, changed: version !== LIFE_CONFIG_VERSION }
+}
+
+function writeConfigFile(value) {
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
+  const tmp = CONFIG_PATH + '.tmp'
+  writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8')
+  renameSync(tmp, CONFIG_PATH)
+}
+
 export function readConfig() {
   try {
     const st = statSync(CONFIG_PATH)
     if (cache.cfg && cache.at === st.mtimeMs) return cache.cfg
     const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
-    const cfg = normalizeConfig(raw)
-    if (!raw.校历) {
-      try { writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8') } catch {}
-    }
+    const migrated = migrateConfig(raw)
+    const cfg = normalizeConfig(migrated.value)
+    if (migrated.changed) writeConfigFile(cfg)
     cache = { at: statSync(CONFIG_PATH).mtimeMs || st.mtimeMs, cfg }
     return cfg
   } catch (e) {
     if (e && e.code === 'ENOENT') {
-      try { mkdirSync(dirname(CONFIG_PATH), { recursive: true }); writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2), 'utf8') } catch {}
+      try { writeConfigFile(defaultConfig) } catch {}
     }
     cache = { at: 0, cfg: defaultConfig }
     return defaultConfig
@@ -578,10 +606,7 @@ export function readConfig() {
 export function saveConfig(patch) {
   const prev = readConfig()
   const next = normalizeConfig({ ...prev, ...(patch && typeof patch === 'object' ? patch : {}) })
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
-  const tmp = CONFIG_PATH + '.tmp'
-  writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8')
-  renameSync(tmp, CONFIG_PATH)
+  writeConfigFile(next)
   cache = { at: 0, cfg: null }
   return next
 }

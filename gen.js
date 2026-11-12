@@ -8,9 +8,10 @@
 //   · once written for a date, never call the model again for it.
 
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { appendRotatingLog, withStreamTimeout } from './runtime.js'
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
 
@@ -18,7 +19,7 @@ const log = (m) => {
   try {
     const d = join(dshHome(), 'feiyu-life.log')
     mkdirSync(dshHome(), { recursive: true })
-    appendFileSync(d, new Date().toISOString() + '  ' + m + '\n')
+    appendRotatingLog(d, new Date().toISOString() + '  ' + m + '\n')
   } catch {}
 }
 
@@ -140,7 +141,8 @@ export async function writeDayWithModel(ctx, agent, params) {
   let out = ''
   const kinds = {}
   try {
-    for await (const chunk of ctx.llm.stream({
+    const timeoutMs = Math.max(10, Math.min(300, Number(params.cfg.模型超时秒) || 60)) * 1000
+    const stream = ctx.llm.stream({
       provider: target.provider,
       model: target.model,
       system,
@@ -148,7 +150,8 @@ export async function writeDayWithModel(ctx, agent, params) {
       sessionId: String((agent && agent.session && agent.session.id) || ''),
       maxTokens: 3000,
       temperature: 0.9,
-    })) {
+    })
+    for await (const chunk of withStreamTimeout(stream, timeoutMs, 'daily plan model')) {
       if (!chunk) continue
       kinds[chunk.type] = (kinds[chunk.type] || 0) + 1
       if (chunk.type === 'text-delta') out += chunk.text

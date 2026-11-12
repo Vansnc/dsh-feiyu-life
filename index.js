@@ -22,10 +22,13 @@ import {
   readConfig, saveConfig, generate, validateConfig, CONFIG_PATH,
   zonedNow, zonedDateTimeMs, addZonedDays, todayCalendar, todayDeviation, menstrualDay,
 } from './life.js'
-import { dayType, dailyPlan, planPath, writePlan, deletePlan } from './plan.js'
-import { addAdjustment } from './state.js'
+import {
+  dayType, dailyPlan, planPath, writePlan, deletePlan, archivePlan,
+  restoreLatestPlan, listPlanHistory, cleanupPlans,
+} from './plan.js'
+import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
-import { registerImage } from './image.js'
+import { registerImage, readImageConfig, cleanupPhotos } from './image.js'
 
 export const name = 'feiyu-life'
 export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connection', 'llm', 'tools', 'attachments']
@@ -170,7 +173,8 @@ export function apply(ctx) {
     const cfg = readConfig()
     const tz = String(cfg.时区 || 'Asia/Shanghai')
     const t = zonedNow(when, tz)
-    if (existsSync(planPath(t.ymd)) || writing.has(t.ymd)) return
+    if (existsSync(planPath(t.ymd))) return true
+    if (writing.has(t.ymd)) return false
     writing.add(t.ymd)
     try {
       const calendar = todayCalendar(cfg, t)
@@ -191,15 +195,17 @@ export function apply(ctx) {
         })
       }
       if (result) {
-        writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })
+        if (!writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })) return false
         try { console.log('[feiyu-life] plan written by model: ' + t.ymd) } catch {}
       } else {
         const fallback = dailyPlan(cfg, t, calendar, deviation, type)
-        writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })
+        if (!writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })) return false
         try { console.log('[feiyu-life] plan fell back to template: ' + t.ymd) } catch {}
       }
+      return true
     } catch (e) {
       try { console.log('[feiyu-life] plan write failed: ' + String((e && e.message) || e)) } catch {}
+      return false
     } finally { writing.delete(t.ymd) }
   }
   const ensurePlan = async (now) => {
@@ -262,9 +268,26 @@ export function apply(ctx) {
     try { return JSON.parse(body || '{}') } catch { return undefined }
   }
 
+  const adjustmentPayload = (cfg, at) => {
+    const tz = String(cfg.时区 || 'Asia/Shanghai')
+    const day = zonedNow(at instanceof Date ? at : new Date(at), tz)
+    return listAdjustments(day.ymd).map((fact) => {
+      const start = zonedNow(new Date(fact.start), tz)
+      const end = zonedNow(new Date(fact.end), tz)
+      return {
+        id: String(fact.id || ''), index: fact.index, date: day.ymd,
+        start: start.minuteOfDay,
+        end: end.ymd === day.ymd ? end.minuteOfDay : 1440,
+        what: String(fact.what || ''), phone: String(fact.phone || '在手'),
+        outfit: String(fact.outfit || ''), createdAt: Number(fact.createdAt) || 0,
+      }
+    })
+  }
+
   const statePayload = (now) => {
     const cfg = readConfig()
     const r = generate(cfg, now)
+    const t = zonedNow(now instanceof Date ? now : new Date(now), String(cfg.时区 || 'Asia/Shanghai'))
     return {
       ok: true,
       config: cfg,
@@ -272,6 +295,7 @@ export function apply(ctx) {
       timeline: r.timeline || [],
       currentMinute: r.currentMinute || 0,
       current: r.current || null,
+      adjustments: adjustmentPayload(cfg, now),
       meta: {
         dayType: r.dayType || null,
         calendar: calendarLabel(r.calendar || {}),
@@ -283,6 +307,7 @@ export function apply(ctx) {
           title: r.plan.title || '',
           model: r.plan.model || '',
         } : null,
+        planHistoryCount: listPlanHistory(t.ymd).length,
       },
       configPath: CONFIG_PATH,
       time: (now instanceof Date ? now : new Date()).toISOString(),
@@ -336,6 +361,7 @@ export function apply(ctx) {
             timeline: r.timeline || [],
             currentMinute: r.currentMinute || 0,
             current: r.current || null,
+            adjustments: adjustmentPayload(readConfig(), at),
             meta: {
               dayType: r.dayType || null,
               calendar: calendarLabel(r.calendar || {}),
@@ -345,6 +371,7 @@ export function apply(ctx) {
                 date: r.plan.date || '', source: r.plan.source || 'preview',
                 title: r.plan.title || '', model: r.plan.model || '',
               } : null,
+              planHistoryCount: listPlanHistory(zonedNow(at, String(readConfig().时区 || 'Asia/Shanghai')).ymd).length,
             },
             time: at.toISOString(),
           })
@@ -363,17 +390,71 @@ export function apply(ctx) {
           const cfg = readConfig()
           const now = new Date()
           const t = zonedNow(now, String(cfg.时区 || 'Asia/Shanghai'))
+          const hadPlan = existsSync(planPath(t.ymd))
+          const archived = archivePlan(t.ymd)
+          if (hadPlan && !archived) return reply(res, 500, { ok: false, error: 'could_not_archive_current_plan' })
           deletePlan(t.ymd)
-          await ensurePlanFor(now)
+          const ok = await ensurePlanFor(now)
+          if (!ok || !existsSync(planPath(t.ymd))) {
+            if (archived) restoreLatestPlan(t.ymd)
+            return reply(res, 500, { ok: false, error: 'regeneration_failed_previous_plan_restored' })
+          }
           return reply(res, 200, statePayload(now))
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: regenerate')
   } catch {}
 
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/undo-regenerate',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const now = new Date()
+          const cfg = readConfig()
+          const t = zonedNow(now, String(cfg.时区 || 'Asia/Shanghai'))
+          if (!restoreLatestPlan(t.ymd)) return reply(res, 404, { ok: false, error: 'no_plan_history' })
+          return reply(res, 200, statePayload(now))
+        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
+      }),
+    }), 'feiyu-life: undo regenerate')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/adjustments/delete',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        let body
+        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
+        if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(String(body.date || ''))) return reply(res, 400, { ok: false, error: 'bad date' })
+        const selector = { id: String(body.id || ''), index: Number.isInteger(body.index) ? body.index : -1 }
+        if (!selector.id && selector.index < 0) return reply(res, 400, { ok: false, error: 'bad selector' })
+        if (!removeAdjustment(String(body.date), selector)) return reply(res, 404, { ok: false, error: 'adjustment_not_found' })
+        return reply(res, 200, statePayload(new Date()))
+      }),
+    }), 'feiyu-life: delete adjustment')
+  } catch {}
+
   // 相机（原 dsh-feiyu-image）：shoot 工具 + /dsh-feiyu-image/* 设置页接口
   try { registerImage(ctx) } catch (e) {
     try { ctx.logger?.warn?.('feiyu-life: 相机没挂上 ' + String((e && e.message) || e)) } catch {}
   }
+
+  const maintain = () => {
+    try {
+      const cfg = readConfig()
+      cleanupPlans(cfg.历史保留天数)
+      cleanupFacts(cfg.历史保留天数)
+      cleanupPhotos(readImageConfig())
+    } catch (e) {
+      try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}
+    }
+  }
+  try { setTimeout(maintain, 15000) } catch {}
+  try { ctx.effect(() => ctx.interval(maintain, 24 * 60 * 60 * 1000)) } catch {}
 }
 
