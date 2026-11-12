@@ -63,6 +63,12 @@ const campusPath = campus ? line(pointsOf(campus), true) : ''
 const majorRoads = roads.filter((way) => majorHighways.has(way.tags.highway))
 const minorRoads = roads.filter((way) => !majorHighways.has(way.tags.highway) && !walkHighways.has(way.tags.highway))
 const walkRoads = roads.filter((way) => walkHighways.has(way.tags.highway))
+const animeTrees = [
+  [255, 132, 25], [303, 233, 22], [365, 152, 19], [449, 198, 23], [520, 184, 18],
+  [692, 190, 22], [742, 287, 19], [785, 347, 23], [672, 386, 18], [520, 389, 21],
+  [419, 391, 18], [291, 383, 21], [171, 322, 18], [809, 228, 17],
+]
+const animeBushes = [[270, 120], [331, 197], [481, 221], [620, 188], [726, 252], [750, 365], [600, 393], [347, 389], [205, 343]]
 
 const baseSvg = `${svgOpen('学院路真实地图底层')}
   <rect width="1000" height="560" fill="#dfe5de"/>
@@ -81,25 +87,40 @@ const baseSvg = `${svgOpen('学院路真实地图底层')}
 
 const animeSvg = `${svgOpen('学院路二次元渲染中层')}
   <defs>
-    <linearGradient id="campus" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e9f3dc"/><stop offset="1" stop-color="#d9ede1"/></linearGradient>
-    <linearGradient id="pitch" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b9dbad"/><stop offset="1" stop-color="#8fc6a0"/></linearGradient>
+    <linearGradient id="campus" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f2f6d8"/><stop offset=".46" stop-color="#dff0d5"/><stop offset="1" stop-color="#cfe9df"/></linearGradient>
+    <linearGradient id="pitch" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c5e7a8"/><stop offset="1" stop-color="#83c89d"/></linearGradient>
     <linearGradient id="water" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b5e5df"/><stop offset="1" stop-color="#79bac7"/></linearGradient>
+    <pattern id="paper" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r="1" fill="#5e9b73" opacity=".12"/><path d="M12 14l3-2" stroke="#fff" stroke-width="1" opacity=".24"/></pattern>
+    <pattern id="field" width="22" height="22" patternUnits="userSpaceOnUse"><path d="M0 22L22 0M-6 6L6-6M16 28L28 16" stroke="#fff" stroke-width="2" opacity=".18"/></pattern>
+    <symbol id="tree" viewBox="0 0 36 42">
+      <path d="M16 29h5l2 11h-9z" fill="#9b7558"/>
+      <circle cx="12" cy="20" r="10" fill="#70ad74"/><circle cx="24" cy="19" r="10" fill="#589b70"/><circle cx="18" cy="11" r="11" fill="#8fc57a"/>
+      <circle cx="14" cy="8" r="3" fill="#dff3b8" opacity=".72"/>
+    </symbol>
+    <symbol id="bush" viewBox="0 0 42 20"><circle cx="10" cy="12" r="8" fill="#7bbd84"/><circle cx="21" cy="8" r="9" fill="#91cb7d"/><circle cx="32" cy="12" r="8" fill="#62aa7c"/><circle cx="19" cy="5" r="2" fill="#fff2ae"/></symbol>
   </defs>
-  ${campusPath ? `<path d="${campusPath}" fill="url(#campus)" stroke="#fff" stroke-opacity=".72" stroke-width="4"/>` : ''}
-  <g fill="url(#pitch)" fill-opacity=".72" stroke="#75a881" stroke-opacity=".32" stroke-width="1.5">
+  ${campusPath ? `<path d="${campusPath}" fill="url(#campus)" stroke="#fffaf0" stroke-width="7"/>` : ''}
+  ${campusPath ? `<path d="${campusPath}" fill="url(#paper)" stroke="#69a17d" stroke-opacity=".56" stroke-width="2"/>` : ''}
+  <g fill="url(#pitch)" fill-opacity=".92" stroke="#5f9f74" stroke-opacity=".50" stroke-width="2.5">
     ${greenAreas.map((way) => `<path d="${line(pointsOf(way), true)}"/>`).join('')}
   </g>
+  <g fill="url(#field)" opacity=".78">${greenAreas.map((way) => `<path d="${line(pointsOf(way), true)}"/>`).join('')}</g>
   <g fill="url(#water)" fill-opacity=".78" stroke="#fff" stroke-opacity=".7" stroke-width="3">
     ${waters.map((way) => `<path d="${line(pointsOf(way), true)}"/>`).join('')}
   </g>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#fff8dc" stroke-width="10" opacity=".9"/>`).join('')}
-    ${minorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#fffbed" stroke-width="4" opacity=".72"/>`).join('')}
-    ${walkRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#7daa8b" stroke-width="1.5" stroke-dasharray="4 5" opacity=".58"/>`).join('')}
+    ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#70a68b" stroke-width="14" opacity=".36"/>`).join('')}
+    ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#fff2c9" stroke-width="9" opacity=".96"/>`).join('')}
+    ${minorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#77aa8c" stroke-width="7" opacity=".28"/>`).join('')}
+    ${minorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#fff8dc" stroke-width="4" opacity=".92"/>`).join('')}
+    ${walkRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#4f997a" stroke-width="2" stroke-dasharray="4 5" opacity=".72"/>`).join('')}
   </g>
-  <g fill="#7aab72" opacity=".55">
-    <circle cx="346" cy="108" r="5"/><circle cx="362" cy="102" r="7"/><circle cx="379" cy="111" r="5"/>
-    <circle cx="642" cy="447" r="6"/><circle cx="659" cy="441" r="8"/><circle cx="677" cy="449" r="5"/>
+  <g opacity=".92">
+    ${animeTrees.map(([x, y, size]) => `<use href="#tree" x="${x - size / 2}" y="${y - size}" width="${size}" height="${(size * 42 / 36).toFixed(1)}"/>`).join('')}
+    ${animeBushes.map(([x, y]) => `<use href="#bush" x="${x - 18}" y="${y - 8}" width="36" height="17"/>`).join('')}
+  </g>
+  <g fill="#fff4ad" stroke="#e2a7a1" stroke-width="1" opacity=".86">
+    <circle cx="347" cy="118" r="3"/><circle cx="357" cy="112" r="2"/><circle cx="641" cy="401" r="3"/><circle cx="650" cy="396" r="2"/><circle cx="247" cy="364" r="2.5"/>
   </g>
 </svg>`
 

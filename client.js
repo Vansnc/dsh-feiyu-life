@@ -101,12 +101,12 @@ window.__ModuleLoader__.load({
 @media(prefers-color-scheme:dark){[data-fl-map]{border-color:rgba(145,195,171,.20);background:radial-gradient(ellipse at 12% 18%,rgba(103,148,129,.18),transparent 25%),radial-gradient(ellipse at 78% 14%,rgba(189,167,89,.12),transparent 25%),linear-gradient(145deg,#21342d 0%,#1d312d 52%,#1c2c31 100%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.04),inset 0 -28px 60px rgba(4,17,15,.24),0 14px 34px rgba(0,0,0,.18);}}
 [data-fl-map-layers]{position:absolute;inset:0;z-index:0;overflow:hidden;border-radius:inherit;pointer-events:none;}
 [data-fl-map-layer]{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;}
-[data-fl-map-layer='base']{z-index:0;opacity:.92;}
-[data-fl-map-layer='anime']{z-index:1;opacity:.86;mix-blend-mode:multiply;}
+[data-fl-map-layer='base']{z-index:0;opacity:.68;}
+[data-fl-map-layer='anime']{z-index:1;opacity:.94;mix-blend-mode:normal;}
 [data-fl-map-layer='buildings']{z-index:2;opacity:.98;filter:drop-shadow(0 3px 2px rgba(65,85,75,.11));}
 [data-fl-map][data-map-style='xueyuan-road']::before{z-index:2;opacity:.18;}
 [data-fl-map][data-map-style='xueyuan-road'] [data-fl-map-scenery]{display:none;}
-@media(prefers-color-scheme:dark){[data-fl-map-layer='base']{opacity:.72;filter:brightness(.48) saturate(.72) hue-rotate(12deg);}[data-fl-map-layer='anime']{opacity:.38;mix-blend-mode:screen;filter:brightness(.62) saturate(.72);}[data-fl-map-layer='buildings']{opacity:.74;filter:brightness(.58) saturate(.72) drop-shadow(0 3px 2px rgba(0,0,0,.22));}}
+@media(prefers-color-scheme:dark){[data-fl-map-layer='base']{opacity:.18;filter:brightness(.30) saturate(.52) hue-rotate(12deg);}[data-fl-map-layer='anime']{opacity:.90;mix-blend-mode:normal;filter:brightness(.72) saturate(.95);}[data-fl-map-layer='buildings']{opacity:.58;filter:brightness(.72) saturate(.74) drop-shadow(0 3px 2px rgba(0,0,0,.22));}}
 [data-fl-map-scenery]{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none;border-radius:inherit;}
 [data-fl-scenery]{position:absolute;display:block;}
 [data-fl-scenery='hill-a']{left:-5%;top:32%;width:28%;height:43%;border-radius:45% 55% 58% 42%;transform:rotate(-9deg);background:linear-gradient(145deg,rgba(153,199,132,.22),rgba(111,171,133,.12));border:1px solid rgba(105,159,117,.10);}
