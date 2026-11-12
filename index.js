@@ -35,7 +35,7 @@ export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connecti
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
-const AVATAR_FILE = new URL('./assets/character-sheet.png', import.meta.url)
+const AVATAR_FILE = new URL('./assets/character-actions.png', import.meta.url)
 
 /** Body/state hint passed to the model when writing a day. */
 function bodyHint(cfg, t, deviation = {}) {
