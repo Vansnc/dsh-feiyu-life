@@ -65,6 +65,8 @@ flowchart TD
 
 地图视觉层以配置中的地点坐标和路径为唯一几何来源。草地、水域等景观仅提供氛围，不参与寻路；地标不能用写死坐标替代配置。移动状态通过 `world.route` 高亮实际经过的道路，角色位置仍由同一组路径分段插值，保证路线、时间线和角色位置一致。
 
+学院路模式按三层渲染：`xueyuan-base.svg` 保存 OSM 的道路与校区几何，`xueyuan-anime.svg` 负责日系配色、绿地和水域，`xueyuan-buildings.svg` 放建筑轮廓与关键楼宇名称；交互地标、逻辑路径和角色属于运行时顶层。三张 SVG 共用 `0 0 1000 560` 视图，不能分别拉伸或裁切。地图数据的范围、处理方式与 ODbL 署名记录在 `assets/maps/ATTRIBUTION.md`。
+
 ## 5. 行为动画契约
 
 地图角色运行时使用 `assets/actions/<behavior>.png`。每个动作是 512×128、4 列 × 1 行的独立透明动作条，每帧 128×128；完整的 `assets/character-actions.png` 仅为旧客户端保留。

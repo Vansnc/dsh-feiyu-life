@@ -37,15 +37,38 @@ test('map configuration clamps coordinates and can disable commuting', () => {
       { id: 'a', name: 'A', x: -9, y: 200, 关键词: ['甲'] },
       { id: 'b', name: 'B', x: 70, y: 30, 关键词: ['乙'] },
     ],
-    路径: [{ from: 'a', to: 'b', minutes: 0 }],
+    路径: [{ from: 'a', to: 'b', minutes: 0, via: [{ x: -10, y: 120 }, { x: 'bad', y: 3 }] }],
   })
   assert.equal(cfg.地点[0].x, 4)
   assert.equal(cfg.地点[0].y, 92)
   assert.equal(cfg.路径[0].minutes, 1)
+  assert.deepEqual(cfg.路径[0].via, [{ x: 0, y: 100 }])
   assert.equal(addWorldToTimeline([
     { start: 0, end: 10, what: '甲' },
     { start: 10, end: 20, what: '乙' },
   ], cfg).some((x) => x.source === 'travel'), false)
+})
+
+test('default world follows real Xueyuan Road geometry and route bends', () => {
+  assert.equal(defaultWorldConfig.底图, 'xueyuan-road')
+  assert.deepEqual(
+    defaultWorldConfig.地点.filter((node) => ['dorm', 'classroom', 'library', 'canteen'].includes(node.id))
+      .map(({ id, x, y }) => ({ id, x, y })),
+    [
+      { id: 'dorm', x: 43, y: 61 },
+      { id: 'classroom', x: 73, y: 31 },
+      { id: 'library', x: 58, y: 37 },
+      { id: 'canteen', x: 55, y: 68 },
+    ],
+  )
+  const timeline = addWorldToTimeline([
+    { start: 0, end: 10 * 60000, what: '在宿舍', locationId: 'dorm' },
+    { start: 10 * 60000, end: 30 * 60000, what: '去教学楼', locationId: 'classroom' },
+  ], defaultWorldConfig)
+  const travel = timeline.find((item) => item.source === 'travel')
+  const midpoint = worldStateAt(timeline, travel.start + (travel.end - travel.start) / 2, defaultWorldConfig).position
+  const straightMidpoint = { x: (43 + 73) / 2, y: (61 + 31) / 2 }
+  assert.ok(Math.hypot(midpoint.x - straightMidpoint.x, midpoint.y - straightMidpoint.y) > 3)
 })
 
 

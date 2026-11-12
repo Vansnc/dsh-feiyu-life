@@ -62,6 +62,10 @@ idle / walk / sleep / study / eat / phone / photo
 
 如果增加新行为，需要同步修改 `world.js` 的行为枚举、`index.js` 的动作资源接口、`client.js` 的资源映射、设计文档和回归测试，不能只增加图片。
 
+## 真实地图素材
+
+学院路底图的三层 SVG 位于 `assets/maps/`，使用统一的 `1000 × 560` 视图。如果更新 OpenStreetMap 数据，使用 `node scripts/build-xueyuan-map.mjs <xueyuan-road.osm>` 重新生成，并同步检查地点坐标、路线折点和 `assets/maps/ATTRIBUTION.md` 的数据日期。不要删除用户界面中的 OpenStreetMap 署名。
+
 ## 代码与数据约定
 
 - 使用纯 JavaScript（ESM），不引入构建步骤；
