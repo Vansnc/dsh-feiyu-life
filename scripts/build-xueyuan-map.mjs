@@ -11,7 +11,6 @@ const height = 560
 const bbox = { minLon: 116.3355, maxLon: 116.3490, minLat: 39.9905, maxLat: 40.0015 }
 const attrs = (source) => Object.fromEntries([...source.matchAll(/([\w:]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]))
 const tagsOf = (body) => Object.fromEntries([...body.matchAll(/<tag k="([^"]+)" v="([^"]*)"\/>/g)].map((m) => [m[1], m[2]]))
-const escapeXml = (value) => String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c])
 
 const nodes = new Map()
 for (const match of xml.matchAll(/<node\b([^>]*?)(?:\/>|>([\s\S]*?)<\/node>)/g)) {
@@ -37,10 +36,6 @@ const pointsOf = (way) => way.refs.map((id) => nodes.get(id)).filter(Boolean).ma
 const visible = (points) => points.some((p) => p.x > -80 && p.x < width + 80 && p.y > -80 && p.y < height + 80)
 const line = (points, close = false) => points.length < 2 ? '' : `M${points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join('L')}${close ? 'Z' : ''}`
 const isArea = (way) => way.refs.length > 2 && way.refs[0] === way.refs.at(-1)
-const centroid = (points) => ({
-  x: points.reduce((sum, point) => sum + point.x, 0) / Math.max(1, points.length),
-  y: points.reduce((sum, point) => sum + point.y, 0) / Math.max(1, points.length),
-})
 const geoCentroid = (way) => {
   const points = way.refs.map((id) => nodes.get(id)).filter(Boolean)
   if (!points.length) throw new Error(`way ${way.id} has no nodes`)
@@ -220,7 +215,7 @@ const waters = ways.filter((way) => isArea(way) && visible(pointsOf(way)) && (
 
 const majorHighways = new Set(['primary', 'primary_link', 'secondary', 'tertiary'])
 const walkHighways = new Set(['footway', 'path', 'pedestrian', 'cycleway', 'steps'])
-const namedBuildings = new Set(['矿大图书馆', '综合楼', '教学楼', '裕园餐厅', '体育馆', '理化楼', '科技楼', '矿大交流中心', '学生公寓10号楼', '矿大体育场'])
+const highlightedBuildings = new Set(['矿大图书馆', '综合楼', '教学楼', '裕园餐厅', '体育馆', '理化楼', '科技楼', '矿大交流中心', '学生公寓10号楼', '矿大体育场'])
 const svgOpen = (label) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">`
 
 const campusPath = campus ? line(pointsOf(campus), true) : ''
@@ -236,9 +231,6 @@ const animeBushes = [
   [116.3395, 39.9988], [116.3404, 39.9978], [116.3425, 39.9975], [116.3440, 39.9976],
   [116.3453, 39.9969], [116.3457, 39.9957], [116.3438, 39.9952], [116.3410, 39.9954],
 ].map(([lon, lat]) => project({ lon, lat }))
-const xueyuanRoadLabel = project({ lon: 116.34705, lat: 39.9960 })
-const qinghuaRoadLabel = project({ lon: 116.3370, lat: 40.00005 })
-
 const baseSvg = `${svgOpen('学院路真实地图底层')}
   <rect width="1000" height="560" fill="#dfe5de"/>
   ${campusPath ? `<path d="${campusPath}" fill="#e9eee6" stroke="#788a82" stroke-width="2"/>` : ''}
@@ -247,10 +239,6 @@ const baseSvg = `${svgOpen('学院路真实地图底层')}
     ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#aeb9b2" stroke-width="16"/>`).join('')}
     ${majorRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#d9ded9" stroke-width="11"/>`).join('')}
     ${walkRoads.map((way) => `<path d="${line(pointsOf(way))}" stroke="#c5cec6" stroke-width="2" stroke-dasharray="3 4"/>`).join('')}
-  </g>
-  <g font-family="system-ui,sans-serif" font-size="14" fill="#687870" font-weight="600">
-    <text x="${xueyuanRoadLabel.x.toFixed(1)}" y="${xueyuanRoadLabel.y.toFixed(1)}" transform="rotate(88 ${xueyuanRoadLabel.x.toFixed(1)} ${xueyuanRoadLabel.y.toFixed(1)})">学院路</text>
-    <text x="${qinghuaRoadLabel.x.toFixed(1)}" y="${qinghuaRoadLabel.y.toFixed(1)}">清华东路</text>
   </g>
 </svg>`
 
@@ -293,18 +281,10 @@ const animeSvg = `${svgOpen('学院路二次元渲染中层')}
   </g>
 </svg>`
 
-const buildingPaths = buildings.map((way) => ({ way, points: pointsOf(way), d: line(pointsOf(way), true) })).filter((item) => item.d)
-const labels = buildingPaths.flatMap(({ way, points }) => {
-  const name = way.tags.name
-  if (!name || !namedBuildings.has(name)) return []
-  const point = centroid(points)
-  const label = name === '学生公寓10号楼' ? '学生公寓' : name
-  return [`<text x="${point.x.toFixed(1)}" y="${(point.y + 3).toFixed(1)}">${escapeXml(label)}</text>`]
-})
+const buildingPaths = buildings.map((way) => ({ way, d: line(pointsOf(way), true) })).filter((item) => item.d)
 const buildingsSvg = `${svgOpen('学院路建筑上层')}
   <g fill="#698173" opacity=".18" transform="translate(3 5)">${buildingPaths.map(({ d }) => `<path d="${d}"/>`).join('')}</g>
-  <g fill="#f0d7bd" stroke="#fff8ec" stroke-width="2">${buildingPaths.map(({ way, d }) => `<path d="${d}"${namedBuildings.has(way.tags.name) ? ' fill="#dcae8b"' : ''}/>`).join('')}</g>
-  <g font-family="system-ui,'PingFang SC',sans-serif" font-size="9" text-anchor="middle" fill="#4c5d54" font-weight="650" paint-order="stroke" stroke="#fffaf0" stroke-width="3" stroke-linejoin="round">${labels.join('')}</g>
+  <g fill="#f0d7bd" stroke="#fff8ec" stroke-width="2">${buildingPaths.map(({ way, d }) => `<path d="${d}"${highlightedBuildings.has(way.tags.name) ? ' fill="#dcae8b"' : ''}/>`).join('')}</g>
 </svg>`
 
 mkdirSync(outputDir, { recursive: true })

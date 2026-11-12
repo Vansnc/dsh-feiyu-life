@@ -113,12 +113,10 @@ window.__ModuleLoader__.load({
 [data-fl-scenery='hill-b']{right:-6%;top:-8%;width:34%;height:45%;border-radius:40% 60% 47% 53%;transform:rotate(12deg);background:linear-gradient(145deg,rgba(166,207,139,.17),rgba(109,170,143,.10));border:1px solid rgba(105,159,117,.09);}
 [data-fl-scenery='pond']{right:6%;bottom:5%;width:19%;height:21%;border-radius:58% 42% 54% 46% / 47% 55% 45% 53%;transform:rotate(-6deg);background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.50),transparent 18%),linear-gradient(145deg,rgba(140,209,210,.55),rgba(86,169,184,.38));border:3px solid rgba(255,255,255,.42);box-shadow:0 0 0 1px rgba(69,139,151,.16),inset 0 0 18px rgba(255,255,255,.28);}
 [data-fl-scenery='plaza']{left:37%;top:42%;width:20%;height:23%;border-radius:50%;transform:rotate(5deg);background:repeating-linear-gradient(45deg,rgba(255,255,255,.20) 0 7px,rgba(187,160,115,.08) 7px 14px),rgba(238,224,188,.40);border:1px solid rgba(169,145,103,.12);}
-[data-fl-scenery='trees-a']{left:3%;top:38%;font-size:18px;letter-spacing:-7px;filter:saturate(.82) drop-shadow(0 3px 2px rgba(45,87,62,.14));transform:rotate(-4deg);}
-[data-fl-scenery='trees-b']{right:2%;top:36%;font-size:16px;letter-spacing:-6px;filter:saturate(.82) drop-shadow(0 3px 2px rgba(45,87,62,.14));transform:rotate(5deg);}
-[data-fl-scenery='flowers']{left:26%;bottom:5%;font-size:12px;letter-spacing:9px;opacity:.72;}
-@media(prefers-color-scheme:dark){[data-fl-scenery='hill-a'],[data-fl-scenery='hill-b']{opacity:.55;}[data-fl-scenery='pond']{background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.14),transparent 18%),linear-gradient(145deg,rgba(71,145,151,.46),rgba(46,104,126,.42));border-color:rgba(170,218,212,.14);}[data-fl-scenery='plaza']{opacity:.46;}[data-fl-scenery='trees-a'],[data-fl-scenery='trees-b']{filter:saturate(.64) brightness(.76) drop-shadow(0 3px 2px rgba(0,0,0,.24));}}
+@media(prefers-color-scheme:dark){[data-fl-scenery='hill-a'],[data-fl-scenery='hill-b']{opacity:.55;}[data-fl-scenery='pond']{background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.14),transparent 18%),linear-gradient(145deg,rgba(71,145,151,.46),rgba(46,104,126,.42));border-color:rgba(170,218,212,.14);}[data-fl-scenery='plaza']{opacity:.46;}}
 [data-fl-map-badge]{position:absolute;left:14px;top:13px;z-index:6;display:flex;align-items:center;gap:7px;padding:5px 10px 5px 7px;border:1px solid rgba(95,132,112,.18);border-radius:999px;background:rgba(255,255,255,.72);box-shadow:0 5px 15px rgba(45,83,66,.07);backdrop-filter:blur(8px);color:#3f6655;font-size:10px;letter-spacing:.03em;}
-[data-fl-map-badge]::before{content:'🐳';display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(93,172,174,.14);font-size:13px;}
+[data-fl-brand-mark]{display:block;flex:none;}
+[data-fl-map-logo]{display:block;width:22px;height:22px;padding:3px;border-radius:50%;background:rgba(93,172,174,.14);color:#2c8b91;box-sizing:border-box;}
 @media(prefers-color-scheme:dark){[data-fl-map-badge]{background:rgba(25,43,38,.70);border-color:rgba(151,199,178,.14);color:#b9d7c9;}}
 [data-fl-map-attribution]{position:absolute;right:12px;bottom:9px;z-index:6;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.70);color:#4c675b;font-size:8px;line-height:1.3;text-decoration:none;backdrop-filter:blur(5px);}
 @media(prefers-color-scheme:dark){[data-fl-map-attribution]{background:rgba(14,28,24,.66);color:#a8c7b9;}}
@@ -131,13 +129,17 @@ window.__ModuleLoader__.load({
 [data-fl-road][data-fl-road-active] [data-fl-road-mark]{stroke:#199b92;stroke-width:1.8;stroke-dasharray:4 5;animation:fl-road-flow .8s linear infinite;}
 @keyframes fl-road-flow{to{stroke-dashoffset:-9;}}
 @media(prefers-color-scheme:dark){[data-fl-road-base]{stroke:rgba(213,221,190,.30);filter:drop-shadow(0 1px 1px rgba(0,0,0,.22));}[data-fl-road-mark]{stroke:rgba(171,196,166,.34);}[data-fl-road][data-fl-road-active] [data-fl-road-base]{stroke:rgba(80,174,163,.42);}}
-[data-fl-place]{--fl-place-color:#6eaa8a;--fl-place-soft:rgba(110,170,138,.30);position:absolute;z-index:5;transform:translate(-50%,-50%);display:grid;justify-items:center;min-width:28px;text-align:center;filter:drop-shadow(0 4px 5px rgba(42,77,63,.12));}
-[data-fl-place][data-place='dorm']{--fl-place-color:#7f8fbd;--fl-place-soft:rgba(108,124,180,.30);}[data-fl-place][data-place='classroom']{--fl-place-color:#c98955;--fl-place-soft:rgba(205,137,77,.28);}[data-fl-place][data-place='library']{--fl-place-color:#6987b6;--fl-place-soft:rgba(92,120,169,.28);}[data-fl-place][data-place='canteen']{--fl-place-color:#cf775c;--fl-place-soft:rgba(211,113,79,.28);}[data-fl-place][data-place='shop']{--fl-place-color:#59a092;--fl-place-soft:rgba(75,150,137,.28);}[data-fl-place][data-place='outdoor']{--fl-place-color:#6c9c61;--fl-place-soft:rgba(98,155,84,.28);}[data-fl-place][data-place='cafe']{--fl-place-color:#a87955;--fl-place-soft:rgba(168,121,85,.28);}[data-fl-place][data-place='mall']{--fl-place-color:#9b6cad;--fl-place-soft:rgba(155,108,173,.28);}[data-fl-place][data-place='mcdonalds']{--fl-place-color:#d58a35;--fl-place-soft:rgba(213,138,53,.28);}
-[data-fl-place-marker]{position:relative;width:11px;height:11px;border:2px solid rgba(255,255,255,.92);border-radius:50%;background:var(--fl-place-color);box-shadow:0 0 0 2px var(--fl-place-soft),0 2px 5px rgba(36,66,55,.20);transition:transform .22s ease,filter .22s ease;}
-[data-fl-place-name]{max-width:112px;margin-top:4px;padding:2px 6px;border:1px solid rgba(78,111,97,.13);border-radius:999px;background:rgba(255,255,255,.76);box-shadow:0 2px 6px rgba(47,81,66,.06);backdrop-filter:blur(6px);color:#36584a;font-size:9px;font-weight:650;line-height:1.2;white-space:nowrap;}
-[data-fl-place][data-fl-active] [data-fl-place-marker]{transform:scale(1.45);filter:drop-shadow(0 0 7px var(--fl-place-soft));}
-[data-fl-place][data-fl-active] [data-fl-place-name]{border-color:var(--fl-place-color);box-shadow:0 0 0 3px var(--fl-place-soft),0 4px 12px rgba(47,81,66,.10);}
-@media(prefers-color-scheme:dark){[data-fl-place-marker]{border-color:rgba(226,239,231,.72);filter:brightness(.92) saturate(.92);}[data-fl-place-name]{background:rgba(24,41,36,.78);border-color:rgba(173,205,188,.14);color:#d2e4da;}}
+[data-fl-place]{--fl-place-color:#6eaa8a;--fl-place-soft:rgba(110,170,138,.30);position:absolute;z-index:5;transform:translate(-50%,-50%);width:34px;height:34px;color:var(--fl-place-color);text-align:center;filter:drop-shadow(0 3px 4px rgba(42,77,63,.16));}
+[data-fl-place][data-place='dorm']{--fl-place-color:#667ab4;--fl-place-soft:rgba(108,124,180,.30);}[data-fl-place][data-place='classroom']{--fl-place-color:#b86f3e;--fl-place-soft:rgba(205,137,77,.28);}[data-fl-place][data-place='library']{--fl-place-color:#5274ad;--fl-place-soft:rgba(92,120,169,.28);}[data-fl-place][data-place='canteen']{--fl-place-color:#bd5f47;--fl-place-soft:rgba(211,113,79,.28);}[data-fl-place][data-place='shop']{--fl-place-color:#378c7c;--fl-place-soft:rgba(75,150,137,.28);}[data-fl-place][data-place='outdoor']{--fl-place-color:#518d47;--fl-place-soft:rgba(98,155,84,.28);}[data-fl-place][data-place='cafe']{--fl-place-color:#8e5f3e;--fl-place-soft:rgba(168,121,85,.28);}[data-fl-place][data-place='mall']{--fl-place-color:#88519b;--fl-place-soft:rgba(155,108,173,.28);}[data-fl-place][data-place='mcdonalds']{--fl-place-color:#d6232e;--fl-place-soft:rgba(214,35,46,.25);}
+[data-fl-place-marker]{position:absolute;inset:0;display:block;color:var(--fl-place-color);transform-origin:50% 75%;transition:transform .22s ease,filter .22s ease;}
+[data-fl-place-glyph]{display:block;width:34px;height:34px;overflow:visible;filter:drop-shadow(0 1px 0 rgba(255,255,255,.90)) drop-shadow(0 2px 2px rgba(35,63,54,.18));}
+[data-fl-place-name]{position:absolute;left:50%;top:35px;transform:translateX(-50%);max-width:120px;color:#284d40;font-size:9px;font-weight:750;line-height:1.15;white-space:nowrap;text-shadow:-1px -1px 0 rgba(255,255,255,.96),1px -1px 0 rgba(255,255,255,.96),-1px 1px 0 rgba(255,255,255,.96),1px 1px 0 rgba(255,255,255,.96),0 2px 3px rgba(255,255,255,.92);}
+[data-fl-place][data-place='classroom'] [data-fl-place-name]{left:4px;top:9px;transform:translateX(-100%);}
+[data-fl-place][data-place='cafe'] [data-fl-place-name]{left:38px;top:9px;transform:none;}
+[data-fl-place][data-place='mcdonalds'] [data-fl-place-name]{top:auto;bottom:35px;}
+[data-fl-place][data-fl-active] [data-fl-place-marker]{transform:translateY(-2px) scale(1.16);filter:drop-shadow(0 0 7px var(--fl-place-soft));}
+[data-fl-place][data-fl-active] [data-fl-place-name]{color:var(--fl-place-color);font-weight:850;}
+@media(prefers-color-scheme:dark){[data-fl-place-glyph]{filter:drop-shadow(0 1px 0 rgba(230,242,234,.38)) drop-shadow(0 2px 3px rgba(0,0,0,.42));}[data-fl-place-name]{color:#d8e8df;text-shadow:-1px -1px 0 rgba(15,31,27,.95),1px -1px 0 rgba(15,31,27,.95),-1px 1px 0 rgba(15,31,27,.95),1px 1px 0 rgba(15,31,27,.95),0 2px 3px rgba(0,0,0,.85);}}
 [data-fl-avatar]{position:absolute;z-index:8;transform:translate(-50%,calc(-100% - 48px));transition:left 1.2s linear,top 1.2s linear;filter:drop-shadow(0 7px 5px rgba(25,52,58,.23));}
 [data-fl-avatar-motion]{position:relative;width:80px;height:80px;transform-origin:50% 100%;}
 [data-fl-avatar-sprite]{width:80px;height:80px;background-color:transparent;background-image:var(--fl-avatar-image);background-size:320px 80px;background-position:0 0;background-repeat:no-repeat;background-clip:border-box;animation:fl-sprite-4 2.2s steps(1,end) infinite;}
@@ -250,6 +252,48 @@ window.__ModuleLoader__.load({
       photo: ['📷', '拍照'], bath: ['🫧', '洗漱'],
     }
 
+    function FeiyuMark({ size = 20, map = false }) {
+      return h('svg', {
+        'data-fl-brand-mark': '', 'data-fl-map-logo': map ? '' : undefined,
+        viewBox: '0 0 32 32', width: size, height: size, 'aria-hidden': 'true',
+      },
+      h('path', { d: 'M5 19c0-5 4.8-8.5 11.2-8.5S27 14 27 19s-4.4 8-10.8 8S5 24 5 19Z', fill: 'currentColor' }),
+      h('path', { d: 'M6.2 18.6 2 14.5v9Z', fill: 'currentColor', opacity: '.78' }),
+      h('path', { d: 'M21.4 11.6a7.2 7.2 0 1 1 5.8 7.1', fill: 'none', stroke: 'currentColor', strokeWidth: '1.7', strokeLinecap: 'round', opacity: '.38' }),
+      h('path', { d: 'M22.8 8.3v5.2l3.2 2', fill: 'none', stroke: 'currentColor', strokeWidth: '1.7', strokeLinecap: 'round', strokeLinejoin: 'round', opacity: '.56' }),
+      h('circle', { cx: '20.8', cy: '17.7', r: '1.25', fill: 'white' }),
+      h('circle', { cx: '21.2', cy: '17.7', r: '.55', fill: '#245b78' }))
+    }
+
+    function PlaceGlyph({ id }) {
+      const props = {
+        'data-fl-place-glyph': '', viewBox: '0 0 32 32', fill: 'none', 'aria-hidden': 'true',
+        stroke: 'currentColor', strokeWidth: '2.2', strokeLinecap: 'round', strokeLinejoin: 'round',
+      }
+      if (id === 'dorm') return h('svg', props,
+        h('path', { d: 'M4 25V12M28 25v-9a4 4 0 0 0-4-4H13v13M4 19h24M8 12h5v7H8a4 4 0 0 1-4-4 3 3 0 0 1 4-3Z' }))
+      if (id === 'classroom') return h('svg', props,
+        h('path', { d: 'm4 13 12-8 12 8M7 12v15h18V12M12 27V17h8v10M11 13h2M19 13h2' }),
+        h('path', { d: 'M3 27h26', strokeWidth: '2.8' }))
+      if (id === 'library') return h('svg', props,
+        h('path', { d: 'M4 7c5.5 0 9.2 1.3 12 4v16c-2.8-2.7-6.5-4-12-4ZM28 7c-5.5 0-9.2 1.3-12 4v16c2.8-2.7 6.5-4 12-4Z' }),
+        h('path', { d: 'M8 12h4M20 12h4M8 16h4M20 16h4', strokeWidth: '1.5' }))
+      if (id === 'canteen') return h('svg', props,
+        h('path', { d: 'M5 17h22c0 6.2-4.5 10-11 10S5 23.2 5 17ZM8 27h16M10 6l5 10M18 5l-1 11M25 7l-5 9' }))
+      if (id === 'shop') return h('svg', props,
+        h('path', { d: 'M6 13v14h20V13M4 13h24l-2-7H6ZM9 13v3a3 3 0 0 0 6 0v-3M15 13v3a3 3 0 0 0 6 0v-3M11 27v-6h10v6' }))
+      if (id === 'outdoor') return h('svg', props,
+        h('path', { d: 'M5 27V12h22v15M3 27h26M8 12l8-7 8 7M11 27V16h10v11M16 16v11' }))
+      if (id === 'cafe') return h('svg', props,
+        h('path', { d: 'M6 13h18v6a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8ZM24 15h2a3 3 0 0 1 0 6h-2M4 27h23M11 9c-2-2 2-3 0-5M17 9c-2-2 2-3 0-5' }))
+      if (id === 'mall') return h('svg', props,
+        h('path', { d: 'M7 11h18l2 16H5ZM11 12V9a5 5 0 0 1 10 0v3' }),
+        h('path', { d: 'm16 16 1.4 2.7 3 .4-2.2 2.1.6 3-2.8-1.4-2.8 1.4.6-3-2.2-2.1 3-.4Z', fill: 'currentColor', stroke: 'none' }))
+      if (id === 'mcdonalds') return h('svg', { ...props, stroke: '#ffbc0d', strokeWidth: '4.2' },
+        h('path', { d: 'M5 27V14C5 7.5 7.7 4 11 4s5 4.2 5 10v13M16 27V14c0-5.8 1.7-10 5-10s6 3.5 6 10v13' }))
+      return h('svg', props, h('path', { d: 'M16 29s9-8.1 9-17a9 9 0 1 0-18 0c0 8.9 9 17 9 17Z' }), h('circle', { cx: '16', cy: '12', r: '3' }))
+    }
+
     function WorldMap({ world, map }) {
       const nodes = (map && map.地点) || []
       const edges = (map && map.路径) || []
@@ -272,11 +316,8 @@ window.__ModuleLoader__.load({
           h('i', { 'data-fl-scenery': 'hill-a' }),
           h('i', { 'data-fl-scenery': 'hill-b' }),
           h('i', { 'data-fl-scenery': 'pond' }),
-          h('i', { 'data-fl-scenery': 'plaza' }),
-          h('span', { 'data-fl-scenery': 'trees-a' }, '🌲🌳🌲'),
-          h('span', { 'data-fl-scenery': 'trees-b' }, '🌳🌲🌳'),
-          h('span', { 'data-fl-scenery': 'flowers' }, '✿ · ✿ · ✿')),
-        h('div', { 'data-fl-map-badge': '' }, mapStyle === 'xueyuan-road' ? '矿大 · 学院路生活地图' : '鲸尾校园 · 今日地图'),
+          h('i', { 'data-fl-scenery': 'plaza' })),
+        h('div', { 'data-fl-map-badge': '' }, h(FeiyuMark, { size: 22, map: true }), mapStyle === 'xueyuan-road' ? '矿大 · 学院路生活地图' : '鲸尾校园 · 今日地图'),
         h('svg', { 'data-fl-map-lines': '', viewBox: '0 0 100 100', preserveAspectRatio: 'none', 'aria-hidden': 'true' },
           edges.map((edge, i) => {
             const a = nodes.find((x) => x.id === edge.from)
@@ -291,7 +332,7 @@ window.__ModuleLoader__.load({
         nodes.map((node) => h('div', {
           key: node.id, 'data-fl-place': '', 'data-place': node.id, 'data-fl-active': active === node.id ? '' : undefined,
           style: { left: node.x + '%', top: node.y + '%' }, title: (node.关键词 || []).join('、'),
-        }, h('span', { 'data-fl-place-marker': '' }),
+        }, h('span', { 'data-fl-place-marker': '' }, h(PlaceGlyph, { id: node.id })),
         h('span', { 'data-fl-place-name': '' }, node.name))),
         world && world.enabled !== false ? h('div', {
           'data-fl-avatar': '', style: { left: point.x + '%', top: point.y + '%' },
@@ -990,7 +1031,7 @@ window.__ModuleLoader__.load({
 
     /** 左侧边栏入口图标（宿主传 size：展开 18 / 收起 16） */
     function FeiyuSidebarIcon({ size = 16 }) {
-      return h('span', { style: { fontSize: size, lineHeight: 1 } }, '🐋')
+      return h(FeiyuMark, { size })
     }
 
     /** 主页面容器：宿主 main 区域是固定高度，自己管滚动 */
