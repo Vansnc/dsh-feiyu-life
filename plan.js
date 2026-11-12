@@ -255,6 +255,8 @@ function normalizePlan(data) {
     what: String(x.what ?? x.在 ?? ''),
     phone: String(x.phone ?? x.手机 ?? '在手'),
     outfit: String(x.outfit ?? x.穿 ?? ''),
+    locationId: String(x.locationId ?? x.地点 ?? ''),
+    behavior: String(x.behavior ?? x.行为 ?? ''),
   })).filter((x) => x.end > x.start)
   if (!items.length) return null
   return {
@@ -287,4 +289,3 @@ export function dailyPlan(cfg, t, calendar, deviation, type) {
     wardrobe: cfg.衣柜 ? 'cfg' : 'default',
   }
 }
-

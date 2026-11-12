@@ -267,6 +267,8 @@ window.__ModuleLoader__.load({
       const [meta, setMeta] = useState(null)
       const [adjustments, setAdjustments] = useState([])
       const [world, setWorld] = useState(null)
+      const [inferenceText, setInferenceText] = useState('蹲着看猫吃完半根火腿肠')
+      const [inference, setInference] = useState(null)
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
 
       const load = async (preserveConfig = false) => {
@@ -370,6 +372,15 @@ window.__ModuleLoader__.load({
         } catch (e) { setMessage('预览失败：' + e.message) }
       }
 
+      const testInference = async () => {
+        const text = inferenceText.trim()
+        if (!text) { setInference(null); return }
+        try {
+          const data = await getJson(API + '/infer?text=' + encodeURIComponent(text))
+          setInference(data)
+        } catch (e) { setMessage('识别测试失败：' + e.message) }
+      }
+
       if (error) return h('div', { 'data-fl-wrap': '' }, h('div', { 'data-fl-note': '' }, error))
       if (!config) return h('div', { 'data-fl-wrap': '' }, h('div', { 'data-fl-note': '' }, '读取中…'))
 
@@ -449,6 +460,14 @@ window.__ModuleLoader__.load({
           h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '当前位置'), h('div', { 'data-fl-stat-v': '' }, (world && world.location && `${world.location.icon || ''} ${world.location.name}`) || '未知')),
           h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '行为'), h('div', { 'data-fl-stat-v': '' }, (behaviorMeta[(world && world.behavior) || 'idle'] || behaviorMeta.idle)[1])),
           h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '移动'), h('div', { 'data-fl-stat-v': '' }, world && world.moving && world.destination ? `去${world.destination.name} · ${Math.round((world.progress || 0) * 100)}%` : '停留中'))),
+        h('div', { 'data-fl-h': '' }, '识别测试'),
+        h('div', { 'data-fl-note': '' }, '输入一条剧本短句，立即检查它会被识别成什么地点和行为。'),
+        h('div', { 'data-fl-row': '' },
+          h(Field, { value: inferenceText, width: 'data-fl-wide', onChange: setInferenceText }),
+          h('button', { 'data-fl-btn': '', onClick: testInference }, '测试')),
+        inference ? h('div', { 'data-fl-why': '' },
+          h('span', { 'data-fl-chip': '' }, `地点：${(inference.location && inference.location.name) || '未知'}`),
+          h('span', { 'data-fl-chip': '' }, `行为：${inference.behaviorLabel || inference.behavior}`)) : null,
         h('div', { 'data-fl-h': '' }, '地图规则'),
         h('div', { 'data-fl-row': '' },
           h('label', { 'data-fl-row': '' },
@@ -934,4 +953,3 @@ window.__ModuleLoader__.load({
     }
   },
 })
-

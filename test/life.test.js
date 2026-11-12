@@ -62,6 +62,19 @@ test('model plans can end at 24:00 and still require six hours of sleep', () => 
   assert.equal(plan.items.at(-1).end, 1440)
 })
 
+test('model plan keeps only valid explicit location and behaviour fields', () => {
+  const plan = normalizePlan({
+    items: [
+      { start: '00:00', end: '07:00', what: '睡着了', phone: '在床头', outfit: '睡衣', locationId: 'dorm', behavior: 'sleep' },
+      { start: '07:00', end: '24:00', what: '过一天', phone: '在手', outfit: '卫衣', locationId: 'nowhere', behavior: 'teleport' },
+    ],
+  })
+  assert.equal(plan.items[0].locationId, 'dorm')
+  assert.equal(plan.items[0].behavior, 'sleep')
+  assert.equal(plan.items[1].locationId, '')
+  assert.equal(plan.items[1].behavior, '')
+})
+
 test('an adjustment cleanly overlays the base plan', () => {
   const base = [{ start: 0, end: 120, what: '睡觉', phone: '在床头' }]
   const adjusted = buildTimeline(base, [{ start: 30 * 60000, end: 60 * 60000, what: '醒了', phone: '在手', source: 'adjust' }], 0)
@@ -82,6 +95,18 @@ test('a newer overlapping adjustment wins without double-matching', () => {
   assert.equal(at75.length, 1)
   assert.equal(at75[0].what, '临时吃饭')
   assert.equal(segmentAt(timeline, 100 * 60000).what, '先出门')
+})
+
+test('timeline preserves explicit semantic fields from plans and adjustments', () => {
+  const timeline = buildTimeline(
+    [{ start: 0, end: 120, what: '原计划', locationId: 'library', behavior: 'study' }],
+    [{ start: 30 * 60000, end: 60 * 60000, what: '临时改主意', locationId: 'shop', behavior: 'idle' }],
+    0,
+  )
+  assert.equal(segmentAt(timeline, 10 * 60000).locationId, 'library')
+  assert.equal(segmentAt(timeline, 10 * 60000).behavior, 'study')
+  assert.equal(segmentAt(timeline, 45 * 60000).locationId, 'shop')
+  assert.equal(segmentAt(timeline, 45 * 60000).behavior, 'idle')
 })
 
 test('zoned day boundaries and tomorrow survive DST transitions', () => {

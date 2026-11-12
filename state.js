@@ -116,6 +116,8 @@ export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute
       what: String(x.what || ''),
       phone: String(x.phone || '在手'),
       outfit: String(x.outfit || ''),
+      locationId: String(x.locationId || ''),
+      behavior: String(x.behavior || ''),
       source: 'plan',
     }]
   })
@@ -130,6 +132,8 @@ export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute
       what: String(fact.what || ''),
       phone: String(fact.phone || '在手'),
       outfit: String(fact.outfit || ''),
+      locationId: String(fact.locationId || ''),
+      behavior: String(fact.behavior || ''),
       source: 'adjust',
     }])
   }
@@ -152,4 +156,3 @@ export function nextSegment(timeline, nowMs) {
   const upcoming = timeline.filter((x) => x.start > nowMs && !/睡/.test(x.what)).sort((a, b) => a.start - b.start)
   return upcoming[0] || null
 }
-
