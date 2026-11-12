@@ -336,11 +336,16 @@ async function fetchModels() {
 }
 
 let shooting = false
+// Cooldown belongs to deliberate shots, not internal retakes: retakes update image
+// mtimes, so deriving the gap from files would push the next shot back every time a
+// self-check fails. Track the start of the last deliberate shot instead.
+let lastShotAt = 0
 
 function shotBlocked(cfg) {
   const usage = todayUsage(cfg)
   if (usage.n >= cfg.每日上限) return `今天已经拍了 ${usage.n} 张，达到上限`
-  const waitMs = cfg.最短间隔秒 * 1000 - (Date.now() - usage.last)
+  const last = lastShotAt || usage.last
+  const waitMs = cfg.最短间隔秒 * 1000 - (Date.now() - last)
   if (waitMs > 0) return `刚拍过，再等 ${Math.ceil(waitMs / 1000)} 秒`
   return ''
 }
@@ -427,6 +432,7 @@ function registerRoutes(ctx) {
       if (blocked) return reply(res, 429, { ok: false, error: blocked })
       if (shooting) return reply(res, 409, { ok: false, error: '已有一张照片正在生成' })
       shooting = true
+      lastShotAt = Date.now()
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, {
           type: body.type || 'selfie',
@@ -517,6 +523,7 @@ export function registerImage(ctx) {
       if (blocked) return { ok: false, say: blocked }
       if (shooting) return { ok: false, say: '已经有一张照片正在生成，等它拍完' }
       shooting = true
+      lastShotAt = Date.now()
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, args)
         const useRef = String(args.type || 'selfie') !== 'scene' && cfg.用参考图

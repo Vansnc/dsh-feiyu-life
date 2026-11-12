@@ -122,7 +122,7 @@ export function buildElements(cfg, args, state = liveState()) {
   const type = String(args.type || 'selfie')
   const hint = String(args.hint || args.prompt || '').trim()
   const outfit = String(args.outfit || (type === 'selfie' ? state.outfit : '') || '').trim()
-  const location = String(args.location || '').trim() || locationHint(hint || state.what)
+  const location = String(args.location || '').trim() || state.location || locationHint(hint || state.what)
   const expression = String(args.expression || '').trim() || cfg.表情 || '自然的表情'
   return { type, hint, outfit, location, expression, state, clock: state.clock, light: state.light }
 }
@@ -133,7 +133,8 @@ export function templatePrompt(cfg, elements) {
   const r = rand(elements.hint + elements.location + elements.expression)
   const shotPool = shots[type] || shots.selfie
   const shot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
-  const pool = propsByPlace[location] || propsByPlace['宿舍书桌']
+  const pool = propsByPlace[location]
+    || (/路上|门口|地铁|公交|街上/.test(location) ? propsByPlace['路上'] : propsByPlace['宿舍书桌'])
   const props = []
   while (props.length < Math.min(3, pool.length)) {
     const x = pool[Math.floor(r() * pool.length) % pool.length]
