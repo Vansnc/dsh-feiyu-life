@@ -64,7 +64,7 @@ idle / walk / sleep / study / eat / phone / photo
 
 ## 真实地图素材
 
-学院路底图的三层 SVG 位于 `assets/maps/`，使用统一的 `1000 × 560` 视图。如果更新 OpenStreetMap 数据，使用 `node scripts/build-xueyuan-map.mjs <xueyuan-road.osm>` 重新生成，并同步检查地点坐标、路线折点和 `assets/maps/ATTRIBUTION.md` 的数据日期。不要删除用户界面中的 OpenStreetMap 署名。
+学院路底图的三层 SVG 与生成的 `xueyuan-world.js` 位于 `assets/maps/`，使用统一的 `1000 × 560` 视图。如果更新 OpenStreetMap 数据，使用 `node scripts/build-xueyuan-map.mjs <xueyuan-road.osm>` 重新生成，脚本会同时重算 POI 坐标、最大连通步行图、最短路折点和步行时间。更新后同步检查 `assets/maps/ATTRIBUTION.md` 的数据日期，不要删除用户界面中的 OpenStreetMap 署名。
 
 ## 代码与数据约定
 

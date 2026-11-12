@@ -131,15 +131,13 @@ window.__ModuleLoader__.load({
 [data-fl-road][data-fl-road-active] [data-fl-road-mark]{stroke:#199b92;stroke-width:1.8;stroke-dasharray:4 5;animation:fl-road-flow .8s linear infinite;}
 @keyframes fl-road-flow{to{stroke-dashoffset:-9;}}
 @media(prefers-color-scheme:dark){[data-fl-road-base]{stroke:rgba(213,221,190,.30);filter:drop-shadow(0 1px 1px rgba(0,0,0,.22));}[data-fl-road-mark]{stroke:rgba(171,196,166,.34);}[data-fl-road][data-fl-road-active] [data-fl-road-base]{stroke:rgba(80,174,163,.42);}}
-[data-fl-place]{--fl-place-color:#6eaa8a;--fl-place-light:#a6ceb8;--fl-place-shadow:#537e69;--fl-place-soft:rgba(110,170,138,.30);position:absolute;z-index:5;transform:translate(-50%,-50%);display:grid;justify-items:center;min-width:68px;text-align:center;filter:drop-shadow(0 6px 7px rgba(42,77,63,.12));}
-[data-fl-place][data-place='dorm']{--fl-place-color:#8d9ac5;--fl-place-light:#b8c0df;--fl-place-shadow:#66729d;--fl-place-soft:rgba(108,124,180,.30);}[data-fl-place][data-place='classroom']{--fl-place-color:#d49c68;--fl-place-light:#ecc29a;--fl-place-shadow:#a66e43;--fl-place-soft:rgba(205,137,77,.28);}[data-fl-place][data-place='library']{--fl-place-color:#7c94bd;--fl-place-light:#abc0df;--fl-place-shadow:#576f9d;--fl-place-soft:rgba(92,120,169,.28);}[data-fl-place][data-place='canteen']{--fl-place-color:#d98f72;--fl-place-light:#efb7a1;--fl-place-shadow:#aa6249;--fl-place-soft:rgba(211,113,79,.28);}[data-fl-place][data-place='shop']{--fl-place-color:#73aaa0;--fl-place-light:#a6d0c8;--fl-place-shadow:#4d7d75;--fl-place-soft:rgba(75,150,137,.28);}[data-fl-place][data-place='outdoor']{--fl-place-color:#7eaa72;--fl-place-light:#afd0a5;--fl-place-shadow:#587d50;--fl-place-soft:rgba(98,155,84,.28);}
-[data-fl-place-marker]{position:relative;display:grid;place-items:center;width:42px;height:38px;border:2px solid rgba(255,255,255,.88);border-radius:14px 14px 12px 12px;background:linear-gradient(145deg,var(--fl-place-light),var(--fl-place-color));box-shadow:inset 0 1px 0 rgba(255,255,255,.34),0 3px 0 var(--fl-place-shadow);transition:transform .22s ease,filter .22s ease;}
-[data-fl-place-marker]::after{content:'';position:absolute;left:50%;bottom:-8px;width:12px;height:12px;border-right:2px solid rgba(255,255,255,.84);border-bottom:2px solid rgba(255,255,255,.84);background:var(--fl-place-color);transform:translateX(-50%) rotate(45deg);border-radius:0 0 4px 0;z-index:-1;}
-[data-fl-place-icon]{font-size:22px;line-height:1;filter:drop-shadow(0 2px 1px rgba(48,65,61,.18));transform:translateY(-1px);}
-[data-fl-place-name]{max-width:118px;margin-top:8px;padding:3px 9px;border:1px solid rgba(78,111,97,.13);border-radius:999px;background:rgba(255,255,255,.82);box-shadow:0 3px 9px rgba(47,81,66,.08);backdrop-filter:blur(7px);color:#36584a;font-size:10px;font-weight:600;line-height:1.25;white-space:nowrap;}
-[data-fl-place][data-fl-active] [data-fl-place-marker]{transform:translateY(-3px) scale(1.08);filter:drop-shadow(0 0 8px var(--fl-place-soft));}
+[data-fl-place]{--fl-place-color:#6eaa8a;--fl-place-soft:rgba(110,170,138,.30);position:absolute;z-index:5;transform:translate(-50%,-50%);display:grid;justify-items:center;min-width:28px;text-align:center;filter:drop-shadow(0 4px 5px rgba(42,77,63,.12));}
+[data-fl-place][data-place='dorm']{--fl-place-color:#7f8fbd;--fl-place-soft:rgba(108,124,180,.30);}[data-fl-place][data-place='classroom']{--fl-place-color:#c98955;--fl-place-soft:rgba(205,137,77,.28);}[data-fl-place][data-place='library']{--fl-place-color:#6987b6;--fl-place-soft:rgba(92,120,169,.28);}[data-fl-place][data-place='canteen']{--fl-place-color:#cf775c;--fl-place-soft:rgba(211,113,79,.28);}[data-fl-place][data-place='shop']{--fl-place-color:#59a092;--fl-place-soft:rgba(75,150,137,.28);}[data-fl-place][data-place='outdoor']{--fl-place-color:#6c9c61;--fl-place-soft:rgba(98,155,84,.28);}[data-fl-place][data-place='cafe']{--fl-place-color:#a87955;--fl-place-soft:rgba(168,121,85,.28);}[data-fl-place][data-place='mall']{--fl-place-color:#9b6cad;--fl-place-soft:rgba(155,108,173,.28);}[data-fl-place][data-place='mcdonalds']{--fl-place-color:#d58a35;--fl-place-soft:rgba(213,138,53,.28);}
+[data-fl-place-marker]{position:relative;width:11px;height:11px;border:2px solid rgba(255,255,255,.92);border-radius:50%;background:var(--fl-place-color);box-shadow:0 0 0 2px var(--fl-place-soft),0 2px 5px rgba(36,66,55,.20);transition:transform .22s ease,filter .22s ease;}
+[data-fl-place-name]{max-width:112px;margin-top:4px;padding:2px 6px;border:1px solid rgba(78,111,97,.13);border-radius:999px;background:rgba(255,255,255,.76);box-shadow:0 2px 6px rgba(47,81,66,.06);backdrop-filter:blur(6px);color:#36584a;font-size:9px;font-weight:650;line-height:1.2;white-space:nowrap;}
+[data-fl-place][data-fl-active] [data-fl-place-marker]{transform:scale(1.45);filter:drop-shadow(0 0 7px var(--fl-place-soft));}
 [data-fl-place][data-fl-active] [data-fl-place-name]{border-color:var(--fl-place-color);box-shadow:0 0 0 3px var(--fl-place-soft),0 4px 12px rgba(47,81,66,.10);}
-@media(prefers-color-scheme:dark){[data-fl-place-marker]{border-color:rgba(226,239,231,.56);filter:brightness(.83) saturate(.84);}[data-fl-place-name]{background:rgba(24,41,36,.84);border-color:rgba(173,205,188,.14);color:#d2e4da;}}
+@media(prefers-color-scheme:dark){[data-fl-place-marker]{border-color:rgba(226,239,231,.72);filter:brightness(.92) saturate(.92);}[data-fl-place-name]{background:rgba(24,41,36,.78);border-color:rgba(173,205,188,.14);color:#d2e4da;}}
 [data-fl-avatar]{position:absolute;z-index:8;transform:translate(-50%,calc(-100% - 48px));transition:left 1.2s linear,top 1.2s linear;filter:drop-shadow(0 7px 5px rgba(25,52,58,.23));}
 [data-fl-avatar-motion]{position:relative;width:80px;height:80px;transform-origin:50% 100%;}
 [data-fl-avatar-sprite]{width:80px;height:80px;background-color:transparent;background-image:var(--fl-avatar-image);background-size:320px 80px;background-position:0 0;background-repeat:no-repeat;background-clip:border-box;animation:fl-sprite-4 2.2s steps(1,end) infinite;}
@@ -267,9 +265,9 @@ window.__ModuleLoader__.load({
       }))
       return h('div', { 'data-fl-map': '', 'data-map-style': mapStyle },
         mapStyle === 'xueyuan-road' ? h('div', { 'data-fl-map-layers': '', 'aria-hidden': 'true' },
-          h('img', { 'data-fl-map-layer': 'base', src: `${API}/map/xueyuan?layer=base&v=1.0.3`, alt: '' }),
-          h('img', { 'data-fl-map-layer': 'anime', src: `${API}/map/xueyuan?layer=anime&v=1.0.3`, alt: '' }),
-          h('img', { 'data-fl-map-layer': 'buildings', src: `${API}/map/xueyuan?layer=buildings&v=1.0.3`, alt: '' })) : null,
+          h('img', { 'data-fl-map-layer': 'base', src: `${API}/map/xueyuan?layer=base&v=1.0.5`, alt: '' }),
+          h('img', { 'data-fl-map-layer': 'anime', src: `${API}/map/xueyuan?layer=anime&v=1.0.5`, alt: '' }),
+          h('img', { 'data-fl-map-layer': 'buildings', src: `${API}/map/xueyuan?layer=buildings&v=1.0.5`, alt: '' })) : null,
         h('div', { 'data-fl-map-scenery': '', 'aria-hidden': 'true' },
           h('i', { 'data-fl-scenery': 'hill-a' }),
           h('i', { 'data-fl-scenery': 'hill-b' }),
@@ -293,15 +291,14 @@ window.__ModuleLoader__.load({
         nodes.map((node) => h('div', {
           key: node.id, 'data-fl-place': '', 'data-place': node.id, 'data-fl-active': active === node.id ? '' : undefined,
           style: { left: node.x + '%', top: node.y + '%' }, title: (node.关键词 || []).join('、'),
-        }, h('span', { 'data-fl-place-marker': '' },
-          h('span', { 'data-fl-place-icon': '' }, node.icon || '📍')),
+        }, h('span', { 'data-fl-place-marker': '' }),
         h('span', { 'data-fl-place-name': '' }, node.name))),
         world && world.enabled !== false ? h('div', {
           'data-fl-avatar': '', style: { left: point.x + '%', top: point.y + '%' },
         }, h('div', { 'data-fl-avatar-motion': '', 'data-behavior': behavior },
           h('div', {
             'data-fl-avatar-sprite': '', 'aria-hidden': 'true',
-            style: { '--fl-avatar-image': `url(${API}/avatar/${spriteBehavior}?v=1.0.3)` },
+            style: { '--fl-avatar-image': `url(${API}/avatar/${spriteBehavior}?v=1.0.5)` },
           }),
           h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, meta[0]),
           h('span', { 'data-fl-avatar-label': '' }, world.moving && world.destination
@@ -502,7 +499,6 @@ window.__ModuleLoader__.load({
 
       const mapCfg = config.地图 || { 启用: true, 自动通勤: true, 地点: [], 路径: [] }
       const placeRows = (mapCfg.地点 || []).map((node, i) => h('tr', { key: node.id || i },
-        h('td', null, h(Field, { value: node.icon, width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'icon'], v) })),
         h('td', null, h(Field, { value: node.name, width: 'data-fl-narrow', onChange: (v) => patch(['地图', '地点', i, 'name'], v) })),
         h('td', null, h(Field, { value: node.x, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'x'], Number(v)) })),
         h('td', null, h(Field, { value: node.y, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'y'], Number(v)) })),
@@ -522,7 +518,7 @@ window.__ModuleLoader__.load({
         h('div', { 'data-fl-note': '' }, '地图不是另一套状态：它直接消费今天的真实时间线。相邻活动发生在不同地点时，会在前一段末尾自动留出通勤时间。'),
         h(WorldMap, { world, map: mapCfg }),
         h('div', { 'data-fl-world-cards': '' },
-          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '当前位置'), h('div', { 'data-fl-stat-v': '' }, (world && world.location && `${world.location.icon || ''} ${world.location.name}`) || '未知')),
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '当前位置'), h('div', { 'data-fl-stat-v': '' }, (world && world.location && world.location.name) || '未知')),
           h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '行为'), h('div', { 'data-fl-stat-v': '' }, (behaviorMeta[(world && world.behavior) || 'idle'] || behaviorMeta.idle)[1])),
           h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '移动'), h('div', { 'data-fl-stat-v': '' }, world && world.moving && world.destination ? `去${world.destination.name} · ${Math.round((world.progress || 0) * 100)}%` : '停留中'))),
         h('div', { 'data-fl-h': '' }, '识别测试'),
@@ -545,7 +541,7 @@ window.__ModuleLoader__.load({
         h('div', { 'data-fl-note': '' }, '关键词用于从剧本短句判断地点；坐标是地图里的百分比位置。'),
         h('table', { 'data-fl-table': '' },
           h('thead', null, h('tr', null,
-            h('th', null, '图标'), h('th', null, '地点'), h('th', null, 'X'), h('th', null, 'Y'), h('th', null, '识别关键词'))),
+            h('th', null, '地点'), h('th', null, 'X'), h('th', null, 'Y'), h('th', null, '识别关键词'))),
           h('tbody', null, placeRows)),
         h('div', { 'data-fl-h': '' }, '路径耗时'),
         h('table', { 'data-fl-table': '' },

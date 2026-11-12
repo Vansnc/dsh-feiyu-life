@@ -32,7 +32,7 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 4
+export const LIFE_CONFIG_VERSION = 5
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
@@ -588,20 +588,22 @@ export function migrateConfig(raw) {
   }
   // v3: logical map and automatic travel became part of the shared world state.
   if (version < 3 && (!next.地图 || typeof next.地图 !== 'object')) next.地图 = copy(defaultConfig.地图)
-  // v4: the stock schematic moved onto the real CUMTB Xueyuan Road campus.
-  // Only untouched stock coordinates migrate; user-positioned maps remain intact.
-  if (version < 4 && next.地图 && Array.isArray(next.地图.地点)) {
-    const legacy = new Map([['dorm', [16, 72]], ['classroom', [48, 22]], ['library', [78, 26]], ['canteen', [48, 70]], ['shop', [80, 70]], ['outdoor', [17, 24]]])
+  // v4 introduced the first real-campus crop. v5 expands the crop to real
+  // neighbourhood POIs and replaces hand-written bends with OSM routing.
+  // Only untouched stock coordinate profiles migrate; custom maps stay intact.
+  if (version < 5 && next.地图 && Array.isArray(next.地图.地点)) {
+    const profiles = [
+      new Map([['dorm', [16, 72]], ['classroom', [48, 22]], ['library', [78, 26]], ['canteen', [48, 70]], ['shop', [80, 70]], ['outdoor', [17, 24]]]),
+      new Map([['dorm', [43, 61]], ['classroom', [73, 31]], ['library', [58, 37]], ['canteen', [55, 68]], ['shop', [84, 55]], ['outdoor', [93, 55]]]),
+    ]
     const current = new Map(next.地图.地点.map((node) => [String(node && node.id), node]))
-    const untouched = [...legacy].every(([id, [x, y]]) => Number(current.get(id)?.x) === x && Number(current.get(id)?.y) === y)
-    if (untouched) {
-      const defaults = new Map(defaultWorldConfig.地点.map((node) => [node.id, node]))
-      next.地图.地点 = next.地图.地点.map((node) => defaults.has(String(node && node.id))
-        ? { ...node, x: defaults.get(String(node.id)).x, y: defaults.get(String(node.id)).y }
-        : node)
-      next.地图.路径 = copy(defaultWorldConfig.路径)
-    }
-    if (!next.地图.底图) next.地图.底图 = 'xueyuan-road'
+    const stock = profiles.some((profile) => profile.size === current.size
+      && [...profile].every(([id, [x, y]]) => Number(current.get(id)?.x) === x && Number(current.get(id)?.y) === y))
+    if (stock) {
+      const enabled = next.地图.启用 !== false
+      const commute = next.地图.自动通勤 !== false
+      next.地图 = { ...copy(defaultWorldConfig), 启用: enabled, 自动通勤: commute }
+    } else if (!next.地图.底图) next.地图.底图 = 'xueyuan-road'
   }
   next.配置版本 = LIFE_CONFIG_VERSION
   return { value: next, changed: version !== LIFE_CONFIG_VERSION }
