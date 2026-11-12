@@ -239,7 +239,7 @@ window.__ModuleLoader__.load({
         }, h('div', { 'data-fl-avatar-motion': '', 'data-behavior': behavior },
           h('div', {
             'data-fl-avatar-sprite': '', 'aria-hidden': 'true',
-            style: { '--fl-avatar-image': `url(${API}/avatar)` },
+            style: { '--fl-avatar-image': `url(${API}/avatar?v=0.10.1)` },
           }),
           h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, meta[0]),
           h('span', { 'data-fl-avatar-label': '' }, world.moving && world.destination

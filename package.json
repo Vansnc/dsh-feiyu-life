@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "大肥鱼的生活（DSH 插件）：每日剧本 + 时序状态机 + 二维生活地图；角色会在地点间移动并显示行为动效，对话与相机复用同一份世界状态。",
   "type": "module",
   "license": "MIT",

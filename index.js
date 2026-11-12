@@ -338,7 +338,7 @@ export function apply(ctx) {
           res.writeHead(200, {
             'content-type': 'image/png',
             'content-length': data.length,
-            'cache-control': 'private, max-age=86400',
+            'cache-control': 'no-store',
           })
           res.end(data)
         } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_not_found' }) }
