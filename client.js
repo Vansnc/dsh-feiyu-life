@@ -239,7 +239,7 @@ window.__ModuleLoader__.load({
           setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setSavedConfig(clone(data.config)); setCurrent(data.current || null); setMeta(data.meta || null)
           setIssues(data.issues || [])
-          setMessage((data.issues || []).length ? `已保存，并自动修正 ${(data.issues || []).length} 项` : '已保存，下一轮就用新配置')
+          setMessage((data.issues || []).length ? `已保存，有 ${(data.issues || []).length} 项配置提示` : '已保存，下一轮就用新配置')
         } catch (e) { setMessage('保存失败：' + e.message) }
         setBusy(false)
       }
@@ -299,6 +299,15 @@ window.__ModuleLoader__.load({
           h('div', { 'data-fl-row': '' },
             h('span', { 'data-fl-note': '' }, '时区'),
             h(Field, { value: config.时区, width: 'data-fl-narrow', onChange: (v) => patch(['时区'], v) })),
+          h('label', { 'data-fl-sec': '' },
+            h('span', { 'data-fl-note': '' }, '只在这些工作区注入（每行一个目录；留空 = 所有顶层会话）'),
+            h('textarea', {
+              'data-fl-input': '', rows: 3,
+              value: (config.工作区 || []).join('\n'),
+              placeholder: '/home/ubuntu/dsh-agentchat',
+              onChange: (e) => patch(['工作区'], e.target.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)),
+              style: { width: '100%', resize: 'vertical', fontFamily: 'ui-monospace, monospace' },
+            })),
           h('div', { 'data-fl-note': '' }, '配置文件：' + (configPath || '（未知）')),
           h('div', { 'data-fl-note': '' }, '改完点上面的「保存」。')))
 
@@ -490,7 +499,7 @@ window.__ModuleLoader__.load({
           dirty ? h('span', { 'data-fl-dirty': '' }, '有未保存修改') : null,
           h('span', { 'data-fl-msg': '' }, message)),
         issues.length ? h('div', { 'data-fl-warn': '' },
-          h('strong', null, '保存时自动修正：'),
+          h('strong', null, '配置检查提示：'),
           ' ' + issues.slice(0, 4).join('；') + (issues.length > 4 ? `；另有 ${issues.length - 4} 项` : '')) : null,
         h('div', { 'data-fl-tabs': '' }, tabs.map(([k, t]) => h('button', {
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),

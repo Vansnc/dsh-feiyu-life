@@ -20,7 +20,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import {
   readConfig, saveConfig, generate, validateConfig, CONFIG_PATH,
-  zonedNow, zonedDayStartMs, todayCalendar, todayDeviation,
+  zonedNow, zonedDateTimeMs, addZonedDays, todayCalendar, todayDeviation, menstrualDay,
 } from './life.js'
 import { dayType, dailyPlan, planPath, writePlan, deletePlan } from './plan.js'
 import { addAdjustment } from './state.js'
@@ -28,31 +28,17 @@ import { writeDayWithModel } from './gen.js'
 import { registerImage } from './image.js'
 
 export const name = 'feiyu-life'
-export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'llm', 'tools', 'attachments']
+export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connection', 'llm', 'tools', 'attachments']
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
-
-/** Menstrual cycle day (0 = not on period). */
-function periodDay(cfg, ymd) {
-  const p = cfg.经期 || {}
-  const start = /^\d{4}-\d{2}-\d{2}$/.test(String(p.起始 || '')) ? Date.parse(String(p.起始) + 'T00:00:00Z') : NaN
-  if (!Number.isFinite(start)) return 0
-  const now = Date.parse(ymd + 'T00:00:00Z')
-  if (!Number.isFinite(now)) return 0
-  const days = Math.floor((now - start) / 86400000)
-  const cycle = Math.max(1, Math.round(Number(p.周期) || 29))
-  const length = Math.max(1, Math.round(Number(p.天数) || 5))
-  const pos = ((days % cycle) + cycle) % cycle
-  return pos < length ? pos + 1 : 0
-}
 
 /** Body/state hint passed to the model when writing a day. */
 function bodyHint(cfg, t, deviation = {}) {
   const detour = deviation.flat ? '今天想躺平，基本不出门'
     : deviation.outing ? '今天临时想出门走走'
       : deviation.skipAfternoon ? '今天不想去下午的课' : ''
-  const d = periodDay(cfg, t.ymd)
+  const d = menstrualDay(cfg, t.ymd)
   const body = d && d <= 3 ? '经期头几天，腰酸、想吃甜的、没力气'
     : d ? '经期后段，肚子还坠着' : ''
   return [body, detour].filter(Boolean).join('；')
@@ -131,6 +117,8 @@ export function apply(ctx) {
             what: { type: 'string', description: '改成在做什么（短句，例如：在便利店买布丁）' },
             from: { type: 'string', description: '从几点开始（HH:MM，不填=现在）' },
             duration: { type: 'number', description: '持续多少分钟，默认 90' },
+            outfit: { type: 'string', description: '这段时间穿什么（可选）' },
+            phone: { type: 'string', enum: ['在手', '静音', '在床头', '不在手边'], description: '这段时间的手机状态（可选）' },
           },
           required: ['what'],
           additionalProperties: false,
@@ -148,17 +136,19 @@ export function apply(ctx) {
             if (!what) return { ok: false, say: '没说要改成什么' }
             let startMinute = t.minuteOfDay
             const m = /^(\d{1,2}):(\d{2})$/.exec(String(args.from || '').trim())
-            if (m && Number(m[1]) <= 23 && Number(m[2]) <= 59) startMinute = Number(m[1]) * 60 + Number(m[2])
+            if (args.from && (!m || Number(m[1]) > 23 || Number(m[2]) > 59)) return { ok: false, say: '开始时间要写成有效的 HH:MM' }
+            if (m) startMinute = Number(m[1]) * 60 + Number(m[2])
             const duration = Math.max(15, Math.min(360, Number(args.duration) || 90))
-            const dayStartMs = zonedDayStartMs(now, t)
-            addAdjustment(t.ymd, {
-              start: dayStartMs + startMinute * 60000,
-              end: dayStartMs + Math.min(1440, startMinute + duration) * 60000,
+            const tz = String(cfg.时区 || 'Asia/Shanghai')
+            const ok = addAdjustment(t.ymd, {
+              start: zonedDateTimeMs(t.ymd, startMinute, tz),
+              end: zonedDateTimeMs(t.ymd, Math.min(1440, startMinute + duration), tz),
               what,
-              phone: '在手',
-              outfit: '',
+              phone: ['在手', '静音', '在床头', '不在手边'].includes(args.phone) ? args.phone : '在手',
+              outfit: String(args.outfit || '').trim().slice(0, 24),
               source: 'adjust',
             })
+            if (!ok) return { ok: false, say: '没能把调整写进状态文件' }
             return { ok: true, say: `记下了：${clockOf(startMinute)} 起，${what}` }
           } catch (e) { return { ok: false, say: '改失败：' + String((e && e.message) || e) } }
         },
@@ -213,7 +203,8 @@ export function apply(ctx) {
     } finally { writing.delete(t.ymd) }
   }
   const ensurePlan = async (now) => {
-    await Promise.all([ensurePlanFor(now), ensurePlanFor(new Date(now.getTime() + 86400000))])
+    const tz = String(readConfig().时区 || 'Asia/Shanghai')
+    await Promise.all([ensurePlanFor(now), ensurePlanFor(addZonedDays(now, tz, 1))])
   }
 
   const tick = () => {
@@ -242,14 +233,18 @@ export function apply(ctx) {
   // ── Settings page endpoints ──────────────────────────────────────────
   const onlyOwner = (handler) => async (req, res) => {
     try {
-      const connection = ctx.get('connection')
-      const rejection = connection && typeof connection.requestRejection === 'function' ? connection.requestRejection(req) : undefined
-      if (rejection === 401 || rejection === 403) {
-        res.writeHead(rejection, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-        res.end(JSON.stringify({ ok: false, error: rejection === 401 ? 'authentication_required' : 'forbidden' }))
+      const rejection = ctx.connection.requestRejection(req)
+      if (rejection !== undefined) {
+        const code = Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403
+        res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(JSON.stringify({ ok: false, error: code === 401 ? 'authentication_required' : 'forbidden' }))
         return
       }
-    } catch {}
+    } catch {
+      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ ok: false, error: 'connection_guard_unavailable' }))
+      return
+    }
     return handler(req, res)
   }
 

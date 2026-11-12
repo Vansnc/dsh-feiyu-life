@@ -22,7 +22,8 @@ import { readFacts, buildTimeline, segmentAt, recentSegments, nextSegment } from
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
-export const CONFIG_PATH = join(homedir(), '.dsh', 'feiyu-life-config.json')
+const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
+export const CONFIG_PATH = join(dshHome(), 'feiyu-life-config.json')
 
 const sectionGate = { 上午: 9, 中午: 12, 下午: 15, 晚上: 19 }
 const phoneSuffix = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
@@ -241,6 +242,18 @@ export function validateConfig(input) {
   const config = normalizeConfig(input, issues)
   for (const name of routineNames) {
     if (!config[name].some((row) => /睡/.test(row[2]))) issues.push(`${name}作息里没有包含「睡」的时段`)
+    const rows = config[name].map((row) => {
+      const start = toMinute(row[0])
+      let end = toMinute(row[1])
+      if (end <= start) end += 1440
+      return { start, end }
+    }).sort((a, b) => a.start - b.start)
+    if (rows.length && rows[0].start > 0) issues.push(`${name}作息从 00:00 到 ${rows[0].start < 60 ? '00:' + pad2(rows[0].start) : minuteLabel(rows[0].start)} 没有覆盖`)
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].start < rows[i - 1].end) { issues.push(`${name}作息存在重叠时段`); break }
+      if (rows[i].start > rows[i - 1].end) { issues.push(`${name}作息存在未覆盖的空档`); break }
+    }
+    if (rows.length && rows.at(-1).end < 1440) issues.push(`${name}作息没有覆盖到 24:00`)
   }
   return { config, issues }
 }
@@ -248,7 +261,10 @@ export function validateConfig(input) {
 function toMinute(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim())
   if (!m) return -1
-  return Number(m[1]) * 60 + Number(m[2])
+  const hour = Number(m[1])
+  const minute = Number(m[2])
+  if (minute > 59 || hour > 24 || (hour === 24 && minute !== 0)) return -1
+  return hour * 60 + minute
 }
 
 function pad2(n) { return String(n).padStart(2, '0') }
@@ -277,8 +293,28 @@ export function zonedNow(now, tz) {
 }
 
 /** Epoch milliseconds for 00:00 in the already-resolved local day. */
-export function zonedDayStartMs(now, zoned) {
-  return now.getTime() - zoned.minuteOfDay * 60000 - now.getSeconds() * 1000 - now.getMilliseconds()
+export function zonedDateTimeMs(ymd, minuteOfDay, tz = 'Asia/Shanghai') {
+  const target = Date.parse(`${ymd}T00:00:00Z`) + minuteOfDay * 60000
+  if (!Number.isFinite(target)) return NaN
+  let guess = target
+  for (let i = 0; i < 4; i++) {
+    const p = zonedNow(new Date(guess), tz)
+    const represented = Date.parse(`${p.ymd}T${pad2(p.hour)}:${pad2(p.minute)}:00Z`)
+    const delta = target - represented
+    guess += delta
+    if (!delta) break
+  }
+  return guess
+}
+
+export function zonedDayStartMs(_now, zoned, tz = 'Asia/Shanghai') {
+  return zonedDateTimeMs(zoned.ymd, 0, tz)
+}
+
+export function addZonedDays(now, tz, days) {
+  const current = zonedNow(now, tz)
+  const targetYmd = new Date(Date.parse(`${current.ymd}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
+  return new Date(zonedDateTimeMs(targetYmd, 12 * 60, tz))
 }
 
 function hashSeed(ymd, salt = '') {
@@ -350,7 +386,7 @@ export function todayDeviation(cfg, t, routine) {
   return out
 }
 
-function menstrualDay(cfg, ymd) {
+export function menstrualDay(cfg, ymd) {
   const p = cfg.经期 || {}
   const start = /^\d{4}-\d{2}-\d{2}$/.test(String(p.起始 || '')) ? Date.parse(String(p.起始) + 'T00:00:00Z') : NaN
   if (!Number.isFinite(start)) return 0
@@ -433,9 +469,14 @@ export function generate(cfg, now = new Date()) {
   const deviation = todayDeviation(cfg, t, calendar.routine)
   const type = dayType(cfg, t, calendar)
   const plan = dailyPlan(cfg, t, calendar, deviation, type)
-  const dayStartMs = zonedDayStartMs(now, t)
-  const timeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs)
+  const dayStartMs = zonedDayStartMs(now, t, tz)
+  const timeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs, (minute) => zonedDateTimeMs(t.ymd, minute, tz))
   const current = segmentAt(timeline, now.getTime()) || { what: '闲着', phone: '在手', outfit: '' }
+  const localMinute = (ms) => {
+    const at = zonedNow(new Date(ms), tz)
+    const delta = dayDiff(t.ymd, at.ymd)
+    return (Number.isFinite(delta) ? delta : 0) * 1440 + at.minuteOfDay
+  }
 
   const evidence = []
   evidence.push(calendar.special ? `${calendar.special.名}第 ${calendar.dayIndex} 天`
@@ -478,10 +519,10 @@ export function generate(cfg, now = new Date()) {
   const recent = recentSegments(timeline, now.getTime()).slice(0, 2).reverse()
   if (recent.length) lines.push(`（早些时候）${recent.map((x) => x.what).join('，然后')}。`)
   const next = nextSegment(timeline, now.getTime())
-  if (next) lines.push(`（接下来）${minuteLabel(Math.round((next.start - dayStartMs) / 60000))} ${next.what}。`)
+  if (next) lines.push(`（接下来）${minuteLabel(localMinute(next.start))} ${next.what}。`)
 
   if (t.hour >= 18) {
-    const tomorrow = zonedNow(new Date(now.getTime() + 86400000), tz)
+    const tomorrow = zonedNow(addZonedDays(now, tz, 1), tz)
     const tomorrowCal = todayCalendar(cfg, tomorrow)
     const tomorrowType = dayType(cfg, tomorrow, tomorrowCal)
     const tomorrowPlan = dailyPlan(cfg, tomorrow, tomorrowCal, {}, tomorrowType)
@@ -502,8 +543,8 @@ export function generate(cfg, now = new Date()) {
     plan,
     currentMinute: t.minuteOfDay,
     timeline: timeline.map((x) => ({
-      start: Math.round((x.start - dayStartMs) / 60000),
-      end: Math.round((x.end - dayStartMs) / 60000),
+      start: localMinute(x.start),
+      end: localMinute(x.end),
       what: x.what || '',
       phone: x.phone || '在手',
       outfit: x.outfit || '',

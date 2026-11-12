@@ -70,16 +70,34 @@ function overlay(base, cover) {
  * Plan items (minute units) + adjustments (ms) -> real timeline (ms segments).
  * The plan is the default truth; adjustments override it.
  */
-export function buildTimeline(planItems, facts, dayStartMs) {
-  const base = (planItems || []).map((x) => ({
-    start: dayStartMs + (Number(x.start) || 0) * 60000,
-    end: dayStartMs + (Number(x.end) || 0) * 60000,
-    what: x.what || '',
-    phone: x.phone || '在手',
-    outfit: x.outfit || '',
-    source: 'plan',
-  }))
-  const cover = (facts || []).filter((f) => f && Number.isFinite(f.end) && f.end > f.start)
+export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute) => dayStartMs + minute * 60000) {
+  const base = (planItems || []).flatMap((x) => {
+    const start = Number(x && x.start)
+    const end = Number(x && x.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return []
+    return [{
+      start: minuteToMs(start),
+      end: minuteToMs(end),
+      what: String(x.what || ''),
+      phone: String(x.phone || '在手'),
+      outfit: String(x.outfit || ''),
+      source: 'plan',
+    }]
+  })
+  const valid = (facts || []).filter((f) => f && Number.isFinite(f.start) && Number.isFinite(f.end) && f.end > f.start)
+  // Facts are stored oldest -> newest. Each newer adjustment punches a hole in
+  // older ones too, so one instant can never match two adjustment segments.
+  let cover = []
+  for (const fact of valid) {
+    cover = overlay(cover, [{
+      start: fact.start,
+      end: fact.end,
+      what: String(fact.what || ''),
+      phone: String(fact.phone || '在手'),
+      outfit: String(fact.outfit || ''),
+      source: 'adjust',
+    }])
+  }
   return overlay(base, cover)
 }
 
@@ -99,3 +117,4 @@ export function nextSegment(timeline, nowMs) {
   const upcoming = timeline.filter((x) => x.start > nowMs && !/睡/.test(x.what)).sort((a, b) => a.start - b.start)
   return upcoming[0] || null
 }
+
