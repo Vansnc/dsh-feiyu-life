@@ -106,13 +106,13 @@ window.__ModuleLoader__.load({
 [data-fl-place-icon]{font-size:20px;line-height:1;}
 [data-fl-avatar]{position:absolute;z-index:3;transform:translate(-50%,calc(-100% - 30px));transition:left 1.2s linear,top 1.2s linear;filter:drop-shadow(0 7px 5px rgba(25,52,58,.23));}
 [data-fl-avatar-motion]{position:relative;width:80px;height:80px;transform-origin:50% 100%;}
-[data-fl-avatar-sprite]{--fl-sprite-y:0px;width:80px;height:80px;background-color:transparent;background-image:var(--fl-avatar-image);background-size:320px 560px;background-position-x:0;background-position-y:var(--fl-sprite-y);background-repeat:no-repeat;animation:fl-sprite-4 2.2s linear infinite;}
-[data-fl-avatar-motion][data-behavior='walk'] [data-fl-avatar-sprite]{--fl-sprite-y:-80px;animation-duration:.62s;}
-[data-fl-avatar-motion][data-behavior='sleep'] [data-fl-avatar-sprite]{--fl-sprite-y:-160px;animation-duration:2.8s;}
-[data-fl-avatar-motion][data-behavior='study'] [data-fl-avatar-sprite]{--fl-sprite-y:-240px;animation-duration:1.7s;}
-[data-fl-avatar-motion][data-behavior='eat'] [data-fl-avatar-sprite]{--fl-sprite-y:-320px;animation-duration:1.25s;}
-[data-fl-avatar-motion][data-behavior='phone'] [data-fl-avatar-sprite]{--fl-sprite-y:-400px;animation-duration:2s;}
-[data-fl-avatar-motion][data-behavior='photo'] [data-fl-avatar-sprite]{--fl-sprite-y:-480px;animation-duration:1.6s;}
+[data-fl-avatar-sprite]{width:80px;height:80px;background-color:transparent;background-image:var(--fl-avatar-image);background-size:320px 80px;background-position:0 0;background-repeat:no-repeat;background-clip:border-box;animation:fl-sprite-4 2.2s steps(1,end) infinite;}
+[data-fl-avatar-motion][data-behavior='walk'] [data-fl-avatar-sprite]{animation-duration:.62s;}
+[data-fl-avatar-motion][data-behavior='sleep'] [data-fl-avatar-sprite]{animation-duration:2.8s;}
+[data-fl-avatar-motion][data-behavior='study'] [data-fl-avatar-sprite]{animation-duration:1.7s;}
+[data-fl-avatar-motion][data-behavior='eat'] [data-fl-avatar-sprite]{animation-duration:1.25s;}
+[data-fl-avatar-motion][data-behavior='phone'] [data-fl-avatar-sprite]{animation-duration:2s;}
+[data-fl-avatar-motion][data-behavior='photo'] [data-fl-avatar-sprite]{animation-duration:1.6s;}
 [data-fl-avatar-bubble]{position:absolute;right:-9px;top:-6px;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:Canvas;border:1px solid var(--fl-line);font-size:15px;box-shadow:0 4px 12px rgba(0,0,0,.12);}
 [data-fl-avatar-label]{position:absolute;left:50%;top:calc(100% + 4px);transform:translateX(-50%);white-space:nowrap;padding:2px 7px;border-radius:999px;background:rgba(16,66,68,.82);color:#fff;font-size:10px;box-shadow:0 3px 8px rgba(0,0,0,.14);}
 [data-fl-world-cards]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
@@ -221,6 +221,7 @@ window.__ModuleLoader__.load({
       const edges = (map && map.路径) || []
       const point = (world && world.position) || { x: 50, y: 50 }
       const behavior = (world && world.behavior) || 'idle'
+      const spriteBehavior = behavior === 'bath' ? 'idle' : behaviorMeta[behavior] ? behavior : 'idle'
       const meta = behaviorMeta[behavior] || behaviorMeta.idle
       const active = world && world.moving && world.destination ? world.destination.id : world && world.location && world.location.id
       return h('div', { 'data-fl-map': '' },
@@ -239,7 +240,7 @@ window.__ModuleLoader__.load({
         }, h('div', { 'data-fl-avatar-motion': '', 'data-behavior': behavior },
           h('div', {
             'data-fl-avatar-sprite': '', 'aria-hidden': 'true',
-            style: { '--fl-avatar-image': `url(${API}/avatar?v=0.10.1)` },
+            style: { '--fl-avatar-image': `url(${API}/avatar/${spriteBehavior}?v=1.0.1)` },
           }),
           h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, meta[0]),
           h('span', { 'data-fl-avatar-label': '' }, world.moving && world.destination
