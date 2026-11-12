@@ -992,6 +992,18 @@ window.__ModuleLoader__.load({
       return { Panel, CSS }
     })()
 
+    /** 左侧边栏入口图标（宿主传 size：展开 18 / 收起 16） */
+    function FeiyuSidebarIcon({ size = 16 }) {
+      return h('span', { style: { fontSize: size, lineHeight: 1 } }, '🐋')
+    }
+
+    /** 主页面容器：宿主 main 区域是固定高度，自己管滚动 */
+    function FeiyuPage() {
+      return h('div', {
+        style: { height: '100%', overflowY: 'auto', overflowX: 'hidden', padding: '20px 24px 48px', boxSizing: 'border-box' },
+      }, h(Panel))
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
@@ -1013,6 +1025,26 @@ window.__ModuleLoader__.load({
           { name: 'settings.section', id: 'feiyu-life', order: 56, label: '鱼的生活' },
           () => h(Panel),
         ))
+
+        // 左侧边栏入口 + 独立主页面（跟 QQ 机器人插件同一套挂法）
+        try {
+          const inject = ctx.inject
+          if (typeof inject === 'function') {
+            inject.call(ctx, ['layout'], (pageCtx) => {
+              const pageSlots = pageCtx.slots
+              const layout = pageCtx.layout
+              if (!pageSlots || !layout) return undefined
+              const PAGE_ID = 'feiyu-life'
+              const stopMain = pageSlots.inject('main', () => pageSlots.register(
+                { name: 'main', key: PAGE_ID }, FeiyuPage,
+              ))
+              const stopSidebar = pageSlots.inject('sidebar.panellist', () => pageSlots.register({
+                name: 'sidebar.panellist', id: PAGE_ID, order: 11, label: '鱼的生活',
+              }, FeiyuSidebarIcon))
+              return () => { stopSidebar(); stopMain() }
+            })
+          }
+        } catch (e) { /* 老宿主没有侧边栏 slot 就只留在设置页 */ }
 
       },
     }
