@@ -7,25 +7,26 @@
 export const defaultWorldConfig = {
   启用: true,
   自动通勤: true,
+  底图: 'xueyuan-road',
   地点: [
-    { id: 'dorm', name: '宿舍', x: 16, y: 72, icon: '🛏️', 关键词: ['宿舍', '床', '睡', '起床', '洗澡', '洗漱', '刷手机', '剪片', '修图', '游戏', '看剧', '外卖'] },
-    { id: 'classroom', name: '教学楼', x: 48, y: 22, icon: '🏫', 关键词: ['上课', '教室', '专业课', '讲座', '点名', '课件'] },
-    { id: 'library', name: '图书馆', x: 78, y: 26, icon: '📚', 关键词: ['图书馆', '自习', '背书', '复习'] },
-    { id: 'canteen', name: '食堂', x: 48, y: 70, icon: '🍜', 关键词: ['食堂', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
-    { id: 'shop', name: '便利店 · 快递点', x: 80, y: 70, icon: '🏪', 关键词: ['便利店', '超市', '快递', '取件', '买东西'] },
-    { id: 'outdoor', name: '校外 · 街上', x: 17, y: 24, icon: '🌳', 关键词: ['外面', '街上', '公园', '商场', '咖啡店', '咖啡馆', '咖啡厅', '书店', '餐厅', '电影院', '拍照', '逛', '校门口', '地铁', '公交'] },
+    { id: 'dorm', name: '学生公寓', x: 43, y: 61, icon: '🛏️', 关键词: ['宿舍', '公寓', '床', '睡', '起床', '洗澡', '洗漱', '刷手机', '剪片', '修图', '游戏', '看剧', '外卖'] },
+    { id: 'classroom', name: '教学楼', x: 73, y: 31, icon: '🏫', 关键词: ['上课', '教室', '教学楼', '专业课', '讲座', '点名', '课件'] },
+    { id: 'library', name: '矿大图书馆', x: 58, y: 37, icon: '📚', 关键词: ['图书馆', '自习', '背书', '复习'] },
+    { id: 'canteen', name: '裕园餐厅', x: 55, y: 68, icon: '🍜', 关键词: ['食堂', '裕园', '餐厅', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
+    { id: 'shop', name: '便利店 · 快递点', x: 84, y: 55, icon: '🏪', 关键词: ['便利店', '超市', '快递', '取件', '买东西'] },
+    { id: 'outdoor', name: '学院路 · 校外', x: 93, y: 55, icon: '🌳', 关键词: ['外面', '街上', '学院路', '公园', '商场', '咖啡店', '咖啡馆', '咖啡厅', '书店', '餐厅', '电影院', '拍照', '逛', '校门口', '地铁', '公交'] },
   ],
   路径: [
-    { from: 'dorm', to: 'canteen', minutes: 8 },
-    { from: 'dorm', to: 'classroom', minutes: 14 },
-    { from: 'dorm', to: 'outdoor', minutes: 10 },
-    { from: 'canteen', to: 'classroom', minutes: 9 },
-    { from: 'canteen', to: 'library', minutes: 10 },
-    { from: 'canteen', to: 'shop', minutes: 7 },
-    { from: 'classroom', to: 'library', minutes: 8 },
-    { from: 'library', to: 'shop', minutes: 9 },
-    { from: 'outdoor', to: 'classroom', minutes: 12 },
-    { from: 'outdoor', to: 'shop', minutes: 15 },
+    { from: 'dorm', to: 'canteen', minutes: 8, via: [{ x: 40, y: 60 }, { x: 47, y: 67 }, { x: 57, y: 73 }] },
+    { from: 'dorm', to: 'classroom', minutes: 14, via: [{ x: 40, y: 60 }, { x: 38, y: 57 }, { x: 47, y: 47 }, { x: 54, y: 43 }, { x: 70, y: 42 }, { x: 70, y: 26 }] },
+    { from: 'dorm', to: 'outdoor', minutes: 10, via: [{ x: 40, y: 60 }, { x: 38, y: 57 }, { x: 47, y: 47 }, { x: 54, y: 43 }, { x: 70, y: 42 }, { x: 81, y: 47 }, { x: 86, y: 48 }, { x: 92, y: 52 }, { x: 92, y: 55 }] },
+    { from: 'canteen', to: 'classroom', minutes: 9, via: [{ x: 57, y: 73 }, { x: 64, y: 58 }, { x: 70, y: 26 }] },
+    { from: 'canteen', to: 'library', minutes: 10, via: [{ x: 57, y: 73 }, { x: 55, y: 43 }] },
+    { from: 'canteen', to: 'shop', minutes: 7, via: [{ x: 57, y: 73 }, { x: 85, y: 72 }, { x: 86, y: 63 }, { x: 86, y: 56 }] },
+    { from: 'classroom', to: 'library', minutes: 8, via: [{ x: 70, y: 26 }, { x: 55, y: 43 }] },
+    { from: 'library', to: 'shop', minutes: 9, via: [{ x: 55, y: 43 }, { x: 71, y: 47 }, { x: 86, y: 46 }, { x: 86, y: 53 }, { x: 86, y: 56 }] },
+    { from: 'outdoor', to: 'classroom', minutes: 12, via: [{ x: 92, y: 55 }, { x: 86, y: 52 }, { x: 86, y: 46 }, { x: 77, y: 47 }, { x: 70, y: 26 }] },
+    { from: 'outdoor', to: 'shop', minutes: 5, via: [{ x: 92, y: 55 }, { x: 86, y: 52 }, { x: 86, y: 56 }] },
   ],
 }
 
@@ -91,11 +92,16 @@ export function normalizeWorldConfig(input) {
   const ids = new Set(safeNodes.map((x) => x.id))
   const paths = (Array.isArray(raw.路径) ? raw.路径 : defaultWorldConfig.路径).flatMap((edge) => {
     if (!edge || !ids.has(String(edge.from)) || !ids.has(String(edge.to)) || edge.from === edge.to) return []
-    return [{ from: String(edge.from), to: String(edge.to), minutes: Math.round(clamp(edge.minutes, 1, 180, 10)) }]
+    const via = Array.isArray(edge.via) ? edge.via.flatMap((point) => {
+      if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) return []
+      return [{ x: Math.round(clamp(point.x, 0, 100, 50)), y: Math.round(clamp(point.y, 0, 100, 50)) }]
+    }).slice(0, 32) : []
+    return [{ from: String(edge.from), to: String(edge.to), minutes: Math.round(clamp(edge.minutes, 1, 180, 10)), ...(via.length ? { via } : {}) }]
   })
   return {
     启用: raw.启用 !== false,
     自动通勤: raw.自动通勤 !== false,
+    底图: raw.底图 === 'none' ? 'none' : 'xueyuan-road',
     地点: safeNodes,
     路径: paths.length ? paths : clone(defaultWorldConfig.路径).filter((x) => ids.has(x.from) && ids.has(x.to)),
   }
@@ -162,8 +168,8 @@ function shortestRoute(world, from, to) {
   const graph = new Map(world.地点.map((node) => [node.id, []]))
   for (const edge of world.路径) {
     if (!graph.has(edge.from) || !graph.has(edge.to)) continue
-    graph.get(edge.from).push({ to: edge.to, minutes: edge.minutes })
-    graph.get(edge.to).push({ to: edge.from, minutes: edge.minutes })
+    graph.get(edge.from).push({ to: edge.to, minutes: edge.minutes, via: edge.via || [] })
+    graph.get(edge.to).push({ to: edge.from, minutes: edge.minutes, via: [...(edge.via || [])].reverse() })
   }
   const dist = new Map([[from, 0]])
   const prev = new Map()
@@ -177,7 +183,7 @@ function shortestRoute(world, from, to) {
       const next = (dist.get(current) || 0) + edge.minutes
       if (next >= (dist.get(edge.to) ?? Infinity)) continue
       dist.set(edge.to, next)
-      prev.set(edge.to, { from: current, minutes: edge.minutes })
+      prev.set(edge.to, { from: current, minutes: edge.minutes, via: edge.via || [] })
       open.add(edge.to)
     }
   }
@@ -188,7 +194,7 @@ function shortestRoute(world, from, to) {
   while (cursor !== from) {
     const p = prev.get(cursor)
     if (!p) break
-    legs.unshift({ from: p.from, to: cursor, minutes: p.minutes })
+    legs.unshift({ from: p.from, to: cursor, minutes: p.minutes, ...(p.via.length ? { via: p.via } : {}) })
     cursor = p.from
     nodes.unshift(cursor)
   }
@@ -259,8 +265,16 @@ function interpolateRoute(world, segment, progress) {
     const a = byId.get(leg.from)
     const b = byId.get(leg.to)
     if (!a || !b) break
-    const p = cursor / minutes
-    return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p }
+    const points = [a, ...(Array.isArray(leg.via) ? leg.via : []), b]
+    const lengths = points.slice(1).map((point, i) => Math.hypot(point.x - points[i].x, point.y - points[i].y))
+    const totalLength = lengths.reduce((sum, length) => sum + length, 0) || 1
+    let along = cursor / minutes * totalLength
+    for (let i = 0; i < lengths.length; i++) {
+      if (along > lengths[i]) { along -= lengths[i]; continue }
+      const p = along / Math.max(lengths[i], Number.EPSILON)
+      return { x: points[i].x + (points[i + 1].x - points[i].x) * p, y: points[i].y + (points[i + 1].y - points[i].y) * p }
+    }
+    return { x: b.x, y: b.y }
   }
   const last = byId.get(segment.to) || byId.get(segment.from)
   return { x: last?.x ?? 50, y: last?.y ?? 50 }

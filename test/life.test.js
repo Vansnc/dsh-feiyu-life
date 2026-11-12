@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  normalizeConfig, validateConfig, todayDeviation,
+  migrateConfig, normalizeConfig, validateConfig, todayDeviation,
   zonedNow, zonedDayStartMs, zonedDateTimeMs, addZonedDays,
 } from '../life.js'
 import { timeline, toMinute } from '../plan.js'
@@ -17,12 +17,40 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
-  assert.equal(cfg.配置版本, 3)
+  assert.equal(cfg.配置版本, 4)
   assert.equal(cfg.模型超时秒, 60)
   assert.equal(cfg.历史保留天数, 180)
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
   assert.deepEqual(cfg.日常, [])
   assert.ok(issues.length >= 2)
+})
+
+test('v4 migrates only the untouched stock map onto Xueyuan Road', () => {
+  const legacyMap = {
+    启用: true,
+    自动通勤: true,
+    地点: [
+      { id: 'dorm', x: 16, y: 72 }, { id: 'classroom', x: 48, y: 22 },
+      { id: 'library', x: 78, y: 26 }, { id: 'canteen', x: 48, y: 70 },
+      { id: 'shop', x: 80, y: 70 }, { id: 'outdoor', x: 17, y: 24 },
+    ],
+    路径: [{ from: 'dorm', to: 'canteen', minutes: 8 }],
+  }
+  const migrated = migrateConfig({ 配置版本: 3, 地图: legacyMap }).value
+  assert.equal(migrated.配置版本, 4)
+  assert.equal(migrated.地图.底图, 'xueyuan-road')
+  assert.deepEqual(migrated.地图.地点.map(({ id, x, y }) => ({ id, x, y })), [
+    { id: 'dorm', x: 43, y: 61 }, { id: 'classroom', x: 73, y: 31 },
+    { id: 'library', x: 58, y: 37 }, { id: 'canteen', x: 55, y: 68 },
+    { id: 'shop', x: 84, y: 55 }, { id: 'outdoor', x: 93, y: 55 },
+  ])
+  assert.ok(migrated.地图.路径.some((edge) => edge.via && edge.via.length))
+
+  const custom = structuredClone(legacyMap)
+  custom.地点[0].x = 24
+  const kept = migrateConfig({ 配置版本: 3, 地图: custom }).value
+  assert.equal(kept.地图.地点[0].x, 24)
+  assert.deepEqual(kept.地图.路径, custom.路径)
 })
 
 test('validation explains a routine without sleep', () => {

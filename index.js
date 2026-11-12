@@ -37,6 +37,15 @@ export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connecti
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
 const AVATAR_FILE = new URL('./assets/character-actions.png', import.meta.url)
+const AVATAR_BEHAVIORS = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo']
+const AVATAR_ACTION_FILES = new Map(AVATAR_BEHAVIORS.map((behavior) => [
+  behavior,
+  new URL(`./assets/actions/${behavior}.png`, import.meta.url),
+]))
+const XUEYUAN_MAP_FILES = new Map(['base', 'anime', 'buildings'].map((layer) => [
+  layer,
+  new URL(`./assets/maps/xueyuan-${layer}.svg`, import.meta.url),
+]))
 
 /** Body/state hint passed to the model when writing a day. */
 function bodyHint(cfg, t, deviation = {}) {
@@ -348,6 +357,27 @@ export function apply(ctx) {
     }), 'feiyu-life: state')
   } catch {}
 
+  for (const [behavior, file] of AVATAR_ACTION_FILES) {
+    try {
+      ctx.effect(() => ctx.webServer.register({
+        kind: 'exact',
+        path: `${ROUTE_PREFIX}/avatar/${behavior}`,
+        handler: onlyOwner(async (req, res) => {
+          if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+          try {
+            const data = readFileSync(file)
+            res.writeHead(200, {
+              'content-type': 'image/png',
+              'content-length': data.length,
+              'cache-control': 'no-store',
+            })
+            res.end(data)
+          } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_action_not_found' }) }
+        }),
+      }), `feiyu-life: avatar ${behavior}`)
+    } catch {}
+  }
+
   try {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
@@ -355,7 +385,9 @@ export function apply(ctx) {
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
         try {
-          const data = readFileSync(AVATAR_FILE)
+          const url = new URL(req.url || '/', 'http://x')
+          const file = AVATAR_ACTION_FILES.get(String(url.searchParams.get('action') || '')) || AVATAR_FILE
+          const data = readFileSync(file)
           res.writeHead(200, {
             'content-type': 'image/png',
             'content-length': data.length,
@@ -365,6 +397,28 @@ export function apply(ctx) {
         } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_not_found' }) }
       }),
     }), 'feiyu-life: avatar')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/map/xueyuan',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const url = new URL(req.url || '/', 'http://x')
+          const file = XUEYUAN_MAP_FILES.get(String(url.searchParams.get('layer') || 'base'))
+          if (!file) return reply(res, 404, { ok: false, error: 'map_layer_not_found' })
+          const data = readFileSync(file)
+          res.writeHead(200, {
+            'content-type': 'image/svg+xml; charset=utf-8',
+            'content-length': data.length,
+            'cache-control': 'no-store',
+          })
+          res.end(data)
+        } catch (e) { return reply(res, 404, { ok: false, error: 'map_layer_not_found' }) }
+      }),
+    }), 'feiyu-life: xueyuan map')
   } catch {}
 
   try {

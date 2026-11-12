@@ -20,10 +20,26 @@ test('client animation only advances horizontally through isolated strips', () =
   assert.doesNotMatch(client, /--fl-sprite-y|background-position-y/)
 })
 
+test('real map assets share one viewport and keep OpenStreetMap attribution', () => {
+  for (const layer of ['base', 'anime', 'buildings']) {
+    const svg = readFileSync(new URL(`../assets/maps/xueyuan-${layer}.svg`, import.meta.url), 'utf8')
+    assert.match(svg, /viewBox="0 0 1000 560"/, layer)
+  }
+  const attribution = readFileSync(new URL('../assets/maps/ATTRIBUTION.md', import.meta.url), 'utf8')
+  assert.match(attribution, /OpenStreetMap contributors/)
+  assert.match(attribution, /ODbL/)
+})
+
 test('map renders configured paths as layered roads with active-route state', () => {
   const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  assert.match(client, /data-fl-map-layer/)
+  assert.match(client, /layer=base/)
+  assert.match(client, /layer=anime/)
+  assert.match(client, /layer=buildings/)
   assert.match(client, /data-fl-road-base/)
   assert.match(client, /data-fl-road-mark/)
   assert.match(client, /routePairs\.has\(pair\)/)
+  assert.match(client, /\[data-fl-avatar\]\{position:absolute;z-index:8/)
+  assert.match(client, /calc\(-100% - 48px\)/)
   assert.doesNotMatch(client, /data-fl-map-lines\] line/)
 })
