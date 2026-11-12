@@ -29,6 +29,7 @@ import {
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
 import { registerImage, readImageConfig, cleanupPhotos } from './image.js'
+import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
 
 export const name = 'feiyu-life'
 export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connection', 'llm', 'tools', 'attachments']
@@ -123,6 +124,8 @@ export function apply(ctx) {
             duration: { type: 'number', description: '持续多少分钟，默认 90' },
             outfit: { type: 'string', description: '这段时间穿什么（可选）' },
             phone: { type: 'string', enum: ['在手', '静音', '在床头', '不在手边'], description: '这段时间的手机状态（可选）' },
+            locationId: { type: 'string', description: '地点 id（可选；不填时从活动短句推断）' },
+            behavior: { type: 'string', enum: ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo', 'bath'], description: '行为（可选；不填时从活动短句推断）' },
           },
           required: ['what'],
           additionalProperties: false,
@@ -144,12 +147,19 @@ export function apply(ctx) {
             if (m) startMinute = Number(m[1]) * 60 + Number(m[2])
             const duration = Math.max(15, Math.min(360, Number(args.duration) || 90))
             const tz = String(cfg.时区 || 'Asia/Shanghai')
+            const world = normalizeWorldConfig(cfg.地图)
+            const inferred = inferenceFor(what, world)
+            const locationId = world.地点.some((node) => node.id === args.locationId) ? String(args.locationId) : inferred.locationId
+            const behavior = BEHAVIOR_RULES.some((rule) => rule.id === args.behavior) || args.behavior === 'idle'
+              ? String(args.behavior) : inferred.behavior
             const ok = addAdjustment(t.ymd, {
               start: zonedDateTimeMs(t.ymd, startMinute, tz),
               end: zonedDateTimeMs(t.ymd, Math.min(1440, startMinute + duration), tz),
               what,
               phone: ['在手', '静音', '在床头', '不在手边'].includes(args.phone) ? args.phone : '在手',
               outfit: String(args.outfit || '').trim().slice(0, 24),
+              locationId,
+              behavior,
               source: 'adjust',
             })
             if (!ok) return { ok: false, say: '没能把调整写进状态文件' }
@@ -280,7 +290,8 @@ export function apply(ctx) {
         start: start.minuteOfDay,
         end: end.ymd === day.ymd ? end.minuteOfDay : 1440,
         what: String(fact.what || ''), phone: String(fact.phone || '在手'),
-        outfit: String(fact.outfit || ''), createdAt: Number(fact.createdAt) || 0,
+        outfit: String(fact.outfit || ''), locationId: String(fact.locationId || ''),
+        behavior: String(fact.behavior || ''), createdAt: Number(fact.createdAt) || 0,
       }
     })
   }
@@ -405,6 +416,22 @@ export function apply(ctx) {
   try {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
+      path: ROUTE_PREFIX + '/infer',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const url = new URL(req.url || '/', 'http://x')
+          const text = String(url.searchParams.get('text') || '').trim().slice(0, 200)
+          if (!text) return reply(res, 400, { ok: false, error: 'text_required' })
+          return reply(res, 200, { ok: true, ...inferenceFor(text, readConfig().地图) })
+        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
+      }),
+    }), 'feiyu-life: infer')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
       path: ROUTE_PREFIX + '/regenerate',
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
@@ -479,4 +506,3 @@ export function apply(ctx) {
   try { setTimeout(maintain, 15000) } catch {}
   try { ctx.effect(() => ctx.interval(maintain, 24 * 60 * 60 * 1000)) } catch {}
 }
-

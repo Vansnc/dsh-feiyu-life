@@ -29,6 +29,38 @@ export const defaultWorldConfig = {
   ],
 }
 
+export const BEHAVIOR_RULES = [
+  { id: 'sleep', label: '睡觉', include: ['睡', '睡觉', '睡着', '午睡', '补觉', '打盹', '眯一会', '躺平'], exclude: ['睡不着', '没睡', '不睡', '叫醒'] },
+  { id: 'walk', label: '移动中', include: ['步行', '走路', '散步', '在路上', '赶路', '出发', '去往', '回宿舍', '回学校', '坐地铁', '乘地铁', '坐公交', '乘公交', '骑车', '打车'] },
+  { id: 'eat', label: '吃东西', include: ['吃饭', '吃早饭', '吃早餐', '吃午饭', '吃晚饭', '吃夜宵', '吃面', '吃粉', '吃零食', '吃外卖', '食堂', '早餐', '午餐', '午饭', '晚餐', '晚饭', '夜宵', '喝奶茶', '喝咖啡', '喝饮料', '用餐'], exclude: ['等外卖', '点外卖', '叫外卖', '拿外卖', '取外卖'] },
+  { id: 'study', label: '学习 / 创作', include: ['上课', '听课', '自习', '背书', '复习', '看书', '读书', '作业', '课件', '写稿', '改稿', '写作', '码字', '论文', '画画', '画稿', '绘图', '设计', '海报', '剪片', '剪视频', '修图'] },
+  { id: 'photo', label: '拍照', include: ['拍照', '照相', '自拍', '拍视频', '拿相机', '带着相机'] },
+  { id: 'bath', label: '洗漱', include: ['洗澡', '冲澡', '淋浴', '泡澡', '洗漱', '刷牙', '洗脸', '护肤', '敷面膜', '洗头', '吹头发'] },
+  { id: 'phone', label: '玩手机', include: ['刷手机', '看手机', '玩手机', '回消息', '回微信', '打游戏', '玩游戏', '刷B站', '刷 B 站', '看剧', '追剧', '刷视频', '看视频', '刷微博', '刷小红书'] },
+]
+
+const normalizeText = (value) => String(value || '')
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/[\s，。！？、,.!?：:；;“”‘’'"（）()【】[\]·…—_-]+/g, '')
+
+const includesAny = (text, words) => words.some((word) => text.includes(normalizeText(word)))
+
+const firstPersonClause = (text, verb) => String(text || '')
+  .split(/[，。！？,.!?；;]/)
+  .find((clause) => new RegExp('(?:我|自己|本人|她)[^，。！？,.!?；;]{0,8}' + verb).test(clause))
+
+const hasFirstPersonAction = (text, verb) => {
+  const clause = firstPersonClause(text, verb)
+  return Boolean(clause && !/(?:只|没|没有|不|还没)[^，。！？,.!?；;]{0,4}(?:吃|喝|睡|眯)/.test(clause))
+}
+
+const actionAfterWatching = (text, verb) => !hasFirstPersonAction(text, verb) && String(text || '')
+  .split(/[，。！？,.!?；;]/)
+  .some((clause) => new RegExp(
+    '(?:看|望|瞧|盯|陪|等|给|让|喂|看着|望着|瞧着|盯着)(?:着|见|到)?(?:它|他|她|猫|狗|小猫|小狗|室友|朋友|别人)?[^，。！？,.!?；;]{0,8}' + verb,
+  ).test(clause))
+
 const clone = (value) => JSON.parse(JSON.stringify(value))
 const clamp = (value, min, max, fallback) => {
   const n = Number(value)
@@ -70,17 +102,21 @@ export function normalizeWorldConfig(input) {
 }
 
 export function behaviorFor(what) {
-  const text = String(what || '')
-  if (/睡|午睡|眯/.test(text)) return 'sleep'
-  if (/走|路上|出发|去往|回宿舍|地铁|公交/.test(text)) return 'walk'
-  // 宠物语境里的「吃」是猫在吃（「看它吃完半根火腿肠」），不是她在吃
-  const watchingPet = /猫|狗|喂|看它|摸它|撸它/.test(text)
-  if (!watchingPet && /吃饭|吃早饭|吃午饭|吃晚饭|吃面|吃零食|吃外卖|食堂|早餐|午饭|晚饭|奶茶/.test(text)) return 'eat'
-  if (/上课|自习|背书|复习|看书|作业|课件|写稿|改稿|写作|码字|论文|画|剪片|修图/.test(text)) return 'study'
-  if (/拍照|相机|自拍/.test(text)) return 'photo'
-  if (/洗澡|洗漱/.test(text)) return 'bath'
-  if (/手机|刷|游戏|B站|看剧/.test(text)) return 'phone'
-  return 'idle'
+  const raw = String(what || '')
+  const text = normalizeText(raw)
+  const candidates = []
+  for (const rule of BEHAVIOR_RULES) {
+    if (!includesAny(text, rule.include)) continue
+    if (includesAny(text, rule.exclude || [])) continue
+    if (rule.id === 'eat' && actionAfterWatching(raw, '吃|喝')) continue
+    if (rule.id === 'sleep' && actionAfterWatching(raw, '睡|眯')) continue
+    const specificity = Math.max(...rule.include
+      .map((word) => normalizeText(word))
+      .filter((word) => text.includes(word))
+      .map((word) => [...word].length))
+    candidates.push({ id: rule.id, specificity })
+  }
+  return candidates.sort((a, b) => b.specificity - a.specificity)[0]?.id || 'idle'
 }
 
 function locationForNormalized(what, world) {
@@ -106,6 +142,19 @@ function locationForNormalized(what, world) {
 
 export function locationFor(what, worldConfig = defaultWorldConfig) {
   return locationForNormalized(what, normalizeWorldConfig(worldConfig))
+}
+
+export function inferenceFor(what, worldConfig = defaultWorldConfig) {
+  const world = normalizeWorldConfig(worldConfig)
+  const locationId = locationForNormalized(what, world)
+  const behavior = behaviorFor(what)
+  return {
+    text: String(what || ''),
+    locationId,
+    location: world.地点.find((node) => node.id === locationId) || null,
+    behavior,
+    behaviorLabel: BEHAVIOR_RULES.find((rule) => rule.id === behavior)?.label || '发呆',
+  }
 }
 
 function shortestRoute(world, from, to) {
@@ -149,11 +198,22 @@ function shortestRoute(world, from, to) {
 /** Decorate timeline segments and reserve the final minutes before a location change for travel. */
 export function addWorldToTimeline(timeline, worldConfig = defaultWorldConfig) {
   const world = normalizeWorldConfig(worldConfig)
-  const rows = (timeline || []).map((item) => ({
-    ...item,
-    locationId: locationForNormalized(item.what, world),
-    behavior: behaviorFor(item.what),
-  })).sort((a, b) => a.start - b.start)
+  let previousLocationId = world.地点.find((x) => x.id === 'dorm')?.id || world.地点[0]?.id || ''
+  let previousEnd = null
+  const rows = (timeline || []).slice().sort((a, b) => a.start - b.start).map((item) => {
+    const explicitLocationId = world.地点.some((node) => node.id === item.locationId) ? item.locationId : ''
+    const inferredLocationId = explicitLocationId || locationForNormalized(item.what, world)
+    const ambiguous = !explicitLocationId && inferredLocationId === (world.地点.find((x) => x.id === 'dorm')?.id || world.地点[0]?.id || '')
+      && !world.地点.some((node) => (node.关键词 || []).some((word) => word && String(item.what || '').includes(word)))
+    const locationId = ambiguous && previousEnd === item.start ? previousLocationId : inferredLocationId
+    previousLocationId = locationId || previousLocationId
+    previousEnd = item.end
+    return {
+      ...item,
+      locationId,
+      behavior: item.behavior || behaviorFor(item.what),
+    }
+  })
   if (!world.启用 || !world.自动通勤 || rows.length < 2) return rows
   const out = []
   for (let i = 0; i < rows.length; i++) {
@@ -237,4 +297,3 @@ export function worldStateAt(timeline, nowMs, worldConfig = defaultWorldConfig) 
     route: Array.isArray(current.route) ? current.route : [],
   }
 }
-
