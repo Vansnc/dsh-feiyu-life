@@ -35,6 +35,7 @@ export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connecti
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
+const AVATAR_FILE = new URL('./assets/character-sheet.png', import.meta.url)
 
 /** Body/state hint passed to the model when writing a day. */
 function bodyHint(cfg, t, deviation = {}) {
@@ -295,6 +296,7 @@ export function apply(ctx) {
       timeline: r.timeline || [],
       currentMinute: r.currentMinute || 0,
       current: r.current || null,
+      world: r.world || null,
       adjustments: adjustmentPayload(cfg, now),
       meta: {
         dayType: r.dayType || null,
@@ -323,6 +325,25 @@ export function apply(ctx) {
         try { return reply(res, 200, statePayload(new Date())) } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: state')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/avatar',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const data = readFileSync(AVATAR_FILE)
+          res.writeHead(200, {
+            'content-type': 'image/png',
+            'content-length': data.length,
+            'cache-control': 'private, max-age=86400',
+          })
+          res.end(data)
+        } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_not_found' }) }
+      }),
+    }), 'feiyu-life: avatar')
   } catch {}
 
   try {
@@ -361,6 +382,7 @@ export function apply(ctx) {
             timeline: r.timeline || [],
             currentMinute: r.currentMinute || 0,
             current: r.current || null,
+            world: r.world || null,
             adjustments: adjustmentPayload(readConfig(), at),
             meta: {
               dayType: r.dayType || null,

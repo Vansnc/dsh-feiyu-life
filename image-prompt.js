@@ -101,13 +101,16 @@ export function liveState(now = new Date()) {
                 : t.hour < 22 ? '天已经黑了，室内开着顶灯和台灯'
                   : '深夜，只开着台灯，窗外是零星的窗'
     const what = r.current?.what || ''
+    const worldPlace = r.world?.moving && r.world?.destination
+      ? `${r.world.location?.name || '路上'}去${r.world.destination.name}的路上`
+      : r.world?.location?.name
     return {
       what,
       outfit: r.current?.outfit || '',
       clock,
       light,
       hour: t.hour,
-      location: locationHint(what),
+      location: worldPlace || locationHint(what),
     }
   } catch {
     return { what: '', outfit: '', clock: '', light: '自然光', hour: 12, location: '宿舍书桌' }

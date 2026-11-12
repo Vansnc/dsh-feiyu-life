@@ -26,7 +26,7 @@ window.__ModuleLoader__.load({
     const sectionOptions = ['上午', '中午', '下午', '晚上']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['events', '事件'], ['photo', '照片']]
+    const tabs = [['now', '此刻'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['events', '事件'], ['photo', '照片']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -84,6 +84,7 @@ window.__ModuleLoader__.load({
 [data-fl-seg]{position:absolute;top:0;bottom:0;border-radius:5px;min-width:2px;}
 [data-fl-seg][data-fl-src='plan']{background:#8b93a1;}
 [data-fl-seg][data-fl-src='adjust']{background:#e08a1e;}
+[data-fl-seg][data-fl-src='travel']{background:#4b88d1;}
 [data-fl-tl-what]{flex:1;font-size:12px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 [data-fl-tl-src]{font-style:normal;font-size:10px;opacity:.75;margin-left:6px;padding:1px 6px;border-radius:999px;background:rgba(127,127,127,.14);}
 [data-fl-tl-row][data-fl-cur] [data-fl-seg]{box-shadow:0 0 0 2px rgba(255,82,82,.75);}
@@ -93,7 +94,35 @@ window.__ModuleLoader__.load({
 [data-fl-lg]::before{content:'';width:10px;height:10px;border-radius:3px;display:inline-block;}
 [data-fl-lg][data-fl-src='plan']::before{background:#8b93a1;}
 [data-fl-lg][data-fl-src='adjust']::before{background:#e08a1e;}
-@media(max-width:720px){[data-fl-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fl-table]{display:block;overflow-x:auto;}[data-fl-tl-time]{flex-basis:78px;}[data-fl-track],[data-fl-ticks]{flex-basis:48%;}}
+[data-fl-lg][data-fl-src='travel']::before{background:#4b88d1;}
+[data-fl-map]{position:relative;isolation:isolate;width:100%;aspect-ratio:16/9;min-height:360px;overflow:hidden;border:1px solid var(--fl-line);border-radius:18px;background:radial-gradient(circle at 25% 25%,rgba(112,190,158,.19),transparent 24%),radial-gradient(circle at 74% 72%,rgba(79,137,209,.16),transparent 27%),linear-gradient(145deg,rgba(246,242,225,.92),rgba(226,241,237,.96));}
+@media(prefers-color-scheme:dark){[data-fl-map]{background:radial-gradient(circle at 25% 25%,rgba(64,145,115,.20),transparent 24%),radial-gradient(circle at 74% 72%,rgba(60,105,165,.20),transparent 27%),linear-gradient(145deg,#1d2725,#182129);}}
+[data-fl-map]::before{content:'';position:absolute;inset:0;z-index:-1;opacity:.28;background-image:linear-gradient(rgba(127,127,127,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(127,127,127,.12) 1px,transparent 1px);background-size:32px 32px;}
+[data-fl-map-lines]{position:absolute;inset:0;width:100%;height:100%;overflow:visible;}
+[data-fl-map-lines] line{stroke:rgba(64,107,112,.34);stroke-width:.65;stroke-linecap:round;stroke-dasharray:1.4 1.4;vector-effect:non-scaling-stroke;}
+[data-fl-place]{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:3px;min-width:72px;padding:7px 9px;border:1px solid rgba(75,112,115,.24);border-radius:13px;background:rgba(255,255,255,.76);box-shadow:0 5px 18px rgba(24,61,63,.08);backdrop-filter:blur(7px);font-size:11px;text-align:center;}
+@media(prefers-color-scheme:dark){[data-fl-place]{background:rgba(24,31,35,.78);}}
+[data-fl-place][data-fl-active]{border-color:var(--fl-accent);box-shadow:0 0 0 3px var(--fl-accent-soft);}
+[data-fl-place-icon]{font-size:20px;line-height:1;}
+[data-fl-avatar]{position:absolute;z-index:3;transform:translate(-50%,-78%);transition:left 1.2s linear,top 1.2s linear;filter:drop-shadow(0 7px 5px rgba(25,52,58,.23));}
+[data-fl-avatar-motion]{position:relative;transform-origin:50% 100%;animation:fl-breathe 2.5s ease-in-out infinite;}
+[data-fl-avatar-motion][data-behavior='walk']{animation:fl-walk .55s ease-in-out infinite;}
+[data-fl-avatar-motion][data-behavior='sleep']{animation:fl-sleep 2.4s ease-in-out infinite;}
+[data-fl-avatar-motion][data-behavior='study']{animation:fl-study 1.9s ease-in-out infinite;}
+[data-fl-avatar-motion][data-behavior='eat']{animation:fl-eat 1.15s ease-in-out infinite;}
+[data-fl-avatar-motion][data-behavior='photo']{animation:fl-photo 2.2s ease-in-out infinite;}
+[data-fl-avatar-sprite]{width:74px;height:101px;border-radius:22px;background-color:#fff;background-image:var(--fl-avatar-image);background-size:300% auto;background-position:left center;background-repeat:no-repeat;box-shadow:inset 0 0 0 2px rgba(255,255,255,.7);}
+[data-fl-avatar-bubble]{position:absolute;right:-17px;top:-13px;display:grid;place-items:center;width:31px;height:31px;border-radius:50%;background:Canvas;border:1px solid var(--fl-line);font-size:16px;box-shadow:0 4px 12px rgba(0,0,0,.12);}
+[data-fl-avatar-label]{position:absolute;left:50%;bottom:-21px;transform:translateX(-50%);white-space:nowrap;padding:2px 7px;border-radius:999px;background:rgba(16,66,68,.82);color:#fff;font-size:10px;box-shadow:0 3px 8px rgba(0,0,0,.14);}
+[data-fl-world-cards]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+@keyframes fl-breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2px) scale(1.015)}}
+@keyframes fl-walk{0%,100%{transform:translate(-2px,0) rotate(-2deg)}50%{transform:translate(2px,-5px) rotate(2deg)}}
+@keyframes fl-sleep{0%,100%{transform:rotate(-4deg) translateY(1px)}50%{transform:rotate(3deg) translateY(-1px)}}
+@keyframes fl-study{0%,100%{transform:translateY(0)}50%{transform:translateY(2px) rotate(.8deg)}}
+@keyframes fl-eat{0%,100%{transform:translateY(0)}35%{transform:translateY(2px) rotate(-1deg)}65%{transform:translateY(-2px) rotate(1deg)}}
+@keyframes fl-photo{0%,72%,100%{filter:brightness(1)}76%{filter:brightness(1.7)}80%{filter:brightness(1)}}
+@media(prefers-reduced-motion:reduce){[data-fl-avatar],[data-fl-avatar-motion]{animation:none!important;transition:none!important;}}
+@media(max-width:720px){[data-fl-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fl-world-cards]{grid-template-columns:1fr;}[data-fl-map]{min-height:430px;}[data-fl-table]{display:block;overflow-x:auto;}[data-fl-tl-time]{flex-basis:78px;}[data-fl-track],[data-fl-ticks]{flex-basis:48%;}}
 `
 
     // ── utilities ────────────────────────────────────────────────
@@ -178,10 +207,45 @@ window.__ModuleLoader__.load({
               title: `${clockOf(x.start)}–${clockOf(x.end)} ${x.what}（${x.source || 'plan'}${x.outfit ? '，' + x.outfit : ''}）`,
             })),
           h('span', { 'data-fl-tl-what': '', title: x.what }, x.what,
-            x.source && x.source !== 'plan' ? h('i', { 'data-fl-tl-src': '' }, '调整') : null))),
+            x.source && x.source !== 'plan' ? h('i', { 'data-fl-tl-src': '' }, x.source === 'travel' ? '通勤' : '调整') : null))),
         h('div', { 'data-fl-legend': '' },
           h('span', { 'data-fl-lg': '', 'data-fl-src': 'plan' }, '计划'),
-          h('span', { 'data-fl-lg': '', 'data-fl-src': 'adjust' }, '调整（life_adjust）')))
+          h('span', { 'data-fl-lg': '', 'data-fl-src': 'adjust' }, '调整（life_adjust）'),
+          h('span', { 'data-fl-lg': '', 'data-fl-src': 'travel' }, '自动通勤')))
+    }
+
+    const behaviorMeta = {
+      idle: ['✨', '发呆'], sleep: ['💤', '睡觉'], walk: ['👟', '移动中'],
+      study: ['✏️', '学习 / 创作'], eat: ['🥢', '吃东西'], phone: ['📱', '玩手机'],
+      photo: ['📷', '拍照'], bath: ['🫧', '洗漱'],
+    }
+
+    function WorldMap({ world, map }) {
+      const nodes = (map && map.地点) || []
+      const edges = (map && map.路径) || []
+      const point = (world && world.position) || { x: 50, y: 50 }
+      const behavior = (world && world.behavior) || 'idle'
+      const meta = behaviorMeta[behavior] || behaviorMeta.idle
+      const active = world && world.moving && world.destination ? world.destination.id : world && world.location && world.location.id
+      return h('div', { 'data-fl-map': '' },
+        h('svg', { 'data-fl-map-lines': '', viewBox: '0 0 100 100', preserveAspectRatio: 'none', 'aria-hidden': 'true' },
+          edges.map((edge, i) => {
+            const a = nodes.find((x) => x.id === edge.from)
+            const b = nodes.find((x) => x.id === edge.to)
+            return a && b ? h('line', { key: i, x1: a.x, y1: a.y, x2: b.x, y2: b.y }) : null
+          })),
+        nodes.map((node) => h('div', {
+          key: node.id, 'data-fl-place': '', 'data-fl-active': active === node.id ? '' : undefined,
+          style: { left: node.x + '%', top: node.y + '%' }, title: (node.关键词 || []).join('、'),
+        }, h('span', { 'data-fl-place-icon': '' }, node.icon || '📍'), h('span', null, node.name))),
+        world && world.enabled !== false ? h('div', {
+          'data-fl-avatar': '', style: { left: point.x + '%', top: point.y + '%' },
+        }, h('div', { 'data-fl-avatar-motion': '', 'data-behavior': behavior },
+          h('div', { 'data-fl-avatar-sprite': '', style: { '--fl-avatar-image': `url(${API}/avatar)` } }),
+          h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, meta[0]),
+          h('span', { 'data-fl-avatar-label': '' }, world.moving && world.destination
+            ? `去${world.destination.name} ${Math.round((world.progress || 0) * 100)}%`
+            : (world.location && world.location.name) || '未知位置'))) : null)
     }
 
     // ── panel ───────────────────────────────────────────────────
@@ -203,6 +267,7 @@ window.__ModuleLoader__.load({
       const [current, setCurrent] = useState(null)
       const [meta, setMeta] = useState(null)
       const [adjustments, setAdjustments] = useState([])
+      const [world, setWorld] = useState(null)
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
 
       const load = async (preserveConfig = false) => {
@@ -220,6 +285,7 @@ window.__ModuleLoader__.load({
           setCurrent(data.current || null)
           setMeta(data.meta || null)
           setAdjustments(data.adjustments || [])
+          setWorld(data.world || null)
           setError('')
         } catch (e) { setError('读不到配置：' + e.message) }
       }
@@ -241,6 +307,7 @@ window.__ModuleLoader__.load({
           setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setSavedConfig(clone(data.config)); setCurrent(data.current || null); setMeta(data.meta || null)
           setAdjustments(data.adjustments || [])
+          setWorld(data.world || null)
           setIssues(data.issues || [])
           setMessage((data.issues || []).length ? `已保存，有 ${(data.issues || []).length} 项配置提示` : '已保存，下一轮就用新配置')
         } catch (e) { setMessage('保存失败：' + e.message) }
@@ -261,6 +328,7 @@ window.__ModuleLoader__.load({
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null); setMeta(data.meta || null)
           setAdjustments(data.adjustments || [])
+          setWorld(data.world || null)
           setMessage('今日剧本已重新生成')
         } catch (e) { setMessage('重新生成失败：' + e.message) }
         setBusy(false)
@@ -272,6 +340,7 @@ window.__ModuleLoader__.load({
           const data = await postJson(API + '/undo-regenerate', {})
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null); setMeta(data.meta || null); setAdjustments(data.adjustments || [])
+          setWorld(data.world || null)
           setMessage('已撤销上一次重新生成')
         } catch (e) { setMessage('撤销失败：' + e.message) }
         setBusy(false)
@@ -284,6 +353,7 @@ window.__ModuleLoader__.load({
           const data = await postJson(API + '/adjustments/delete', { date: item.date, id: item.id, index: item.index })
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null); setMeta(data.meta || null); setAdjustments(data.adjustments || [])
+          setWorld(data.world || null)
           setMessage('这条临时调整已撤销')
         } catch (e) { setMessage('撤销调整失败：' + e.message) }
         setBusy(false)
@@ -296,6 +366,7 @@ window.__ModuleLoader__.load({
           setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
           setCurrent(data.current || null); setMeta(data.meta || null)
           setAdjustments(data.adjustments || [])
+          setWorld(data.world || null)
           setMessage('以下是在 ' + new Date(ts).toLocaleString() + ' 算出来的')
         } catch (e) { setMessage('预览失败：' + e.message) }
       }
@@ -353,6 +424,50 @@ window.__ModuleLoader__.load({
             })),
           h('div', { 'data-fl-note': '' }, '配置文件：' + (configPath || '（未知）')),
           h('div', { 'data-fl-note': '' }, '改完点上面的「保存」。')))
+
+      const mapCfg = config.地图 || { 启用: true, 自动通勤: true, 地点: [], 路径: [] }
+      const placeRows = (mapCfg.地点 || []).map((node, i) => h('tr', { key: node.id || i },
+        h('td', null, h(Field, { value: node.icon, width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'icon'], v) })),
+        h('td', null, h(Field, { value: node.name, width: 'data-fl-narrow', onChange: (v) => patch(['地图', '地点', i, 'name'], v) })),
+        h('td', null, h(Field, { value: node.x, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'x'], Number(v)) })),
+        h('td', null, h(Field, { value: node.y, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'y'], Number(v)) })),
+        h('td', null, h(Field, {
+          value: (node.关键词 || []).join('、'), width: 'data-fl-wide',
+          onChange: (v) => patch(['地图', '地点', i, '关键词'], v.split(/[、,，]/).map((x) => x.trim()).filter(Boolean)),
+        }))))
+      const routeRows = (mapCfg.路径 || []).map((edge, i) => {
+        const from = (mapCfg.地点 || []).find((x) => x.id === edge.from)
+        const to = (mapCfg.地点 || []).find((x) => x.id === edge.to)
+        return h('tr', { key: `${edge.from}-${edge.to}-${i}` },
+          h('td', null, (from && from.name) || edge.from),
+          h('td', null, (to && to.name) || edge.to),
+          h('td', null, h(Field, { value: edge.minutes, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '路径', i, 'minutes'], Number(v)) })))
+      })
+      const mapPage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '地图不是另一套状态：它直接消费今天的真实时间线。相邻活动发生在不同地点时，会在前一段末尾自动留出通勤时间。'),
+        h(WorldMap, { world, map: mapCfg }),
+        h('div', { 'data-fl-world-cards': '' },
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '当前位置'), h('div', { 'data-fl-stat-v': '' }, (world && world.location && `${world.location.icon || ''} ${world.location.name}`) || '未知')),
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '行为'), h('div', { 'data-fl-stat-v': '' }, (behaviorMeta[(world && world.behavior) || 'idle'] || behaviorMeta.idle)[1])),
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '移动'), h('div', { 'data-fl-stat-v': '' }, world && world.moving && world.destination ? `去${world.destination.name} · ${Math.round((world.progress || 0) * 100)}%` : '停留中'))),
+        h('div', { 'data-fl-h': '' }, '地图规则'),
+        h('div', { 'data-fl-row': '' },
+          h('label', { 'data-fl-row': '' },
+            h('input', { type: 'checkbox', checked: mapCfg.启用 !== false, onChange: (e) => patch(['地图', '启用'], e.target.checked) }),
+            h('span', null, '启用空间状态')),
+          h('label', { 'data-fl-row': '' },
+            h('input', { type: 'checkbox', checked: mapCfg.自动通勤 !== false, onChange: (e) => patch(['地图', '自动通勤'], e.target.checked) }),
+            h('span', null, '跨地点时自动插入通勤'))),
+        h('div', { 'data-fl-h': '' }, '地点与坐标'),
+        h('div', { 'data-fl-note': '' }, '关键词用于从剧本短句判断地点；坐标是地图里的百分比位置。'),
+        h('table', { 'data-fl-table': '' },
+          h('thead', null, h('tr', null,
+            h('th', null, '图标'), h('th', null, '地点'), h('th', null, 'X'), h('th', null, 'Y'), h('th', null, '识别关键词'))),
+          h('tbody', null, placeRows)),
+        h('div', { 'data-fl-h': '' }, '路径耗时'),
+        h('table', { 'data-fl-table': '' },
+          h('thead', null, h('tr', null, h('th', null, '从'), h('th', null, '到'), h('th', null, '分钟'))),
+          h('tbody', null, routeRows)))
 
       const calendarTable = (key, label, withRoutine) => h('div', { 'data-fl-sec': '', key },
         h('div', { 'data-fl-h': '' }, label),
@@ -533,7 +648,7 @@ window.__ModuleLoader__.load({
           h('div', { 'data-fl-stats': '' },
             h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '此刻'), h('div', { 'data-fl-stat-v': '', title: current && current.what }, (current && current.what) || '等待状态')),
             h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '今天'), h('div', { 'data-fl-stat-v': '' }, (meta && meta.dayType && meta.dayType.name) || '平常')),
-            h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '作息来源'), h('div', { 'data-fl-stat-v': '' }, (meta && meta.calendar) || '平时')),
+            h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '位置'), h('div', { 'data-fl-stat-v': '' }, (world && world.location && world.location.name) || '未知')),
             h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '今日剧本'), h('div', { 'data-fl-stat-v': '', title: planMeta.title || '' }, detour || (planMeta.source === 'llm' ? '模型生成' : planMeta.source === 'template' ? '本地模板' : '即时预览'))))),
         h('div', { 'data-fl-actions': '' },
           h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: save }, busy ? '保存中…' : '保存'),
@@ -552,6 +667,7 @@ window.__ModuleLoader__.load({
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
         tab === 'now' ? nowPage : null,
+        tab === 'map' ? mapPage : null,
         tab === 'year' ? yearPage : null,
         tab === 'week' ? weekPage : null,
         tab === 'day' ? dayPage : null,

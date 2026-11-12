@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync, renameSync } from 'node:fs'
 import { dayType, dailyPlan } from './plan.js'
 import { readFacts, buildTimeline, segmentAt, recentSegments, nextSegment } from './state.js'
+import { addWorldToTimeline, defaultWorldConfig, normalizeWorldConfig, worldStateAt } from './world.js'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -31,13 +32,14 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 2
+export const LIFE_CONFIG_VERSION = 3
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
   总开关: true,
   时区: 'Asia/Shanghai',
   工作区: [],
+  地图: defaultWorldConfig,
   模型超时秒: 60,
   历史保留天数: 180,
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
@@ -190,6 +192,7 @@ export function normalizeConfig(input, issues = []) {
     : copy(defaultConfig.工作区)
   cfg.模型超时秒 = Math.round(clamp(raw.模型超时秒, 10, 300, defaultConfig.模型超时秒))
   cfg.历史保留天数 = Math.round(clamp(raw.历史保留天数, 7, 3650, defaultConfig.历史保留天数))
+  cfg.地图 = normalizeWorldConfig(raw.地图 || defaultConfig.地图)
 
   const period = raw.经期 && typeof raw.经期 === 'object' ? raw.经期 : {}
   const cycle = Math.round(clamp(period.周期, 1, 120, defaultConfig.经期.周期))
@@ -477,8 +480,10 @@ export function generate(cfg, now = new Date()) {
   const type = dayType(cfg, t, calendar)
   const plan = dailyPlan(cfg, t, calendar, deviation, type)
   const dayStartMs = zonedDayStartMs(now, t, tz)
-  const timeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs, (minute) => zonedDateTimeMs(t.ymd, minute, tz))
+  const baseTimeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs, (minute) => zonedDateTimeMs(t.ymd, minute, tz))
+  const timeline = addWorldToTimeline(baseTimeline, cfg.地图)
   const current = segmentAt(timeline, now.getTime()) || { what: '闲着', phone: '在手', outfit: '' }
+  const world = worldStateAt(timeline, now.getTime(), cfg.地图)
   const localMinute = (ms) => {
     const at = zonedNow(new Date(ms), tz)
     const delta = dayDiff(t.ymd, at.ymd)
@@ -492,6 +497,9 @@ export function generate(cfg, now = new Date()) {
         : calendar.term ? `学期中（${calendar.term.名}）`
           : '不在校历里，按平常走')
   evidence.push(`日子类型：${type.name}｜作息表：${calendar.routine}`)
+  if (world.location) evidence.push(world.moving && world.destination
+    ? `位置：${world.location.name} → ${world.destination.name}`
+    : `位置：${world.location.name}`)
   evidence.push(`此刻命中：${current.what}（手机${current.phone || '在手'}${current.outfit ? '，穿' + current.outfit : ''}）`)
   if (deviation.flat) evidence.push('今天没按表走：躺平')
   if (deviation.outing) evidence.push('今天没按表走：临时出门')
@@ -548,6 +556,7 @@ export function generate(cfg, now = new Date()) {
     dayType: type,
     today: conditions,
     plan,
+    world,
     currentMinute: t.minuteOfDay,
     timeline: timeline.map((x) => ({
       start: localMinute(x.start),
@@ -556,6 +565,10 @@ export function generate(cfg, now = new Date()) {
       phone: x.phone || '在手',
       outfit: x.outfit || '',
       source: x.source || 'plan',
+      behavior: x.behavior || 'idle',
+      locationId: x.locationId || '',
+      from: x.from || '',
+      to: x.to || '',
     })),
   }
 }
@@ -573,6 +586,8 @@ function migrateConfig(raw) {
     if (next.模型超时秒 === undefined) next.模型超时秒 = defaultConfig.模型超时秒
     if (next.历史保留天数 === undefined) next.历史保留天数 = defaultConfig.历史保留天数
   }
+  // v3: logical map and automatic travel became part of the shared world state.
+  if (version < 3 && (!next.地图 || typeof next.地图 !== 'object')) next.地图 = copy(defaultConfig.地图)
   next.配置版本 = LIFE_CONFIG_VERSION
   return { value: next, changed: version !== LIFE_CONFIG_VERSION }
 }

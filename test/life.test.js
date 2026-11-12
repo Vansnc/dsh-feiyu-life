@@ -17,7 +17,7 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
-  assert.equal(cfg.配置版本, 2)
+  assert.equal(cfg.配置版本, 3)
   assert.equal(cfg.模型超时秒, 60)
   assert.equal(cfg.历史保留天数, 180)
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
