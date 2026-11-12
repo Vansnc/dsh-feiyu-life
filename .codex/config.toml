@@ -1,0 +1,3 @@
+[mcp_servers.iconify]
+command = "npx"
+args = ["-y", "iconify-mcp-server@latest"]

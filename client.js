@@ -147,7 +147,8 @@ window.__ModuleLoader__.load({
 [data-fl-avatar-motion][data-behavior='eat'] [data-fl-avatar-sprite]{animation-duration:1.25s;}
 [data-fl-avatar-motion][data-behavior='phone'] [data-fl-avatar-sprite]{animation-duration:2s;}
 [data-fl-avatar-motion][data-behavior='photo'] [data-fl-avatar-sprite]{animation-duration:1.6s;}
-[data-fl-avatar-bubble]{position:absolute;right:-9px;top:-6px;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:Canvas;border:1px solid var(--fl-line);font-size:15px;box-shadow:0 4px 12px rgba(0,0,0,.12);}
+[data-fl-avatar-bubble]{position:absolute;right:-9px;top:-6px;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:Canvas;border:1px solid var(--fl-line);color:var(--fl-accent);box-shadow:0 4px 12px rgba(0,0,0,.12);}
+[data-fl-avatar-bubble] svg{display:block;width:17px;height:17px;}
 [data-fl-avatar-label]{position:absolute;left:50%;top:calc(100% + 4px);transform:translateX(-50%);white-space:nowrap;padding:2px 7px;border-radius:999px;background:rgba(16,66,68,.82);color:#fff;font-size:10px;box-shadow:0 3px 8px rgba(0,0,0,.14);}
 [data-fl-world-cards]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
 @keyframes fl-sprite-4{0%,24.99%{background-position-x:0}25%,49.99%{background-position-x:-80px}50%,74.99%{background-position-x:-160px}75%,100%{background-position-x:-240px}}
@@ -244,10 +245,43 @@ window.__ModuleLoader__.load({
           h('span', { 'data-fl-lg': '', 'data-fl-src': 'travel' }, '自动通勤')))
     }
 
+    // Static Iconify snapshots: Lucide UI glyphs + Simple Icons' McDonald's mark.
+    // Keeping the SVG paths local avoids a runtime CDN or icon package dependency.
+    const iconifyGlyphs = {
+      sparkles: [['path', { d: 'M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594zM20 2v4m2-2h-4' }], ['circle', { cx: '4', cy: '20', r: '2' }]],
+      moon: [['path', { d: 'M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401' }]],
+      footprints: [['path', { d: 'M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0m16 4v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0m-4-3h4M4 13h4' }]],
+      pencil: [['path', { d: 'M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4' }]],
+      utensils: [['path', { d: 'M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2M7 2v20m14-7V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2zm0 0v7' }]],
+      smartphone: [['rect', { width: '14', height: '20', x: '5', y: '2', rx: '2', ry: '2' }], ['path', { d: 'M12 18h.01' }]],
+      camera: [['path', { d: 'M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z' }], ['circle', { cx: '12', cy: '13', r: '3' }]],
+      bath: [['path', { d: 'M10 4 8 6m9 13v2M2 12h20M7 19v2M9 5 7.621 3.621A2.121 2.121 0 0 0 4 5v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5' }]],
+      bed: [['path', { d: 'M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9' }]],
+      school: [['path', { d: 'M14 21v-3a2 2 0 0 0-4 0v3m8-16.067V21M4 6l7.106-3.79a2 2 0 0 1 1.788 0L20 6' }], ['path', { d: 'm6 11-3.52 2.147a1 1 0 0 0-.48.854V19a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a1 1 0 0 0-.48-.853L18 11M6 4.933V21' }], ['circle', { cx: '12', cy: '9', r: '2' }]],
+      library: [['rect', { width: '8', height: '18', x: '3', y: '3', rx: '1' }], ['path', { d: 'M7 3v18m13.4-2.1c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z' }]],
+      soup: [['path', { d: 'M11.248 3c.273.1.808.53.747 1.36-.05.83-.938 1.2-.989 2.02-.06.78.333 1.24.727 1.62m4.519-5c.268.1.794.53.745 1.36-.06.83-.923 1.2-.993 2.02-.05.78.338 1.24.725 1.62m2.771 4L22 6M4 12a1 1 0 0 0-.99 1.133A9 9 0 0 0 12 21a9 9 0 0 0 8.99-7.867A1 1 0 0 0 20 12zm2.252-9c.268.1.794.53.745 1.36-.06.83-.923 1.2-.993 2.02-.05.78.338 1.24.735 1.62M7 21h10' }]],
+      store: [['path', { d: 'M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5m8.774-10.69a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244' }], ['path', { d: 'M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05' }]],
+      trees: [['path', { d: 'M10 10v.2A3 3 0 0 1 8.9 16H5a3 3 0 0 1-1-5.8V10a3 3 0 0 1 6 0m-3 6v6m6-3v3' }], ['path', { d: 'M12 19h8.3a1 1 0 0 0 .7-1.7L18 14h.3a1 1 0 0 0 .7-1.7L16 9h.2a1 1 0 0 0 .8-1.7L13 3l-1.4 1.5' }]],
+      coffee: [['path', { d: 'M10 2v2m4-2v2m2 4a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2' }]],
+      shoppingBag: [['path', { d: 'M16 10a4 4 0 0 1-8 0M3.103 6.034h17.794' }], ['path', { d: 'M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z' }]],
+      mcdonalds: [['path', { d: 'M17.243 3.006c2.066 0 3.742 8.714 3.742 19.478H24c0-11.588-3.042-20.968-6.766-20.968-2.127 0-4.007 2.81-5.248 7.227-1.241-4.416-3.121-7.227-5.231-7.227C3.031 1.516 0 10.888 0 22.476h3.014c0-10.763 1.658-19.47 3.724-19.47s3.741 8.05 3.741 17.98h2.997c0-9.93 1.684-17.98 3.75-17.98Z' }]],
+    }
+
+    function IconifyGlyph({ name, size = 24, ...props }) {
+      const nodes = iconifyGlyphs[name] || iconifyGlyphs.sparkles
+      const brand = name === 'mcdonalds'
+      return h('svg', {
+        viewBox: '0 0 24 24', width: size, height: size, fill: brand ? 'currentColor' : 'none',
+        stroke: brand ? 'none' : 'currentColor', strokeWidth: brand ? undefined : '2',
+        strokeLinecap: brand ? undefined : 'round', strokeLinejoin: brand ? undefined : 'round',
+        'aria-hidden': 'true', 'data-iconify-icon': name, ...props,
+      }, nodes.map(([tag, attrs], i) => h(tag, { key: i, ...attrs })))
+    }
+
     const behaviorMeta = {
-      idle: ['✨', '发呆'], sleep: ['💤', '睡觉'], walk: ['👟', '移动中'],
-      study: ['✏️', '学习 / 创作'], eat: ['🥢', '吃东西'], phone: ['📱', '玩手机'],
-      photo: ['📷', '拍照'], bath: ['🫧', '洗漱'],
+      idle: ['sparkles', '发呆'], sleep: ['moon', '睡觉'], walk: ['footprints', '移动中'],
+      study: ['pencil', '学习 / 创作'], eat: ['utensils', '吃东西'], phone: ['smartphone', '玩手机'],
+      photo: ['camera', '拍照'], bath: ['bath', '洗漱'],
     }
 
     function FeiyuMark({ size = 20, map = false }) {
@@ -264,32 +298,14 @@ window.__ModuleLoader__.load({
     }
 
     function PlaceGlyph({ id }) {
-      const props = {
-        'data-fl-place-glyph': '', viewBox: '0 0 32 32', fill: 'none', 'aria-hidden': 'true',
-        stroke: 'currentColor', strokeWidth: '2.2', strokeLinecap: 'round', strokeLinejoin: 'round',
+      const icons = {
+        dorm: 'bed', classroom: 'school', library: 'library', canteen: 'soup', shop: 'store',
+        outdoor: 'trees', cafe: 'coffee', mall: 'shoppingBag', mcdonalds: 'mcdonalds',
       }
-      if (id === 'dorm') return h('svg', props,
-        h('path', { d: 'M4 25V12M28 25v-9a4 4 0 0 0-4-4H13v13M4 19h24M8 12h5v7H8a4 4 0 0 1-4-4 3 3 0 0 1 4-3Z' }))
-      if (id === 'classroom') return h('svg', props,
-        h('path', { d: 'm4 13 12-8 12 8M7 12v15h18V12M12 27V17h8v10M11 13h2M19 13h2' }),
-        h('path', { d: 'M3 27h26', strokeWidth: '2.8' }))
-      if (id === 'library') return h('svg', props,
-        h('path', { d: 'M4 7c5.5 0 9.2 1.3 12 4v16c-2.8-2.7-6.5-4-12-4ZM28 7c-5.5 0-9.2 1.3-12 4v16c2.8-2.7 6.5-4 12-4Z' }),
-        h('path', { d: 'M8 12h4M20 12h4M8 16h4M20 16h4', strokeWidth: '1.5' }))
-      if (id === 'canteen') return h('svg', props,
-        h('path', { d: 'M5 17h22c0 6.2-4.5 10-11 10S5 23.2 5 17ZM8 27h16M10 6l5 10M18 5l-1 11M25 7l-5 9' }))
-      if (id === 'shop') return h('svg', props,
-        h('path', { d: 'M6 13v14h20V13M4 13h24l-2-7H6ZM9 13v3a3 3 0 0 0 6 0v-3M15 13v3a3 3 0 0 0 6 0v-3M11 27v-6h10v6' }))
-      if (id === 'outdoor') return h('svg', props,
-        h('path', { d: 'M5 27V12h22v15M3 27h26M8 12l8-7 8 7M11 27V16h10v11M16 16v11' }))
-      if (id === 'cafe') return h('svg', props,
-        h('path', { d: 'M6 13h18v6a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8ZM24 15h2a3 3 0 0 1 0 6h-2M4 27h23M11 9c-2-2 2-3 0-5M17 9c-2-2 2-3 0-5' }))
-      if (id === 'mall') return h('svg', props,
-        h('path', { d: 'M7 11h18l2 16H5ZM11 12V9a5 5 0 0 1 10 0v3' }),
-        h('path', { d: 'm16 16 1.4 2.7 3 .4-2.2 2.1.6 3-2.8-1.4-2.8 1.4.6-3-2.2-2.1 3-.4Z', fill: 'currentColor', stroke: 'none' }))
-      if (id === 'mcdonalds') return h('svg', { ...props, stroke: '#ffbc0d', strokeWidth: '4.2' },
-        h('path', { d: 'M5 27V14C5 7.5 7.7 4 11 4s5 4.2 5 10v13M16 27V14c0-5.8 1.7-10 5-10s6 3.5 6 10v13' }))
-      return h('svg', props, h('path', { d: 'M16 29s9-8.1 9-17a9 9 0 1 0-18 0c0 8.9 9 17 9 17Z' }), h('circle', { cx: '16', cy: '12', r: '3' }))
+      return h(IconifyGlyph, {
+        name: icons[id] || 'sparkles', size: 34, 'data-fl-place-glyph': '',
+        style: id === 'mcdonalds' ? { color: '#ffbc0d' } : undefined,
+      })
     }
 
     function WorldMap({ world, map }) {
@@ -339,7 +355,7 @@ window.__ModuleLoader__.load({
             'data-fl-avatar-sprite': '', 'aria-hidden': 'true',
             style: { '--fl-avatar-image': `url(${API}/avatar/${spriteBehavior}?v=1.0.5)` },
           }),
-          h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, meta[0]),
+          h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, h(IconifyGlyph, { name: meta[0], size: 17 })),
           h('span', { 'data-fl-avatar-label': '' }, world.moving && world.destination
             ? `去${world.destination.name} ${Math.round((world.progress || 0) * 100)}%`
             : (world.location && world.location.name) || '未知位置'))) : null,
