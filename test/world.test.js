@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  addWorldToTimeline, behaviorFor, defaultWorldConfig, locationFor, normalizeWorldConfig, worldStateAt,
+  addWorldToTimeline, behaviorFor, defaultWorldConfig, locationFor, normalizeWorldConfig,
+  PLACE_ICON_IDS, worldStateAt,
 } from '../world.js'
 
 test('a location change creates a deterministic travel segment', () => {
@@ -34,14 +35,17 @@ test('map configuration clamps coordinates and can disable commuting', () => {
     启用: true,
     自动通勤: false,
     地点: [
-      { id: 'a', name: 'A', x: -9, y: 200, 关键词: ['甲'] },
-      { id: 'b', name: 'B', x: 70, y: 30, 关键词: ['乙'] },
+      { id: 'a', name: 'A', icon: 'hospital', x: -9, y: 200, 关键词: ['甲'] },
+      { id: 'b', name: 'B', icon: 'remote-url', x: 70, y: 30, 关键词: ['乙'] },
     ],
     路径: [{ from: 'a', to: 'b', minutes: 0, via: [{ x: -10, y: 120 }, { x: 'bad', y: 3 }] }],
   })
   assert.equal(cfg.地点[0].x, 4)
   assert.equal(cfg.地点[0].y, 92)
   assert.equal(cfg.路径[0].minutes, 1)
+  assert.equal(cfg.地点[0].icon, 'hospital')
+  assert.equal(cfg.地点[1].icon, 'mapPin')
+  assert.ok(PLACE_ICON_IDS.includes(defaultWorldConfig.地点[0].icon))
   assert.deepEqual(cfg.路径[0].via, [{ x: 0, y: 100 }])
   assert.equal(addWorldToTimeline([
     { start: 0, end: 10, what: '甲' },

@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "大肥鱼的生活（DSH 插件）：每日剧本 + 时序状态机 + 二维生活地图；角色会在地点间移动并显示行为动效，对话与相机复用同一份世界状态。",
   "type": "module",
   "license": "MIT",
@@ -28,7 +28,14 @@
   },
   "scripts": {
     "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check client.js && node --check scripts/build-xueyuan-map.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "test:ui": "node scripts/verify-ui.mjs",
+    "test:all": "npm test && npm run test:ui"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "exports": {
     ".": "./index.js",

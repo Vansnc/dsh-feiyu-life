@@ -13,10 +13,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: 安装 Chromium
+        run: npx playwright install --with-deps chromium
       - name: 语法检查
         run: npm run check
-      - name: 单元测试
-        run: npm test
+      - name: 单元与浏览器渲染测试
+        run: npm run test:all
       - name: 打包自检（看会发出去哪些文件）
         run: npm pack --dry-run
 

@@ -16,7 +16,7 @@
 git clone https://github.com/Vansnc/dsh-feiyu-life.git
 cd dsh-feiyu-life
 npm run check
-npm test
+npm run test:all
 npm pack --dry-run
 dsh plugin --profile web add "$(pwd)"
 ```
@@ -27,7 +27,7 @@ dsh plugin --profile web add "$(pwd)"
 
 ```bash
 npm run check
-npm test
+npm run test:all
 npm pack --dry-run
 ```
 
@@ -39,14 +39,14 @@ npm pack --dry-run
 - 模型硬超时与日志轮转；
 - 地点推断、路径、自动通勤、移动进度和行为识别。
 
-如果改动了前端，请同时在浅色/深色主题和窄屏下检查设置页。涉及动作资源时，还要核对透明通道、网格尺寸和每一行动画。
+`npm run test:ui` 会使用本机 Chromium 做浅色、深色和窄屏渲染检查；找不到浏览器时会明确失败。涉及动作资源时，还要核对透明通道、网格尺寸和每一行动画。
 
 ## 动作图集约束
 
 运行时动作位于 `assets/actions/`，每个文件都是 4 列 × 1 行、单帧 128×128 的透明 PNG：
 
 ```text
-idle / walk / sleep / study / eat / phone / photo
+idle / walk / sleep / study / eat / phone / photo / bath
 ```
 
 更换资源时：

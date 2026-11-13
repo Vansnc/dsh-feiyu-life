@@ -147,6 +147,7 @@ window.__ModuleLoader__.load({
 [data-fl-avatar-motion][data-behavior='eat'] [data-fl-avatar-sprite]{animation-duration:1.25s;}
 [data-fl-avatar-motion][data-behavior='phone'] [data-fl-avatar-sprite]{animation-duration:2s;}
 [data-fl-avatar-motion][data-behavior='photo'] [data-fl-avatar-sprite]{animation-duration:1.6s;}
+[data-fl-avatar-motion][data-behavior='bath'] [data-fl-avatar-sprite]{animation-duration:1.35s;}
 [data-fl-avatar-bubble]{position:absolute;right:-9px;top:-6px;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:Canvas;border:1px solid var(--fl-line);color:var(--fl-accent);box-shadow:0 4px 12px rgba(0,0,0,.12);}
 [data-fl-avatar-bubble] svg{display:block;width:17px;height:17px;}
 [data-fl-avatar-label]{position:absolute;left:50%;top:calc(100% + 4px);transform:translateX(-50%);white-space:nowrap;padding:2px 7px;border-radius:999px;background:rgba(16,66,68,.82);color:#fff;font-size:10px;box-shadow:0 3px 8px rgba(0,0,0,.14);}
@@ -264,6 +265,16 @@ window.__ModuleLoader__.load({
       trees: [['path', { d: 'M10 10v.2A3 3 0 0 1 8.9 16H5a3 3 0 0 1-1-5.8V10a3 3 0 0 1 6 0m-3 6v6m6-3v3' }], ['path', { d: 'M12 19h8.3a1 1 0 0 0 .7-1.7L18 14h.3a1 1 0 0 0 .7-1.7L16 9h.2a1 1 0 0 0 .8-1.7L13 3l-1.4 1.5' }]],
       coffee: [['path', { d: 'M10 2v2m4-2v2m2 4a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2' }]],
       shoppingBag: [['path', { d: 'M16 10a4 4 0 0 1-8 0M3.103 6.034h17.794' }], ['path', { d: 'M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z' }]],
+      mapPin: [['path', { d: 'M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0' }], ['circle', { cx: '12', cy: '10', r: '3' }]],
+      house: [['path', { d: 'M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8' }], ['path', { d: 'M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }]],
+      hospital: [['path', { d: 'M12 7v4m2 10v-3a2 2 0 0 0-4 0v3m4-12h-4' }], ['path', { d: 'M18 11h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2' }], ['path', { d: 'M18 21V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16' }]],
+      train: [['path', { d: 'M8 3.1V7a4 4 0 0 0 8 0V3.1M9 15l-1-1m7 1 1-1' }], ['path', { d: 'M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Zm-1 0-2 3m10-3 2 3' }]],
+      bus: [['path', { d: 'M4 6 2 7m8-1h4m8 1-2-1' }], ['rect', { width: '16', height: '16', x: '4', y: '3', rx: '2' }], ['path', { d: 'M4 11h16M8 15h.01M16 15h.01M6 19v2m12 0v-2' }]],
+      dumbbell: [['path', { d: 'M17.596 12.768a2 2 0 1 0 2.829-2.829l-1.768-1.767a2 2 0 0 0 2.828-2.829l-2.828-2.828a2 2 0 0 0-2.829 2.828l-1.767-1.768a2 2 0 1 0-2.829 2.829zM2.5 21.5l1.4-1.4M20.1 3.9l1.4-1.4M5.343 21.485a2 2 0 1 0 2.829-2.828l1.767 1.768a2 2 0 1 0 2.829-2.829l-6.364-6.364a2 2 0 1 0-2.829 2.829l1.768 1.767a2 2 0 0 0-2.828 2.829zM9.6 14.4l4.8-4.8' }]],
+      gamepad: [['path', { d: 'M6 11h4M8 9v4m7-1h.01M18 10h.01m-.69-5H6.68a4 4 0 0 0-3.978 3.59l-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258q-.01-.075-.017-.151A4 4 0 0 0 17.32 5' }]],
+      briefcase: [['path', { d: 'M12 12h.01M16 6V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2m14 7a18.15 18.15 0 0 1-20 0' }], ['rect', { width: '20', height: '14', x: '2', y: '6', rx: '2' }]],
+      music: [['circle', { cx: '8', cy: '18', r: '4' }], ['path', { d: 'M12 18V2l7 4' }]],
+      pawPrint: [['circle', { cx: '11', cy: '4', r: '2' }], ['circle', { cx: '18', cy: '8', r: '2' }], ['circle', { cx: '20', cy: '16', r: '2' }], ['path', { d: 'M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045q-.64-2.065-2.7-2.705A3.5 3.5 0 0 1 5.5 10Z' }]],
       mcdonalds: [['path', { d: 'M17.243 3.006c2.066 0 3.742 8.714 3.742 19.478H24c0-11.588-3.042-20.968-6.766-20.968-2.127 0-4.007 2.81-5.248 7.227-1.241-4.416-3.121-7.227-5.231-7.227C3.031 1.516 0 10.888 0 22.476h3.014c0-10.763 1.658-19.47 3.724-19.47s3.741 8.05 3.741 17.98h2.997c0-9.93 1.684-17.98 3.75-17.98Z' }]],
     }
 
@@ -284,6 +295,12 @@ window.__ModuleLoader__.load({
       photo: ['camera', '拍照'], bath: ['bath', '洗漱'],
     }
 
+    const placeIconOptions = [
+      'mapPin', 'house', 'bed', 'school', 'library', 'soup', 'store', 'trees', 'coffee',
+      'shoppingBag', 'mcdonalds', 'hospital', 'train', 'bus', 'dumbbell', 'gamepad',
+      'briefcase', 'music', 'pawPrint',
+    ]
+
     function FeiyuMark({ size = 20, map = false }) {
       return h('svg', {
         'data-fl-brand-mark': '', 'data-fl-map-logo': map ? '' : undefined,
@@ -297,13 +314,14 @@ window.__ModuleLoader__.load({
       h('circle', { cx: '21.2', cy: '17.7', r: '.55', fill: '#245b78' }))
     }
 
-    function PlaceGlyph({ id }) {
+    function PlaceGlyph({ id, icon }) {
       const icons = {
         dorm: 'bed', classroom: 'school', library: 'library', canteen: 'soup', shop: 'store',
         outdoor: 'trees', cafe: 'coffee', mall: 'shoppingBag', mcdonalds: 'mcdonalds',
       }
+      const name = iconifyGlyphs[icon] ? icon : (icons[id] || 'mapPin')
       return h(IconifyGlyph, {
-        name: icons[id] || 'sparkles', size: 34, 'data-fl-place-glyph': '',
+        name, size: 34, 'data-fl-place-glyph': '',
         style: id === 'mcdonalds' ? { color: '#ffbc0d' } : undefined,
       })
     }
@@ -314,7 +332,7 @@ window.__ModuleLoader__.load({
       const mapStyle = map && map.底图 === 'none' ? 'none' : 'xueyuan-road'
       const point = (world && world.position) || { x: 50, y: 50 }
       const behavior = (world && world.behavior) || 'idle'
-      const spriteBehavior = behavior === 'bath' ? 'idle' : behaviorMeta[behavior] ? behavior : 'idle'
+      const spriteBehavior = behaviorMeta[behavior] ? behavior : 'idle'
       const meta = behaviorMeta[behavior] || behaviorMeta.idle
       const active = world && world.moving && world.destination ? world.destination.id : world && world.location && world.location.id
       const routePairs = new Set(((world && world.route) || []).slice(1).map((id, i) => {
@@ -323,9 +341,9 @@ window.__ModuleLoader__.load({
       }))
       return h('div', { 'data-fl-map': '', 'data-map-style': mapStyle },
         mapStyle === 'xueyuan-road' ? h('div', { 'data-fl-map-layers': '', 'aria-hidden': 'true' },
-          h('img', { 'data-fl-map-layer': 'base', src: `${API}/map/xueyuan?layer=base&v=1.0.5`, alt: '' }),
-          h('img', { 'data-fl-map-layer': 'anime', src: `${API}/map/xueyuan?layer=anime&v=1.0.5`, alt: '' }),
-          h('img', { 'data-fl-map-layer': 'buildings', src: `${API}/map/xueyuan?layer=buildings&v=1.0.5`, alt: '' })) : null,
+          h('img', { 'data-fl-map-layer': 'base', src: `${API}/map/xueyuan?layer=base&v=1.0.8`, alt: '' }),
+          h('img', { 'data-fl-map-layer': 'anime', src: `${API}/map/xueyuan?layer=anime&v=1.0.8`, alt: '' }),
+          h('img', { 'data-fl-map-layer': 'buildings', src: `${API}/map/xueyuan?layer=buildings&v=1.0.8`, alt: '' })) : null,
         h('div', { 'data-fl-map-scenery': '', 'aria-hidden': 'true' },
           h('i', { 'data-fl-scenery': 'hill-a' }),
           h('i', { 'data-fl-scenery': 'hill-b' }),
@@ -346,14 +364,14 @@ window.__ModuleLoader__.load({
         nodes.map((node) => h('div', {
           key: node.id, 'data-fl-place': '', 'data-place': node.id, 'data-fl-active': active === node.id ? '' : undefined,
           style: { left: node.x + '%', top: node.y + '%' }, title: (node.关键词 || []).join('、'),
-        }, h('span', { 'data-fl-place-marker': '' }, h(PlaceGlyph, { id: node.id })),
+        }, h('span', { 'data-fl-place-marker': '' }, h(PlaceGlyph, { id: node.id, icon: node.icon })),
         h('span', { 'data-fl-place-name': '' }, node.name))),
         world && world.enabled !== false ? h('div', {
           'data-fl-avatar': '', style: { left: point.x + '%', top: point.y + '%' },
         }, h('div', { 'data-fl-avatar-motion': '', 'data-behavior': behavior },
           h('div', {
             'data-fl-avatar-sprite': '', 'aria-hidden': 'true',
-            style: { '--fl-avatar-image': `url(${API}/avatar/${spriteBehavior}?v=1.0.5)` },
+            style: { '--fl-avatar-image': `url(${API}/avatar/${spriteBehavior}?v=1.0.8)` },
           }),
           h('span', { 'data-fl-avatar-bubble': '', title: meta[1] }, h(IconifyGlyph, { name: meta[0], size: 17 })),
           h('span', { 'data-fl-avatar-label': '' }, world.moving && world.destination
@@ -388,7 +406,7 @@ window.__ModuleLoader__.load({
       const [inference, setInference] = useState(null)
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
 
-      const load = async (preserveConfig = false) => {
+      const load = async (preserveConfig = false, silent = false) => {
         try {
           const data = await getJson(API + '/state')
           if (!preserveConfig) {
@@ -405,9 +423,21 @@ window.__ModuleLoader__.load({
           setAdjustments(data.adjustments || [])
           setWorld(data.world || null)
           setError('')
-        } catch (e) { setError('读不到配置：' + e.message) }
+        } catch (e) { if (!silent) setError('读不到配置：' + e.message) }
       }
       useEffect(() => { load() }, [])
+      useEffect(() => {
+        const refresh = () => {
+          if (document.hidden || previewAt) return
+          load(dirty, true)
+        }
+        const timer = window.setInterval(refresh, 30000)
+        document.addEventListener('visibilitychange', refresh)
+        return () => {
+          window.clearInterval(timer)
+          document.removeEventListener('visibilitychange', refresh)
+        }
+      }, [dirty, previewAt])
       useEffect(() => {
         const warn = (e) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
         window.addEventListener('beforeunload', warn)
@@ -555,6 +585,7 @@ window.__ModuleLoader__.load({
       const mapCfg = config.地图 || { 启用: true, 自动通勤: true, 地点: [], 路径: [] }
       const placeRows = (mapCfg.地点 || []).map((node, i) => h('tr', { key: node.id || i },
         h('td', null, h(Field, { value: node.name, width: 'data-fl-narrow', onChange: (v) => patch(['地图', '地点', i, 'name'], v) })),
+        h('td', null, h(Select, { value: node.icon || 'mapPin', options: placeIconOptions, onChange: (v) => patch(['地图', '地点', i, 'icon'], v) })),
         h('td', null, h(Field, { value: node.x, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'x'], Number(v)) })),
         h('td', null, h(Field, { value: node.y, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['地图', '地点', i, 'y'], Number(v)) })),
         h('td', null, h(Field, {
@@ -596,7 +627,7 @@ window.__ModuleLoader__.load({
         h('div', { 'data-fl-note': '' }, '关键词用于从剧本短句判断地点；坐标是地图里的百分比位置。'),
         h('table', { 'data-fl-table': '' },
           h('thead', null, h('tr', null,
-            h('th', null, '地点'), h('th', null, 'X'), h('th', null, 'Y'), h('th', null, '识别关键词'))),
+            h('th', null, '地点'), h('th', null, '图标'), h('th', null, 'X'), h('th', null, 'Y'), h('th', null, '识别关键词'))),
           h('tbody', null, placeRows)),
         h('div', { 'data-fl-h': '' }, '路径耗时'),
         h('table', { 'data-fl-table': '' },
@@ -853,16 +884,26 @@ window.__ModuleLoader__.load({
           }
         }
 
-        const load = async () => {
+        const load = async (preserveConfig = false, silent = false) => {
           try {
             const r = await fetch(`${API}/state`, { credentials: 'same-origin' })
             const d = await r.json()
             if (!d.ok) throw new Error(d.error || '读不到状态')
-            setStatus(d); setConfig(d.config)
-          } catch (e) { setMessage('读取失败：' + String(e.message || e)) }
+            setStatus(d)
+            if (!preserveConfig) setConfig(d.config)
+          } catch (e) { if (!silent) setMessage('读取失败：' + String(e.message || e)) }
         }
         useEffect(() => { load() }, [])
         useEffect(() => { loadModels() }, [])
+        useEffect(() => {
+          const refresh = () => { if (!document.hidden) load(true, true) }
+          const timer = window.setInterval(refresh, 30000)
+          document.addEventListener('visibilitychange', refresh)
+          return () => {
+            window.clearInterval(timer)
+            document.removeEventListener('visibilitychange', refresh)
+          }
+        }, [])
 
         const edit = (k) => (e) => setConfig({ ...config, [k]: e && e.target ? e.target.value : e })
         const editNum = (k) => (e) => setConfig({ ...config, [k]: Number(e.target.value) })
@@ -1038,6 +1079,7 @@ window.__ModuleLoader__.load({
 
     return {
       inject: ['slots'],
+      __test: { CSS, WorldMap, IconifyGlyph, PlaceGlyph, behaviorMeta, placeIconOptions },
       apply(ctx) {
         const style = document.createElement('style')
         style.setAttribute('data-plugin-css', 'dsh-feiyu-life')

@@ -17,7 +17,7 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
-  assert.equal(cfg.配置版本, 6)
+  assert.equal(cfg.配置版本, 7)
   assert.equal(cfg.模型超时秒, 60)
   assert.equal(cfg.历史保留天数, 180)
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
@@ -26,7 +26,7 @@ test('configuration is normalized at the save boundary', () => {
   assert.ok(issues.length >= 2)
 })
 
-test('v6 migrates stock maps and removes the legacy event pool', () => {
+test('v7 migrates stock maps, location icons and the legacy event pool', () => {
   const legacyMap = {
     启用: true,
     自动通勤: true,
@@ -38,7 +38,7 @@ test('v6 migrates stock maps and removes the legacy event pool', () => {
     路径: [{ from: 'dorm', to: 'canteen', minutes: 8 }],
   }
   const migrated = migrateConfig({ 配置版本: 3, 地图: legacyMap, 事件池: [['下午', '重复的小事']] }).value
-  assert.equal(migrated.配置版本, 6)
+  assert.equal(migrated.配置版本, 7)
   assert.equal(Object.hasOwn(migrated, '事件池'), false)
   assert.equal(migrated.地图.底图, 'xueyuan-road')
   assert.deepEqual(migrated.地图.地点.map(({ id, x, y }) => ({ id, x, y })), [
@@ -60,6 +60,20 @@ test('v6 migrates stock maps and removes the legacy event pool', () => {
   const v4Coordinates = [[43, 61], [73, 31], [58, 37], [55, 68], [84, 55], [93, 55]]
   v4.地点.forEach((node, index) => { [node.x, node.y] = v4Coordinates[index] })
   assert.equal(migrateConfig({ 配置版本: 4, 地图: v4 }).value.地图.地点.length, 9)
+})
+
+test('classes apply only inside an ordinary teaching term day', () => {
+  const cfg = normalizeConfig({
+    日常: [['00:00', '24:00', '在宿舍休息', '在手']],
+    课表: { 4: [['09:00', '10:30', '项目管理', '教学楼']] },
+  })
+  const t = { ymd: '2026-11-12', weekday: 4 }
+  assert.ok(timeline(cfg, t, { term: { name: '秋季学期' }, holiday: false, special: '' })
+    .some((item) => item.what.includes('项目管理')))
+  assert.equal(timeline(cfg, t, { term: null, holiday: false, special: '' })
+    .some((item) => item.what.includes('项目管理')), false)
+  assert.equal(timeline(cfg, t, { term: { name: '秋季学期' }, holiday: false, special: '校庆停课' })
+    .some((item) => item.what.includes('项目管理')), false)
 })
 
 test('validation explains a routine without sleep', () => {

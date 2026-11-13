@@ -10,7 +10,7 @@ import {
 import {
   addAdjustment, factsPath, listAdjustments, removeAdjustment, cleanupFacts,
 } from '../state.js'
-import { cleanupPhotos, normalizeImageConfig, IMAGE_CONFIG_VERSION } from '../image.js'
+import { cleanupPhotos, detectImageFormat, normalizeImageConfig, IMAGE_CONFIG_VERSION } from '../image.js'
 
 test('regeneration history restores the previous plan and adjustments are removable', () => {
   const dir = mkdtempSync(join(tmpdir(), 'feiyu-storage-'))
@@ -64,6 +64,14 @@ test('image configuration has an explicit version and bounded timeouts', () => {
   assert.equal(cfg.模型超时秒, 10)
   assert.equal(cfg.生图超时秒, 600)
   assert.equal(cfg.照片保留天数, 90)
+})
+
+test('downloaded images are identified by bytes instead of URL suffixes', () => {
+  assert.deepEqual(detectImageFormat(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), { ext: 'png', mime: 'image/png' })
+  assert.deepEqual(detectImageFormat(Buffer.from([0xff, 0xd8, 0xff, 0xe0])), { ext: 'jpg', mime: 'image/jpeg' })
+  assert.deepEqual(detectImageFormat(Buffer.from('RIFFxxxxWEBP')), { ext: 'webp', mime: 'image/webp' })
+  assert.equal(detectImageFormat(Buffer.from('opaque'), 'image/webp; charset=binary'), null)
+  assert.equal(detectImageFormat(Buffer.from('<html>bad gateway</html>'), 'text/html'), null)
 })
 
 test('photo cleanup removes only expired plugin images', () => {

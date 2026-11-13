@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-const behaviors = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo']
+const behaviors = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo', 'bath']
 
 test('each avatar behavior is an isolated four-frame PNG strip', () => {
   for (const behavior of behaviors) {

@@ -37,7 +37,7 @@ export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connecti
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
 const AVATAR_FILE = new URL('./assets/character-actions.png', import.meta.url)
-const AVATAR_BEHAVIORS = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo']
+const AVATAR_BEHAVIORS = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo', 'bath']
 const AVATAR_ACTION_FILES = new Map(AVATAR_BEHAVIORS.map((behavior) => [
   behavior,
   new URL(`./assets/actions/${behavior}.png`, import.meta.url),
@@ -264,7 +264,12 @@ export function apply(ctx) {
   })
 
   tick()
-  try { setTimeout(() => { ensurePlan(new Date()).catch(() => {}) }, 8000) } catch {}
+  try {
+    ctx.effect(() => {
+      const timer = setTimeout(() => { ensurePlan(new Date()).catch(() => {}) }, 8000)
+      return () => clearTimeout(timer)
+    })
+  } catch {}
   try { ctx.effect(() => ctx.interval(() => { ensurePlan(new Date()).catch(() => {}) }, 20 * 60 * 1000)) } catch {}
 
   // ── Settings page endpoints ──────────────────────────────────────────
@@ -568,6 +573,11 @@ export function apply(ctx) {
       try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}
     }
   }
-  try { setTimeout(maintain, 15000) } catch {}
+  try {
+    ctx.effect(() => {
+      const timer = setTimeout(maintain, 15000)
+      return () => clearTimeout(timer)
+    })
+  } catch {}
   try { ctx.effect(() => ctx.interval(maintain, 24 * 60 * 60 * 1000)) } catch {}
 }

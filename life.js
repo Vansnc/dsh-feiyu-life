@@ -31,7 +31,7 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 6
+export const LIFE_CONFIG_VERSION = 7
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
@@ -562,6 +562,8 @@ export function migrateConfig(raw) {
   // v6 removes the legacy event pool. Daily-plan details now come only from
   // the model plan (or template fallback), and later changes use life_adjust.
   delete next.事件池
+  // v7 adds a safe local Iconify glyph id to each map location. Normalization
+  // fills defaults for existing locations and custom locations.
   next.配置版本 = LIFE_CONFIG_VERSION
   return { value: next, changed: version !== LIFE_CONFIG_VERSION || Object.hasOwn(source, '事件池') }
 }

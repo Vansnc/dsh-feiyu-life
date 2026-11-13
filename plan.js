@@ -76,7 +76,8 @@ export function dayType(cfg, t, calendar) {
   if (calendar.special) return { id: 'special', name: calendar.special.名 || '特殊日' }
   if (calendar.vacation) return { id: 'vacation', name: calendar.vacation.名 || '假期' }
   if (calendar.festival && calendar.festival.起) return { id: 'festival', name: calendar.festival.名 || '节日' }
-  const classes = (cfg.课表 || {})[t.weekday] || []
+  const classes = calendar.term && !calendar.holiday && !calendar.special
+    ? ((cfg.课表 || {})[t.weekday] || []) : []
   if (classes.length) return { id: 'schoolDay', name: '上课日' }
   if (t.weekday >= 6) return r() < 0.55 ? { id: 'weekendHome', name: '周末·宅家' } : { id: 'outing', name: '周末·出门' }
   return r() < 0.6 ? { id: 'offDay', name: '没课日' } : { id: 'outing', name: '出门转转' }
@@ -99,7 +100,8 @@ export function timeline(cfg, t, calendar, deviation = {}, type = null) {
       { start: 19 * 60, end: 24 * 60, what: '点了个外卖，还是躺着', phone: '在手' },
     ].map((x) => ({ ...x, outfit: '' })), cfg, t)
   }
-  const classes = calendar.holiday ? [] : ((cfg.课表 || {})[t.weekday] || [])
+  const classes = calendar.term && !calendar.holiday && !calendar.special
+    ? ((cfg.课表 || {})[t.weekday] || []) : []
   const routine = cfg[calendar.routine] || fallbackDay()
   const segs = []
   for (const b of [...routine, ...classes]) {

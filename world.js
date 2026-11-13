@@ -6,20 +6,31 @@ import { xueyuanGeometry } from './assets/maps/xueyuan-world.js'
 // infers a place/behaviour for each segment and inserts deterministic travel
 // segments when two consecutive activities happen in different places.
 
+export const PLACE_ICON_IDS = [
+  'mapPin', 'house', 'bed', 'school', 'library', 'soup', 'store', 'trees', 'coffee',
+  'shoppingBag', 'mcdonalds', 'hospital', 'train', 'bus', 'dumbbell', 'gamepad',
+  'briefcase', 'music', 'pawPrint',
+]
+
+const defaultPlaceIcons = {
+  dorm: 'bed', classroom: 'school', library: 'library', canteen: 'soup', shop: 'store',
+  outdoor: 'trees', cafe: 'coffee', mall: 'shoppingBag', mcdonalds: 'mcdonalds',
+}
+
 export const defaultWorldConfig = {
   启用: true,
   自动通勤: true,
   底图: 'xueyuan-road',
   地点: [
-    { id: 'dorm', name: '学生公寓', ...xueyuanGeometry.locations.dorm, 关键词: ['宿舍', '公寓', '床', '睡', '起床', '洗澡', '洗漱', '刷手机', '剪片', '修图', '游戏', '看剧', '外卖'] },
-    { id: 'classroom', name: '教学楼', ...xueyuanGeometry.locations.classroom, 关键词: ['上课', '教室', '教学楼', '专业课', '讲座', '点名', '课件'] },
-    { id: 'library', name: '矿大图书馆', ...xueyuanGeometry.locations.library, 关键词: ['图书馆', '自习', '背书', '复习'] },
-    { id: 'canteen', name: '裕园餐厅', ...xueyuanGeometry.locations.canteen, 关键词: ['食堂', '裕园', '餐厅', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
-    { id: 'shop', name: '幸福超市 · 快递点', ...xueyuanGeometry.locations.shop, 关键词: ['幸福超市', '便利店', '超市', '快递', '取件', '买东西'] },
-    { id: 'outdoor', name: '学院路校门', ...xueyuanGeometry.locations.outdoor, 关键词: ['外面', '街上', '学院路', '公园', '书店', '电影院', '拍照', '校门口', '地铁', '公交'] },
-    { id: 'cafe', name: '咖啡屋 · 上岛咖啡', ...xueyuanGeometry.locations.cafe, 关键词: ['上岛咖啡', '咖啡屋', '咖啡店', '咖啡馆', '咖啡厅', '喝咖啡'] },
-    { id: 'mall', name: 'BOM 嘻番里', ...xueyuanGeometry.locations.mall, 关键词: ['BOM嘻番里', '嘻番里', '商场', '逛商场', '买谷', '谷子店', '手办', '桌游'] },
-    { id: 'mcdonalds', name: '麦当劳 · 成府路', ...xueyuanGeometry.locations.mcdonalds, 关键词: ['麦当劳', '麦门', '成府路麦当劳', '汉堡', '薯条', '麦旋风'] },
+    { id: 'dorm', name: '学生公寓', icon: 'bed', ...xueyuanGeometry.locations.dorm, 关键词: ['宿舍', '公寓', '床', '睡', '起床', '洗澡', '洗漱', '刷手机', '剪片', '修图', '游戏', '看剧', '外卖'] },
+    { id: 'classroom', name: '教学楼', icon: 'school', ...xueyuanGeometry.locations.classroom, 关键词: ['上课', '教室', '教学楼', '专业课', '讲座', '点名', '课件'] },
+    { id: 'library', name: '矿大图书馆', icon: 'library', ...xueyuanGeometry.locations.library, 关键词: ['图书馆', '自习', '背书', '复习'] },
+    { id: 'canteen', name: '裕园餐厅', icon: 'soup', ...xueyuanGeometry.locations.canteen, 关键词: ['食堂', '裕园', '餐厅', '吃饭', '早餐', '午饭', '晚饭', '排队'] },
+    { id: 'shop', name: '幸福超市 · 快递点', icon: 'store', ...xueyuanGeometry.locations.shop, 关键词: ['幸福超市', '便利店', '超市', '快递', '取件', '买东西'] },
+    { id: 'outdoor', name: '学院路校门', icon: 'trees', ...xueyuanGeometry.locations.outdoor, 关键词: ['外面', '街上', '学院路', '公园', '书店', '电影院', '拍照', '校门口', '地铁', '公交'] },
+    { id: 'cafe', name: '咖啡屋 · 上岛咖啡', icon: 'coffee', ...xueyuanGeometry.locations.cafe, 关键词: ['上岛咖啡', '咖啡屋', '咖啡店', '咖啡馆', '咖啡厅', '喝咖啡'] },
+    { id: 'mall', name: 'BOM 嘻番里', icon: 'shoppingBag', ...xueyuanGeometry.locations.mall, 关键词: ['BOM嘻番里', '嘻番里', '商场', '逛商场', '买谷', '谷子店', '手办', '桌游'] },
+    { id: 'mcdonalds', name: '麦当劳 · 成府路', icon: 'mcdonalds', ...xueyuanGeometry.locations.mcdonalds, 关键词: ['麦当劳', '麦门', '成府路麦当劳', '汉堡', '薯条', '麦旋风'] },
   ],
   路径: xueyuanGeometry.paths,
 }
@@ -75,6 +86,7 @@ export function normalizeWorldConfig(input) {
     return [{
       id,
       name: String(node.name || id).trim().slice(0, 40) || id,
+      icon: PLACE_ICON_IDS.includes(String(node.icon || '')) ? String(node.icon) : (defaultPlaceIcons[id] || 'mapPin'),
       x: tenth(clamp(node.x, 4, 96, 50)),
       y: tenth(clamp(node.y, 8, 92, 50)),
       关键词: Array.isArray(node.关键词)

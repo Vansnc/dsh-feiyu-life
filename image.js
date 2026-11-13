@@ -109,6 +109,28 @@ function writeImageConfig(next) {
 }
 
 const sizeByAspect = { 竖幅: '1440x1920', 方形: '2048x2048', 横幅: '1920x1440' }
+const originalPhoto = /^feiyu-\d+\.(?:png|jpe?g|webp)$/i
+const generatedPhoto = /^feiyu-(?:retry-)?\d+(?:-small)?\.(?:png|jpe?g|webp)$/i
+const photoTimestamp = (name) => /^feiyu-(\d+)\.(?:png|jpe?g|webp)$/i.exec(name)?.[1] || ''
+
+export function detectImageFormat(buf, _contentType = '') {
+  if (!Buffer.isBuffer(buf) || !buf.length) return null
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return { ext: 'png', mime: 'image/png' }
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return { ext: 'jpg', mime: 'image/jpeg' }
+  }
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+    return { ext: 'webp', mime: 'image/webp' }
+  }
+  // Never trust the HTTP header on its own: gateways sometimes return an
+  // HTML error page while keeping the requested image content type.
+  return null
+}
+
+const imageMimeForPath = (path) => /\.webp$/i.test(path) ? 'image/webp'
+  : /\.jpe?g$/i.test(path) ? 'image/jpeg' : 'image/png'
 
 function migrateImageConfig(raw) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
@@ -163,7 +185,7 @@ export function cleanupPhotos(cfg = readImageConfig(), now = Date.now()) {
     let names = []
     try { names = readdirSync(dir) } catch {}
     for (const name of names) {
-      if (!/^feiyu-(?:retry-)?\d+\.(?:png|jpe?g|webp)$/i.test(name)) continue
+      if (!generatedPhoto.test(name)) continue
       const path = join(dir, name)
       try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
     }
@@ -172,17 +194,24 @@ export function cleanupPhotos(cfg = readImageConfig(), now = Date.now()) {
 }
 
 function listPhotos(cfg) {
-  const out = []
+  const byTimestamp = new Map()
   for (const dir of photoDirs(cfg)) {
     try {
       for (const f of readdirSync(dir)) {
-        if (!/^feiyu-\d+\.png$/.test(f)) continue
+        if (!originalPhoto.test(f)) continue
         const st = statSync(join(dir, f))
-        out.push({ name: f, time: st.mtimeMs, size: st.size })
+        const key = photoTimestamp(f)
+        const current = byTimestamp.get(key)
+        // Before v1.0.8 the reduced JPEG reused the original timestamp. Keep
+        // one gallery item and prefer the full PNG/WebP when both still exist.
+        const rank = /\.png$/i.test(f) ? 3 : /\.webp$/i.test(f) ? 2 : 1
+        if (!current || rank > current.rank) byTimestamp.set(key, { name: f, time: st.mtimeMs, size: st.size, rank })
       }
     } catch {}
   }
-  return out.sort((a, b) => b.time - a.time).slice(0, 24)
+  return [...byTimestamp.values()]
+    .map(({ rank, ...photo }) => photo)
+    .sort((a, b) => b.time - a.time).slice(0, 24)
 }
 
 /** Saved-today count and last shot time (retakes and character refs don't count). */
@@ -191,30 +220,30 @@ function todayUsage(cfg) {
     let tz = 'Asia/Shanghai'
     try { tz = String(readLifeConfig().时区 || tz) } catch {}
     const today = zonedNow(new Date(), tz).ymd
-    let n = 0
+    const todayShots = new Set()
     let last = 0
     for (const dir of photoDirs(cfg)) {
       let files = []
       try { files = readdirSync(dir) } catch {}
       for (const f of files) {
-        if (!/^feiyu-\d+\.png$/.test(f)) continue
+        if (!originalPhoto.test(f)) continue
         const st = statSync(join(dir, f))
-        if (zonedNow(new Date(st.mtimeMs), tz).ymd === today) n++
+        if (zonedNow(new Date(st.mtimeMs), tz).ymd === today) todayShots.add(photoTimestamp(f))
         last = Math.max(last, st.mtimeMs)
       }
     }
-    return { n, last }
+    return { n: todayShots.size, last }
   } catch { return { n: 0, last: 0 } }
 }
 
 /** QQ renders large images poorly: save a small copy (long edge 1440, JPEG q88). */
-async function shrink(pngPath) {
+async function shrink(imagePath) {
   try {
-    const jpg = pngPath.replace(/\.png$/i, '.jpg')
-    await execFileAsync('convert', [pngPath, '-resize', '1440x1440>', '-quality', '88', jpg], { timeout: 30000 })
+    const jpg = imagePath.replace(/\.(?:png|jpe?g|webp)$/i, '-small.jpg')
+    await execFileAsync('convert', [imagePath, '-resize', '1440x1440>', '-quality', '88', jpg], { timeout: 30000 })
     const st = statSync(jpg)
-    return st.size > 0 ? jpg : pngPath
-  } catch { return pngPath }
+    return st.size > 0 ? jpg : imagePath
+  } catch { return imagePath }
 }
 
 async function generateImage(cfg, prompt, opts = {}) {
@@ -253,9 +282,11 @@ async function arkGenerate(cfg, prompt, opts = {}) {
   const img = await fetch(url, { signal: timeoutSignal(timeoutMs) })
   if (!img.ok) throw new Error('下载失败 ' + img.status)
   const buf = Buffer.from(await img.arrayBuffer())
+  const format = detectImageFormat(buf, img.headers.get('content-type'))
+  if (!format) throw new Error('下载结果不是支持的 PNG、JPEG 或 WebP 图片')
   const dir = String(cfg.存图目录 || '').trim() || OUT_DIR
   mkdirSync(dir, { recursive: true })
-  const path = join(dir, `feiyu-${Date.now()}.png`)
+  const path = join(dir, `feiyu-${Date.now()}.${format.ext}`)
   writeFileSync(path, buf)
   const small = await shrink(path)
   return { path: small, original: path, bytes: statSync(small).size, prompt }
@@ -263,7 +294,7 @@ async function arkGenerate(cfg, prompt, opts = {}) {
 
 /** Rename a retaken bad shot so it keeps for review but doesn't count against today's limit. */
 function markRetake(result) {
-  const rename = (p) => String(p).replace(/([\\/]feiyu-)(\d+)\.(png|jpg)$/, '$1retry-$2.$3')
+  const rename = (p) => String(p).replace(/([\\/]feiyu-)(\d+)(-small)?\.(png|jpe?g|webp)$/i, '$1retry-$2$3.$4')
   if (!result) return
   const nextOriginal = rename(result.original)
   const nextSmall = rename(result.path)
@@ -467,9 +498,10 @@ function registerRoutes(ctx) {
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact', path: ROUTE_PREFIX + '/file',
     handler: onlyOwner(async (req, res) => {
+      if (req.method !== 'GET') return reply(res, 405, { ok: false })
       const url = new URL(req.url || '/', 'http://x')
       const name = url.searchParams.get('n') || ''
-      if (!/^feiyu-[\w-]+\.png$/.test(name) && !/^[\u4e00-\u9fa5\w-]+\.(jpg|png)$/.test(name)) return reply(res, 400, { ok: false })
+      if (!/^feiyu-[\w-]+\.(?:png|jpe?g|webp)$/i.test(name) && !/^[\u4e00-\u9fa5\w-]+\.(?:jpe?g|png|webp)$/i.test(name)) return reply(res, 400, { ok: false })
       const cfg = readImageConfig()
       const candidates = []
       for (const dir of photoDirs(cfg)) candidates.push(join(dir, name))
@@ -477,7 +509,10 @@ function registerRoutes(ctx) {
       for (const p of candidates) {
         try {
           const buf = readFileSync(p)
-          res.writeHead(200, { 'content-type': p.endsWith('.jpg') ? 'image/jpeg' : 'image/png', 'cache-control': 'max-age=60' })
+          // Old releases could save JPEG/WebP bytes under a .png suffix. Sniff
+          // the response too so those existing photos remain viewable.
+          const mime = detectImageFormat(buf)?.mime || imageMimeForPath(p)
+          res.writeHead(200, { 'content-type': mime, 'content-length': buf.length, 'cache-control': 'max-age=60' })
           res.end(buf)
           return
         } catch {}
