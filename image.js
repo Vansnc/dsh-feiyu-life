@@ -110,8 +110,9 @@ function writeImageConfig(next) {
 
 const sizeByAspect = { 竖幅: '1440x1920', 方形: '2048x2048', 横幅: '1920x1440' }
 const originalPhoto = /^feiyu-\d+\.(?:png|jpe?g|webp)$/i
-const generatedPhoto = /^feiyu-(?:retry-)?\d+(?:-small)?\.(?:png|jpe?g|webp)$/i
+const generatedPhoto = /^feiyu-(?:retry-)?\d+(?:-(?:small|thumb))?\.(?:png|jpe?g|webp)$/i
 const photoTimestamp = (name) => /^feiyu-(\d+)\.(?:png|jpe?g|webp)$/i.exec(name)?.[1] || ''
+export const photoThumbnailName = (name) => String(name).replace(/\.(?:png|jpe?g|webp)$/i, '-thumb.jpg')
 
 export function detectImageFormat(buf, _contentType = '') {
   if (!Buffer.isBuffer(buf) || !buf.length) return null
@@ -246,6 +247,37 @@ async function shrink(imagePath) {
   } catch { return imagePath }
 }
 
+const thumbnailJobs = new Map()
+
+async function ensurePhotoThumbnail(imagePath) {
+  const thumbnail = imagePath.replace(/\.(?:png|jpe?g|webp)$/i, '-thumb.jpg')
+  const reduced = imagePath.replace(/\.(?:png|jpe?g|webp)$/i, '-small.jpg')
+  const legacyReduced = imagePath.replace(/\.(?:png|webp)$/i, '.jpg')
+  const source = [reduced, legacyReduced, imagePath].find((candidate) => {
+    try { return statSync(candidate).size > 0 } catch { return false }
+  }) || imagePath
+  try {
+    if (statSync(thumbnail).mtimeMs >= statSync(imagePath).mtimeMs) return thumbnail
+  } catch {}
+  if (thumbnailJobs.has(thumbnail)) return thumbnailJobs.get(thumbnail)
+  const job = (async () => {
+    const temp = thumbnail.replace(/\.jpg$/i, `.${process.pid}-${Date.now()}.tmp.jpg`)
+    try {
+      await execFileAsync('convert', [source, '-auto-orient', '-thumbnail', '480x480>', '-strip', '-quality', '78', temp], { timeout: 30000 })
+      if (statSync(temp).size <= 0) throw new Error('empty thumbnail')
+      renameSync(temp, thumbnail)
+      return thumbnail
+    } catch {
+      try { unlinkSync(temp) } catch {}
+      return source
+    } finally {
+      thumbnailJobs.delete(thumbnail)
+    }
+  })()
+  thumbnailJobs.set(thumbnail, job)
+  return job
+}
+
 async function generateImage(cfg, prompt, opts = {}) {
   try {
     return await arkGenerate(cfg, prompt, opts)
@@ -289,19 +321,23 @@ async function arkGenerate(cfg, prompt, opts = {}) {
   const path = join(dir, `feiyu-${Date.now()}.${format.ext}`)
   writeFileSync(path, buf)
   const small = await shrink(path)
-  return { path: small, original: path, bytes: statSync(small).size, prompt }
+  const thumbnail = await ensurePhotoThumbnail(path)
+  return { path: small, original: path, thumbnail, bytes: statSync(small).size, prompt }
 }
 
 /** Rename a retaken bad shot so it keeps for review but doesn't count against today's limit. */
 function markRetake(result) {
-  const rename = (p) => String(p).replace(/([\\/]feiyu-)(\d+)(-small)?\.(png|jpe?g|webp)$/i, '$1retry-$2$3.$4')
+  const rename = (p) => String(p).replace(/([\\/]feiyu-)(\d+)(-(?:small|thumb))?\.(png|jpe?g|webp)$/i, '$1retry-$2$3.$4')
   if (!result) return
   const nextOriginal = rename(result.original)
   const nextSmall = rename(result.path)
+  const nextThumbnail = result.thumbnail ? rename(result.thumbnail) : ''
   try { if (nextOriginal !== result.original) renameSync(result.original, nextOriginal) } catch {}
   try { if (nextSmall !== result.path && nextSmall !== nextOriginal) renameSync(result.path, nextSmall) } catch {}
+  try { if (nextThumbnail && nextThumbnail !== result.thumbnail) renameSync(result.thumbnail, nextThumbnail) } catch {}
   result.original = nextOriginal
   result.path = nextSmall
+  if (nextThumbnail) result.thumbnail = nextThumbnail
 }
 
 /** Shoot, then look at the result; retake with the problems fed back (max 1 by default). */
@@ -508,11 +544,15 @@ function registerRoutes(ctx) {
       candidates.push(join(OUT_DIR, '角色设定', name), join(LEGACY_OUT_DIR, '角色设定', name))
       for (const p of candidates) {
         try {
-          const buf = readFileSync(p)
+          statSync(p)
+          const servedPath = url.searchParams.get('thumb') === '1' ? await ensurePhotoThumbnail(p) : p
+          const buf = readFileSync(servedPath)
           // Old releases could save JPEG/WebP bytes under a .png suffix. Sniff
           // the response too so those existing photos remain viewable.
-          const mime = detectImageFormat(buf)?.mime || imageMimeForPath(p)
-          res.writeHead(200, { 'content-type': mime, 'content-length': buf.length, 'cache-control': 'max-age=60' })
+          const mime = detectImageFormat(buf)?.mime || imageMimeForPath(servedPath)
+          const isThumbnail = url.searchParams.get('thumb') === '1'
+          const cache = isThumbnail && servedPath !== p ? 'public, max-age=86400, immutable' : 'public, max-age=3600'
+          res.writeHead(200, { 'content-type': mime, 'content-length': buf.length, 'cache-control': cache })
           res.end(buf)
           return
         } catch {}

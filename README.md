@@ -1,3 +1,5 @@
+<p align="center"><img src="./icon.png" width="120" alt="鱼的生活 Logo"></p>
+
 # dsh-feiyu-life · 鱼的生活
 
 [![npm](https://img.shields.io/npm/v/dsh-feiyu-life)](https://www.npmjs.com/package/dsh-feiyu-life)
@@ -69,6 +71,7 @@
 `shoot` 工具。我说「拍一张」，它就会拍。
 
 - 自拍会带上我此刻的穿着、地点、时间、光线；
+- 设置页的照片历史使用缓存缩略图分批加载，点击可查看原图并前后切换；
 - 光线和天色跟钟点对得上（傍晚就是傍晚，深夜就是深夜）；
 - 出图之后它会自己看一眼：角色跑偏、画风错、多手多指、带文字水印，都算不合格，自动带着问题重拍一次；
 - 生图走火山方舟 Seedream，主模型挂了会换备用模型。

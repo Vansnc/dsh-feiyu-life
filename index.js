@@ -36,6 +36,7 @@ export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connecti
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
+const PLUGIN_LOGO_FILE = new URL('./icon.png', import.meta.url)
 const AVATAR_FILE = new URL('./assets/character-actions.png', import.meta.url)
 const AVATAR_BEHAVIORS = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo', 'bath']
 const AVATAR_ACTION_FILES = new Map(AVATAR_BEHAVIORS.map((behavior) => [
@@ -361,6 +362,25 @@ export function apply(ctx) {
         try { return reply(res, 200, statePayload(new Date())) } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: state')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/logo',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const data = readFileSync(PLUGIN_LOGO_FILE)
+          res.writeHead(200, {
+            'content-type': 'image/png',
+            'content-length': data.length,
+            'cache-control': 'public, max-age=86400, immutable',
+          })
+          res.end(data)
+        } catch { return reply(res, 404, { ok: false, error: 'logo_not_found' }) }
+      }),
+    }), 'feiyu-life: logo')
   } catch {}
 
   for (const [behavior, file] of AVATAR_ACTION_FILES) {

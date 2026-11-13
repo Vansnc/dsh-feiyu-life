@@ -160,7 +160,7 @@
 | `存图目录` | 空 | 留空使用 `feiyu-life-image/` |
 | `兜底Provider/兜底模型` | DeepSeek 默认值 | 提示词加工的模型兜底 |
 
-默认参考图路径为 `feiyu-life-image/角色设定/正面.jpg`，同时兼容旧目录。PNG、JPEG 和 WebP 会使用对应 MIME。清理任务只匹配插件生成的 `feiyu-*.png/jpg/webp`，不会触碰角色设定目录。
+默认参考图路径为 `feiyu-life-image/角色设定/正面.jpg`，同时兼容旧目录。PNG、JPEG 和 WebP 会使用对应 MIME。照片历史按需生成 `feiyu-*-thumb.jpg` 缓存，首屏只请求少量缩略图，打开大图时才读取原文件。清理任务会同时处理插件生成的原图、压缩图和缩略图，不会触碰角色设定目录。
 
 ## 保存、迁移与清理
 

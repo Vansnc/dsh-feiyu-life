@@ -10,7 +10,7 @@ import {
 import {
   addAdjustment, factsPath, listAdjustments, removeAdjustment, cleanupFacts,
 } from '../state.js'
-import { cleanupPhotos, detectImageFormat, normalizeImageConfig, IMAGE_CONFIG_VERSION } from '../image.js'
+import { cleanupPhotos, detectImageFormat, normalizeImageConfig, photoThumbnailName, IMAGE_CONFIG_VERSION } from '../image.js'
 
 test('regeneration history restores the previous plan and adjustments are removable', () => {
   const dir = mkdtempSync(join(tmpdir(), 'feiyu-storage-'))
@@ -74,19 +74,26 @@ test('downloaded images are identified by bytes instead of URL suffixes', () => 
   assert.equal(detectImageFormat(Buffer.from('<html>bad gateway</html>'), 'text/html'), null)
 })
 
+test('gallery thumbnails have a stable cacheable filename', () => {
+  assert.equal(photoThumbnailName('feiyu-123.png'), 'feiyu-123-thumb.jpg')
+  assert.equal(photoThumbnailName('feiyu-123.webp'), 'feiyu-123-thumb.jpg')
+})
+
 test('photo cleanup removes only expired plugin images', () => {
   const dir = mkdtempSync(join(tmpdir(), 'feiyu-photos-'))
   try {
     const generated = join(dir, 'feiyu-100.png')
     const retry = join(dir, 'feiyu-retry-99.jpg')
+    const thumbnail = join(dir, 'feiyu-100-thumb.jpg')
     const reference = join(dir, '正面.jpg')
     const unrelated = join(dir, 'holiday.png')
-    for (const path of [generated, retry, reference, unrelated]) writeFileSync(path, 'x')
+    for (const path of [generated, retry, thumbnail, reference, unrelated]) writeFileSync(path, 'x')
     const old = new Date('2020-01-02T00:00:00Z')
-    for (const path of [generated, retry, reference, unrelated]) utimesSync(path, old, old)
-    assert.equal(cleanupPhotos({ 存图目录: dir, 照片保留天数: 90 }, Date.parse('2026-11-12T00:00:00Z')), 2)
+    for (const path of [generated, retry, thumbnail, reference, unrelated]) utimesSync(path, old, old)
+    assert.equal(cleanupPhotos({ 存图目录: dir, 照片保留天数: 90 }, Date.parse('2026-11-12T00:00:00Z')), 3)
     assert.equal(existsSync(generated), false)
     assert.equal(existsSync(retry), false)
+    assert.equal(existsSync(thumbnail), false)
     assert.equal(existsSync(reference), true)
     assert.equal(existsSync(unrelated), true)
   } finally { rmSync(dir, { recursive: true, force: true }) }

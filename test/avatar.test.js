@@ -13,6 +13,14 @@ test('each avatar behavior is an isolated four-frame PNG strip', () => {
   }
 })
 
+test('plugin logo is a transparent square PNG suitable for package and sidebar use', () => {
+  const png = readFileSync(new URL('../icon.png', import.meta.url))
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10])
+  assert.equal(png.readUInt32BE(16), 512)
+  assert.equal(png.readUInt32BE(20), 512)
+  assert.match(readFileSync(new URL('../package.json', import.meta.url), 'utf8'), /"\.\/icon": "\.\/icon\.png"/)
+})
+
 test('client animation only advances horizontally through isolated strips', () => {
   const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
   assert.match(client, /background-size:320px 80px/)
