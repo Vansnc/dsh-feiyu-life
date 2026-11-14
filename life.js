@@ -31,7 +31,7 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 7
+export const LIFE_CONFIG_VERSION = 8
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
@@ -41,6 +41,7 @@ export const defaultConfig = {
   地图: defaultWorldConfig,
   模型超时秒: 60,
   历史保留天数: 180,
+  连续性: { 启用: true, 结算间隔分钟: 10, 每日成果上限: 2, 自主主线: false },
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
   校历: {
     学期: [
@@ -179,6 +180,14 @@ export function normalizeConfig(input, issues = []) {
     : copy(defaultConfig.工作区)
   cfg.模型超时秒 = Math.round(clamp(raw.模型超时秒, 10, 300, defaultConfig.模型超时秒))
   cfg.历史保留天数 = Math.round(clamp(raw.历史保留天数, 7, 3650, defaultConfig.历史保留天数))
+  const continuity = raw.连续性 && typeof raw.连续性 === 'object' ? raw.连续性 : defaultConfig.连续性
+  cfg.连续性 = {
+    启用: continuity.启用 !== false,
+    结算间隔分钟: Math.round(clamp(continuity.结算间隔分钟, 5, 60, defaultConfig.连续性.结算间隔分钟)),
+    每日成果上限: Math.round(clamp(continuity.每日成果上限, 0, 10, defaultConfig.连续性.每日成果上限)),
+    // 1.2.0 deliberately does not autonomously create long-term threads.
+    自主主线: false,
+  }
   cfg.地图 = normalizeWorldConfig(raw.地图 || defaultConfig.地图)
 
   const period = raw.经期 && typeof raw.经期 === 'object' ? raw.经期 : {}
@@ -524,7 +533,9 @@ export function generate(cfg, now = new Date(), options = {}) {
       locationId: x.locationId || '',
       from: x.from || '',
       to: x.to || '',
+      links: Array.isArray(x.links) ? x.links : [],
     })),
+    ...(options.rawTimeline ? { rawTimeline: timeline } : {}),
     ...(replay ? { replay } : {}),
   }
 }
@@ -566,6 +577,9 @@ export function migrateConfig(raw) {
   delete next.事件池
   // v7 adds a safe local Iconify glyph id to each map location. Normalization
   // fills defaults for existing locations and custom locations.
+  // v8 adds the continuity settlement policy. Runtime history remains in
+  // separate plugin-owned files and is intentionally not part of settings.
+  if (version < 8 && (!next.连续性 || typeof next.连续性 !== 'object')) next.连续性 = copy(defaultConfig.连续性)
   next.配置版本 = LIFE_CONFIG_VERSION
   return { value: next, changed: version !== LIFE_CONFIG_VERSION || Object.hasOwn(source, '事件池') }
 }

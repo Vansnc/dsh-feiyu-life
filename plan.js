@@ -259,6 +259,11 @@ function normalizePlan(data) {
     outfit: String(x.outfit ?? x.穿 ?? ''),
     locationId: String(x.locationId ?? x.地点 ?? ''),
     behavior: String(x.behavior ?? x.行为 ?? ''),
+    links: Array.isArray(x.links) ? x.links.map((link) => ({
+      type: String(link?.type || ''),
+      id: String(link?.id || ''),
+      progressDelta: Number(link?.progressDelta) || undefined,
+    })).filter((link) => ['thread', 'task', 'commitment'].includes(link.type) && link.id) : [],
   })).filter((x) => x.end > x.start)
   if (!items.length) return null
   return {

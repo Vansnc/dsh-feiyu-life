@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
+    const tabs = [['now', '此刻'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -72,6 +72,11 @@ window.__ModuleLoader__.load({
 [data-fl-narrow]{width:92px;}
 [data-fl-wide]{width:100%;min-width:220px;}
 [data-fl-empty]{font-size:12px;opacity:.55;padding:6px 2px;}
+[data-fl-cont-grid]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+[data-fl-cont-card]{padding:12px;border:1px solid var(--fl-line);border-radius:12px;background:rgba(127,127,127,.045);}
+[data-fl-cont-card] strong{display:block;margin-bottom:4px;}
+[data-fl-cont-meta]{font-size:11px;opacity:.58;line-height:1.5;}
+@media(max-width:720px){[data-fl-cont-grid]{grid-template-columns:1fr;}}
 [data-fl-tl]{margin-top:4px;display:flex;flex-direction:column;gap:5px;}
 [data-fl-tl-row]{display:flex;align-items:center;gap:8px;}
 [data-fl-tl-time]{flex:0 0 100px;text-align:right;font-size:10.5px;opacity:.6;font-variant-numeric:tabular-nums;}
@@ -421,6 +426,8 @@ window.__ModuleLoader__.load({
       const [backupCandidate, setBackupCandidate] = useState(null)
       const [inferenceText, setInferenceText] = useState('蹲着看猫吃完半根火腿肠')
       const [inference, setInference] = useState(null)
+      const [continuity, setContinuity] = useState(null)
+      const [continuityDraft, setContinuityDraft] = useState({ kind: 'tasks', title: '', origin: '', artifactType: 'none' })
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
 
       const load = async (preserveConfig = false, silent = false) => {
@@ -559,7 +566,38 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (tab === 'replay' && !replay) loadReplay('', true)
+        if (tab === 'continuity' && !continuity) loadContinuity()
       }, [tab])
+
+      const loadContinuity = async () => {
+        try { setContinuity(await getJson(API + '/continuity')) }
+        catch (e) { setMessage('连续性读取失败：' + e.message) }
+      }
+
+      const continuityAction = async (body) => {
+        setBusy(true)
+        try {
+          const data = await postJson(API + '/continuity/entity', body)
+          setContinuity(data); setMessage('连续性已更新')
+        } catch (e) { setMessage('更新失败：' + e.message) }
+        setBusy(false)
+      }
+
+      const createContinuity = async () => {
+        if (!continuityDraft.title.trim()) { setMessage('先填写名称'); return }
+        if (continuityDraft.kind === 'threads' && !continuityDraft.origin.trim()) { setMessage('长期主线必须填写来源'); return }
+        await continuityAction({ ...continuityDraft, action: 'create', artifact: { type: continuityDraft.artifactType, name: continuityDraft.title } })
+        setContinuityDraft((x) => ({ ...x, title: '', origin: '' }))
+      }
+
+      const settleContinuity = async () => {
+        setBusy(true)
+        try {
+          const data = await postJson(API + '/continuity/settle', {})
+          setContinuity(data); setMessage(`结算完成：新增 ${data.applied || 0} 项变化`)
+        } catch (e) { setMessage('结算失败：' + e.message) }
+        setBusy(false)
+      }
 
       const testInference = async () => {
         const text = inferenceText.trim()
@@ -938,6 +976,43 @@ window.__ModuleLoader__.load({
             ].join('｜'))),
           h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: restoreSettings }, '确认恢复')) : null)
 
+      const contState = continuity && continuity.state
+      const contList = (kind, label) => h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-h': '' }, label),
+        contState && (contState[kind] || []).length ? h('div', { 'data-fl-cont-grid': '' }, (contState[kind] || []).map((item) => h('div', { key: item.id, 'data-fl-cont-card': '' },
+          h('strong', null, item.title),
+          h('div', { 'data-fl-cont-meta': '' }, `${item.status}${kind === 'threads' ? ` · ${item.progress || 0}%` : ''}｜来源：${item.origin || item.source}`),
+          item.nextStep ? h('div', { 'data-fl-cont-meta': '' }, '下一步：' + item.nextStep) : null,
+          ['active', 'open', 'paused'].includes(item.status) ? h('div', { 'data-fl-row': '', style: { marginTop: 7 } },
+            h('button', { 'data-fl-btn': '', disabled: busy, onClick: () => continuityAction({ kind, action: 'complete', id: item.id }) }, '标记完成'),
+            h('button', { 'data-fl-del': '', disabled: busy, onClick: () => continuityAction({ kind, action: 'cancel', id: item.id }) }, '取消')) : null)))
+          : h('div', { 'data-fl-empty': '' }, '暂无'))
+      const needs = (contState && contState.needs) || {}
+      const continuityPage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '计划只是意图；只有最终时间线已经结束、且整段未被 life_adjust 覆盖，关联事项才会完成。所有来源和变化原因都可追溯。'),
+        h('div', { 'data-fl-stats': '' },
+          [['精力', needs.energy], ['压力', needs.stress], ['社交需要', needs.socialNeed], ['睡眠欠账', `${needs.sleepDebtMinutes || 0} 分钟`]].map(([k, v]) => h('div', { key: k, 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, k), h('div', { 'data-fl-stat-v': '' }, v ?? '—')))),
+        h('div', { 'data-fl-h': '' }, '新增'),
+        h('div', { 'data-fl-row': '' },
+          h('select', { 'data-fl-input': '', value: continuityDraft.kind, onChange: (e) => setContinuityDraft({ ...continuityDraft, kind: e.target.value }) },
+            h('option', { value: 'tasks' }, '短期待办'), h('option', { value: 'commitments' }, '约定'), h('option', { value: 'threads' }, '长期主线')),
+          h(Field, { value: continuityDraft.title, width: 'data-fl-wide', onChange: (v) => setContinuityDraft({ ...continuityDraft, title: v }) }),
+          continuityDraft.kind === 'threads' ? h(Field, { value: continuityDraft.origin, width: 'data-fl-wide', onChange: (v) => setContinuityDraft({ ...continuityDraft, origin: v }) }) : null,
+          continuityDraft.kind === 'threads' ? h('select', { 'data-fl-input': '', value: continuityDraft.artifactType, onChange: (e) => setContinuityDraft({ ...continuityDraft, artifactType: e.target.value }) },
+            h('option', { value: 'none' }, '无成果文件'), h('option', { value: 'document' }, '本地文档记录'), h('option', { value: 'album' }, '已有照片清单')) : null,
+          h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: createContinuity }, '添加')),
+        continuityDraft.kind === 'threads' ? h('div', { 'data-fl-note': '' }, '长期主线的来源必填；成果只写插件目录中的执行记录或已有照片清单，不会生图、发消息或操作外部文件。') : null,
+        contList('threads', '长期主线'), contList('tasks', '短期待办'), contList('commitments', '约定'),
+        h('div', { 'data-fl-h': '' }, '每日生活记忆'),
+        continuity && (continuity.memories || []).length ? (continuity.memories || []).map((m) => h('div', { key: m.date, 'data-fl-cont-card': '' }, h('strong', null, m.date), h('div', { 'data-fl-cont-meta': '' }, m.summary))) : h('div', { 'data-fl-empty': '' }, '还没有已结算的生活记忆'),
+        h('div', { 'data-fl-row': '' }, h('button', { 'data-fl-btn': '', disabled: busy, onClick: settleContinuity }, '立即按真实时间线结算'), h('span', { 'data-fl-note': '' }, '重复执行是幂等的，不会重复累计。')),
+        h('div', { 'data-fl-h': '' }, '结算设置'),
+        h('div', { 'data-fl-row': '' },
+          h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.连续性?.启用 !== false, onChange: (e) => patch(['连续性', '启用'], e.target.checked) }), '启用连续性'),
+          h('span', { 'data-fl-note': '' }, '结算间隔（分钟）'), h(Field, { value: config.连续性?.结算间隔分钟 || 10, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['连续性', '结算间隔分钟'], Number(v) || 10) }),
+          h('span', { 'data-fl-note': '' }, '每日成果上限'), h(Field, { value: config.连续性?.每日成果上限 ?? 2, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['连续性', '每日成果上限'], Number(v) || 0) })),
+        h('div', { 'data-fl-warn': '' }, '边界：不执行现实动作、不自主生图、不任意操作用户文件；1.2.0 不会自主创建长期主线。'))
+
       const planMeta = (meta && meta.plan) || {}
       const detour = meta && meta.deviation && (meta.deviation.flat ? '躺平' : meta.deviation.outing ? '临时出门' : meta.deviation.skipAfternoon ? '翘下午课' : '')
       return h('div', { 'data-fl-wrap': '' },
@@ -966,6 +1041,7 @@ window.__ModuleLoader__.load({
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
         tab === 'now' ? nowPage : null,
+        tab === 'continuity' ? continuityPage : null,
         tab === 'replay' ? replayPage : null,
         tab === 'map' ? mapPage : null,
         tab === 'year' ? yearPage : null,
@@ -1310,7 +1386,7 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       __test: {
-        CSS, WorldMap, IconifyGlyph, PlaceGlyph, behaviorMeta, placeIconOptions, replayFrameAt,
+        CSS, Panel, WorldMap, IconifyGlyph, PlaceGlyph, behaviorMeta, placeIconOptions, replayFrameAt,
         ImagePanel: ImagePanel.Panel, imageCSS: ImagePanel.CSS,
       },
       apply(ctx) {

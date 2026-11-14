@@ -91,8 +91,8 @@ function overlay(base, cover) {
       const next = []
       for (const r of segs) {
         if (g.end <= r.start || g.start >= r.end) { next.push(r); continue }
-        if (g.start > r.start) next.push({ ...r, end: g.start })
-        if (g.end < r.end) next.push({ ...r, start: g.end })
+        if (g.start > r.start) next.push({ ...r, end: g.start, overridden: r.overridden || r.source === 'plan' })
+        if (g.end < r.end) next.push({ ...r, start: g.end, overridden: r.overridden || r.source === 'plan' })
       }
       segs = next
     }
@@ -113,11 +113,15 @@ export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute
     return [{
       start: minuteToMs(start),
       end: minuteToMs(end),
+      plannedStart: minuteToMs(start),
+      plannedEnd: minuteToMs(end),
       what: String(x.what || ''),
       phone: String(x.phone || '在手'),
       outfit: String(x.outfit || ''),
       locationId: String(x.locationId || ''),
       behavior: String(x.behavior || ''),
+      links: Array.isArray(x.links) ? x.links : [],
+      overridden: false,
       source: 'plan',
     }]
   })
@@ -134,6 +138,7 @@ export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute
       outfit: String(fact.outfit || ''),
       locationId: String(fact.locationId || ''),
       behavior: String(fact.behavior || ''),
+      links: [],
       source: 'adjust',
     }])
   }

@@ -6,6 +6,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium } from 'playwright'
 import { defaultWorldConfig } from '../world.js'
+import { defaultConfig } from '../life.js'
 import { normalizeImageConfig } from '../image.js'
 
 let definition
@@ -147,6 +148,40 @@ try {
   assert.equal(await page.getByText('基础与模型').count(), 1)
   assert.equal(await page.getByText('角色形象与画面').count(), 1)
   await page.screenshot({ path: join(outputDir, 'photo-settings.png'), fullPage: true })
+
+  // Mount the complete settings panel and verify the 1.2.0 continuity page.
+  await page.setContent('<!doctype html><meta charset="utf-8"><div id="root"></div>')
+  const lifeState = {
+    ok: true, config: defaultConfig, preview: { text: '此刻在宿舍', evidence: [] }, timeline: [],
+    currentMinute: 600, current: { what: '整理作品集' }, world: { enabled: true, behavior: 'study', location: defaultWorldConfig.地点[0] },
+    adjustments: [], meta: { dayType: { name: '没课日' }, plan: { source: 'llm', title: '普通的一天' }, planHistoryCount: 0 },
+  }
+  const continuityState = {
+    ok: true,
+    state: {
+      needs: { energy: 68, stress: 32, socialNeed: 24, sleepDebtMinutes: 30 },
+      threads: [{ id: 't1', title: '视觉作品集', status: 'active', progress: 20, origin: '用户明确提出', nextStep: '整理封面' }],
+      tasks: [{ id: 'q1', title: '取快递', status: 'open', origin: '设置页' }], commitments: [],
+    },
+    memories: [{ date: '2026-11-14', summary: '真实时间线已结算 3 段' }],
+  }
+  await page.evaluate(({ life, continuity }) => {
+    window.fetch = async (url) => ({
+      ok: true,
+      async json() { return String(url).includes('/continuity') ? continuity : life },
+    })
+    const plugin = window.__photoDefinition.factory((name) => {
+      if (name === 'react') return window.React
+      throw new Error(`unexpected dependency: ${name}`)
+    })
+    const style = document.createElement('style'); style.textContent = plugin.__test.CSS; document.head.appendChild(style)
+    window.ReactDOM.createRoot(document.getElementById('root')).render(window.React.createElement(plugin.__test.Panel))
+  }, { life: lifeState, continuity: continuityState })
+  await page.getByText('连续性', { exact: true }).click()
+  await page.getByText('视觉作品集').waitFor()
+  assert.equal(await page.getByText('取快递', { exact: true }).count(), 1, 'one-off pickup is rendered as a short task')
+  assert.equal(await page.getByText('计划只是意图', { exact: false }).count(), 1, 'completion boundary is visible')
+  await page.screenshot({ path: join(outputDir, 'continuity-settings.png'), fullPage: true })
 } finally {
   await browser.close()
 }

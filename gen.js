@@ -44,7 +44,7 @@ export function pickModel(agent, cfg = {}) {
 }
 
 export function buildPrompt(o) {
-  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, recent } = o
+  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, recent, continuity } = o
   const persona = String(cfg.角色设定 || '大肥鱼：21 岁，在北京读大三，学视觉传达；懒、嘴硬心软、爱损人；室友阿岚（考研）和小满（恋爱脑）；周日晚上跟妈妈视频。')
   const schedule = classes.length ? classes.map((x) => `${x[0]}-${x[1]} ${x[2]}`).join('；') : '这天没课'
   const routineRows = Array.isArray(routine) ? routine : []
@@ -68,6 +68,9 @@ export function buildPrompt(o) {
     '## 最近三天（这些桥段**不要再写**，换别的）',
     recent || '（还没有记录）',
     '',
+    '## 可以关联的生活连续性项目',
+    continuity || '没有待关联项目。',
+    '',
     '## 要求',
     '1. 从 00:00 排到 24:00，**不留空隙、不重叠**，8–14 段；',
     '2. 必须有一段「睡着了」，至少 6 小时；',
@@ -80,10 +83,11 @@ export function buildPrompt(o) {
     `   地点：${locations}`,
     `   行为：${behaviors}`,
     '9. locationId 表示这一段实际停留的地点；behavior 表示她本人正在做的动作，不要把猫、狗、室友的动作算成她的；',
-    '10. 不要出现"日程""计划""安排表"这类词；',
+    '10. 如果某一段确实推进了上面已有项目，可填写 links；只能使用上面列出的 type 和 id，不得虚构。长期主线可附 progressDelta（1–20）；取快递等一次性事项只能关联 task；',
+    '11. links 只是意图关联，只有该段到时真实结束且没有被 life_adjust 覆盖，系统才会结算；不要出现"日程""计划""安排表"这类词；',
     '',
     '## 只输出 JSON，不要解释、不要代码块外的文字',
-    '{"title":"一句话概括这一天","mood":"两句以内的心情底色","items":[{"start":"07:40","end":"08:10","what":"刚起，脸还有点肿","phone":"在手","outfit":"睡衣","locationId":"dorm","behavior":"idle"}]}',
+    '{"title":"一句话概括这一天","mood":"两句以内的心情底色","items":[{"start":"07:40","end":"08:10","what":"刚起，脸还有点肿","phone":"在手","outfit":"睡衣","locationId":"dorm","behavior":"idle","links":[{"type":"task","id":"已有ID"}]}]}',
   ].join('\n')
 }
 
@@ -114,12 +118,13 @@ function fillLabel(x) {
 }
 
 /** Turn model output into a usable timeline; null if unusable. */
-export function normalizePlan(raw, worldConfig = defaultWorldConfig) {
+export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEntities = []) {
   if (!raw || !Array.isArray(raw.items)) return null
   const world = normalizeWorldConfig(worldConfig)
   const locationIds = new Set(world.地点.map((x) => x.id))
   const homeLocationId = world.地点.find((x) => x.id === 'dorm')?.id || world.地点[0]?.id || ''
   const behaviorIds = new Set([...BEHAVIOR_RULES.map((x) => x.id), 'idle'])
+  const allowed = new Map((allowedEntities || []).map((x) => [`${x.kind}:${x.id}`, x]))
   const segs = []
   for (const x of raw.items) {
     const a = toMinute(x.start)
@@ -136,6 +141,12 @@ export function normalizePlan(raw, worldConfig = defaultWorldConfig) {
       outfit: String(x.outfit || '').trim().slice(0, 12),
       locationId: locationIds.has(String(x.locationId || '')) ? String(x.locationId) : '',
       behavior: behaviorIds.has(String(x.behavior || '')) ? String(x.behavior) : '',
+      links: (Array.isArray(x.links) ? x.links : []).flatMap((link) => {
+        const type = String(link?.type || '')
+        const id = String(link?.id || '')
+        if (!allowed.has(`${type}:${id}`)) return []
+        return [{ type, id, progressDelta: type === 'thread' ? Math.max(1, Math.min(20, Math.round(Number(link.progressDelta) || 5))) : undefined }]
+      }).slice(0, 3),
     })
   }
   if (!segs.length) return null
@@ -196,7 +207,7 @@ export async function writeDayWithModel(ctx, agent, params) {
   } catch (e) { log('call failed: ' + String((e && e.message) || e)); return null }
   const raw = parseJson(out)
   if (!raw) { log('JSON parse failed: len=' + String(out).length + ' kinds=' + JSON.stringify(kinds) + ' body=' + String(out).slice(0, 200)); return null }
-  const ok = normalizePlan(raw, params.cfg.地图)
+  const ok = normalizePlan(raw, params.cfg.地图, params.continuityEntities)
   if (!ok) { log('normalize failed: ' + String(out).slice(0, 300)); return null }
   return { ...ok, source: 'llm', model: target.model }
 }

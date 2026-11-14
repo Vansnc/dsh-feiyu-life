@@ -34,6 +34,10 @@ import { writeDayWithModel } from './gen.js'
 import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } from './image.js'
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
 import { createSettingsBackup, restoreSettingsBackup } from './backup.js'
+import {
+  activeEntities, cleanupContinuity, continuitySummary, mutateEntity,
+  readContinuity, readMemories, settleTimeline,
+} from './continuity.js'
 
 export const name = 'feiyu-life'
 export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connection', 'llm', 'tools', 'attachments']
@@ -121,7 +125,10 @@ export function apply(ctx) {
         try {
           const cfg = readConfig()
           if (!inWorkspace(cfg, cwd)) return ''
-          return generate(cfg).text
+          const life = generate(cfg).text
+          if (cfg.连续性?.启用 === false) return life
+          const state = readContinuity()
+          return `${life}\n（生活连续性）${continuitySummary(state)}\n只有最终真实时间线中已经结束、且未被临时调整覆盖的活动才算完成；不要把计划说成成果。`
         } catch { return '' }
       },
     }))
@@ -193,6 +200,47 @@ export function apply(ctx) {
       })
       if (typeof off === 'function') offs.push(off)
     } catch {}
+    // Explicit, bounded continuity tools. They only update plugin-owned local
+    // state; they cannot act in the external world or touch arbitrary files.
+    for (const spec of [
+      ['life_task', 'tasks', '管理短期待办（例如取快递）。不会执行现实动作。'],
+      ['life_commitment', 'commitments', '管理与人或时间有关的约定。不会发送消息或代替赴约。'],
+      ['life_thread', 'threads', '管理有可追溯来源的长期主线。不会自主创建主线。'],
+    ]) {
+      try {
+        const [toolName, kind, description] = spec
+        const off = agent.ctx.tools.register({
+          name: toolName,
+          description,
+          parameters: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', enum: ['create', 'update', 'complete', 'cancel', 'pause', 'resume'] },
+              id: { type: 'string' }, title: { type: 'string' }, detail: { type: 'string' },
+              origin: { type: 'string', description: '来源说明；创建长期主线时必须明确' },
+              dueAt: { type: 'number', description: '可选的 Unix 毫秒时间' }, placeId: { type: 'string' }, with: { type: 'string' },
+              nextStep: { type: 'string' }, progress: { type: 'number' },
+              artifactType: { type: 'string', enum: ['none', 'document', 'album'] }, artifactName: { type: 'string' },
+            },
+            required: ['action'], additionalProperties: false,
+          },
+          output: { schema: { type: 'object', additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: String(v?.say || '') }] },
+          async execute(args = {}) {
+            try {
+              if (args.action === 'create' && kind === 'threads' && !String(args.origin || '').trim()) return { ok: false, say: '长期主线需要写明来源' }
+              const input = {
+                ...args, source: 'tool', origin: String(args.origin || '对话中由用户明确提出'),
+                reality: ['document', 'album'].includes(args.artifactType) ? 'local-artifact' : 'virtual',
+              }
+              if (args.artifactType) input.artifact = { type: args.artifactType, name: args.artifactName || '' }
+              const value = mutateEntity(kind, args.action, input)
+              return { ok: true, value, say: `${args.action === 'create' ? '已记下' : '已更新'}：${value?.title || args.id}` }
+            } catch (e) { return { ok: false, say: String(e?.message || e) } }
+          },
+        })
+        if (typeof off === 'function') offs.push(off)
+      } catch {}
+    }
     return () => { for (const f of offs) { try { f() } catch {} } }
   }
 
@@ -228,6 +276,8 @@ export function apply(ctx) {
           calendarLabel: calendarLabel(calendar),
           body: bodyHint(cfg, t, deviation),
           recent: recentSummary(cfg, t),
+          continuity: continuitySummary(readContinuity()),
+          continuityEntities: activeEntities(readContinuity()),
         })
       }
       if (result) {
@@ -276,6 +326,37 @@ export function apply(ctx) {
     })
   } catch {}
   try { ctx.effect(() => ctx.interval(() => { ensurePlan(new Date()).catch(() => {}) }, 20 * 60 * 1000)) } catch {}
+
+  let settling = false
+  const reconcileContinuity = (force = false) => {
+    if (settling) return { ok: false, reason: 'locked' }
+    settling = true
+    try {
+      const cfg = readConfig()
+      if (cfg.连续性?.启用 === false) return { ok: false, reason: 'disabled' }
+      const now = new Date()
+      const last = readContinuity().lastSettledAt
+      const intervalMs = Math.max(5, Number(cfg.连续性?.结算间隔分钟) || 10) * 60000
+      if (!force && last && now.getTime() - last < intervalMs) return { ok: true, applied: 0, reason: 'interval' }
+      const tz = String(cfg.时区 || 'Asia/Shanghai')
+      const days = [addZonedDays(now, tz, -1), now]
+      let applied = 0
+      for (const at of days) {
+        const date = zonedNow(at, tz).ymd
+        const life = generate(cfg, at, { rawTimeline: true })
+        const result = settleTimeline({ date, timeline: life.rawTimeline || [], nowMs: now.getTime(), maxArtifacts: cfg.连续性?.每日成果上限 })
+        applied += Number(result.applied) || 0
+      }
+      return { ok: true, applied }
+    } finally { settling = false }
+  }
+  try {
+    ctx.effect(() => {
+      const timer = setTimeout(() => { try { reconcileContinuity() } catch {} }, 12000)
+      return () => clearTimeout(timer)
+    })
+  } catch {}
+  try { ctx.effect(() => ctx.interval(() => { try { reconcileContinuity() } catch {} }, 5 * 60 * 1000)) } catch {}
 
   // ── Settings page endpoints ──────────────────────────────────────────
   const onlyOwner = (handler) => async (req, res) => {
@@ -366,6 +447,47 @@ export function apply(ctx) {
         try { return reply(res, 200, statePayload(new Date())) } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: state')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/continuity',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        const state = readContinuity()
+        return reply(res, 200, { ok: true, state, summary: continuitySummary(state), memories: readMemories(7), limits: { threads: 5, tasks: 30, commitments: 20 }, boundaries: ['不执行外部现实动作', '不自主生图', '只写插件专属目录', '计划不等于完成'] })
+      }),
+    }), 'feiyu-life: continuity')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/continuity/entity',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        let body
+        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
+        try {
+          const kind = String(body?.kind || '')
+          if (!['threads', 'tasks', 'commitments'].includes(kind)) return reply(res, 400, { ok: false, error: 'bad kind' })
+          if (body?.action === 'create' && kind === 'threads' && !String(body?.origin || '').trim()) return reply(res, 400, { ok: false, error: 'thread origin required' })
+          mutateEntity(kind, String(body?.action || ''), { ...body, source: 'settings', origin: body.origin || '连续性设置页手动创建' })
+          const state = readContinuity()
+          return reply(res, 200, { ok: true, state, summary: continuitySummary(state), memories: readMemories(7) })
+        } catch (e) { return reply(res, 400, { ok: false, error: String(e?.message || e) }) }
+      }),
+    }), 'feiyu-life: continuity entity')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/continuity/settle',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try { return reply(res, 200, { ...reconcileContinuity(true), state: readContinuity(), memories: readMemories(7) }) }
+        catch (e) { return reply(res, 500, { ok: false, error: String(e?.message || e) }) }
+      }),
+    }), 'feiyu-life: continuity settle')
   } catch {}
 
   try {
@@ -668,6 +790,7 @@ export function apply(ctx) {
       const cfg = readConfig()
       cleanupPlans(cfg.历史保留天数)
       cleanupFacts(cfg.历史保留天数)
+      cleanupContinuity(Math.max(365, cfg.历史保留天数))
       cleanupPhotos(readImageConfig())
     } catch (e) {
       try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}
