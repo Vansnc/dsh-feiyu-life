@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "大肥鱼的生活（DSH 插件）：每日剧本 + 时序状态机 + 二维生活地图；角色会在地点间移动并显示行为动效，对话与相机复用同一份世界状态。",
   "type": "module",
   "license": "MIT",
@@ -27,7 +27,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check client.js && node --check scripts/build-xueyuan-map.mjs",
+    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check backup.js && node --check client.js && node --check scripts/build-xueyuan-map.mjs",
     "test": "node --test",
     "test:ui": "node scripts/verify-ui.mjs",
     "test:all": "npm test && npm run test:ui"
@@ -55,6 +55,7 @@
     "runtime.js",
     "plan.js",
     "gen.js",
+    "backup.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",

@@ -105,6 +105,13 @@ export function saveImageConfig(patch) {
   return next
 }
 
+/** Replace the whole camera configuration after a complete external validation. */
+export function replaceImageConfig(input) {
+  const next = normalizeImageConfig(input)
+  writeImageConfig(next)
+  return next
+}
+
 function writeImageConfig(next) {
   mkdirSync(dshHome(), { recursive: true })
   const tmp = CONFIG_PATH + '.tmp'
@@ -142,7 +149,7 @@ export function detectImageFormat(buf, _contentType = '') {
 const imageMimeForPath = (path) => /\.webp$/i.test(path) ? 'image/webp'
   : /\.jpe?g$/i.test(path) ? 'image/jpeg' : 'image/png'
 
-function migrateImageConfig(raw) {
+export function migrateImageConfig(raw) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
   const version = Math.max(0, Math.round(Number(source.配置版本) || 0))
   const next = { ...source }

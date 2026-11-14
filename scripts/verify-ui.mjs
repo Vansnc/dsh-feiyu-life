@@ -17,6 +17,7 @@ const plugin = definition.factory((name) => {
   throw new Error(`unexpected client dependency: ${name}`)
 })
 const { CSS, WorldMap, replayFrameAt } = plugin.__test
+assert.match(CSS, /data-fl-backup-card/, 'settings backup UI styles are bundled')
 assert.equal(replayFrameAt([{ minute: 0, id: 'sleep' }, { minute: 480, id: 'wake' }], 479).id, 'sleep')
 assert.equal(replayFrameAt([{ minute: 0, id: 'sleep' }, { minute: 480, id: 'wake' }], 480).id, 'wake')
 

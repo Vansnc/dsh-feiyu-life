@@ -604,5 +604,13 @@ export function saveConfig(patch) {
   return next
 }
 
+/** Replace the whole life configuration after a complete external validation. */
+export function replaceConfig(input) {
+  const next = normalizeConfig(input)
+  writeConfigFile(next)
+  cache = { at: 0, cfg: null }
+  return next
+}
+
 export { pad2, phoneChoices }
 

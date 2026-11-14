@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片']]
+    const tabs = [['now', '此刻'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -156,6 +156,9 @@ window.__ModuleLoader__.load({
 [data-fl-replay-controls] input[type='range']{width:100%;accent-color:var(--fl-accent);}
 [data-fl-replay-time]{min-width:52px;text-align:center;font-size:15px;font-weight:750;font-variant-numeric:tabular-nums;color:var(--fl-accent);}
 [data-fl-replay-empty]{padding:24px;text-align:center;border:1px dashed rgba(127,127,127,.28);border-radius:14px;font-size:12px;opacity:.65;}
+[data-fl-backup-card]{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:14px;border:1px solid var(--fl-line);border-radius:12px;background:rgba(127,127,127,.045);}
+[data-fl-backup-title]{font-size:13px;font-weight:700;margin-bottom:4px;}
+[data-fl-backup-meta]{font-size:11.5px;opacity:.62;line-height:1.55;overflow-wrap:anywhere;}
 @keyframes fl-sprite-4{0%,24.99%{background-position-x:0}25%,49.99%{background-position-x:-80px}50%,74.99%{background-position-x:-160px}75%,100%{background-position-x:-240px}}
 @media(prefers-reduced-motion:reduce){[data-fl-avatar]{transition:none!important;}[data-fl-avatar-sprite],[data-fl-road-mark]{animation:none!important;}[data-fl-avatar-sprite]{background-position-x:0!important;}}
 @media(max-width:720px){[data-fl-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fl-world-cards]{grid-template-columns:1fr;}[data-fl-map]{min-height:430px;}[data-fl-table]{display:block;overflow-x:auto;}[data-fl-tl-time]{flex-basis:78px;}[data-fl-track],[data-fl-ticks]{flex-basis:48%;}[data-fl-replay-controls]{grid-template-columns:auto 1fr;}[data-fl-replay-time]{grid-column:1/-1;grid-row:1;}}
@@ -185,8 +188,9 @@ window.__ModuleLoader__.load({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body || {}),
       })
-      if (!res.ok) throw new Error('HTTP ' + res.status)
-      return res.json()
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status))
+      return data
     }
 
     function Field({ value, onChange, width, placeholder, type, step }) {
@@ -414,6 +418,7 @@ window.__ModuleLoader__.load({
       const [replayDate, setReplayDate] = useState('')
       const [replayPlaying, setReplayPlaying] = useState(false)
       const [replaySpeed, setReplaySpeed] = useState(10)
+      const [backupCandidate, setBackupCandidate] = useState(null)
       const [inferenceText, setInferenceText] = useState('蹲着看猫吃完半根火腿肠')
       const [inference, setInference] = useState(null)
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
@@ -563,6 +568,50 @@ window.__ModuleLoader__.load({
           const data = await getJson(API + '/infer?text=' + encodeURIComponent(text))
           setInference(data)
         } catch (e) { setMessage('识别测试失败：' + e.message) }
+      }
+
+      const exportSettings = async () => {
+        if (dirty && !window.confirm('还有未保存修改。导出的是已保存配置，仍要继续吗？')) return
+        setBusy(true); setMessage('正在导出设置备份…')
+        try {
+          const res = await fetch(API + '/settings-backup', { headers: { accept: 'application/json' } })
+          if (!res.ok) throw new Error('HTTP ' + res.status)
+          const blob = await res.blob()
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `dsh-feiyu-life-settings-${new Date().toISOString().slice(0, 10)}.json`
+          document.body.appendChild(link); link.click(); link.remove()
+          URL.revokeObjectURL(url)
+          setMessage('设置备份已下载')
+        } catch (e) { setMessage('导出失败：' + e.message) }
+        setBusy(false)
+      }
+
+      const chooseBackup = async (file) => {
+        setBackupCandidate(null)
+        if (!file) return
+        if (file.size > 1024 * 1024) { setMessage('备份文件超过 1 MiB，已拒绝读取'); return }
+        try {
+          const value = JSON.parse(await file.text())
+          if (value.format !== 'dsh-feiyu-life-settings' || Number(value.version) !== 1 || !value.life || !value.camera) {
+            throw new Error('文件不是受支持的鱼的生活设置备份')
+          }
+          setBackupCandidate({ name: file.name, value })
+          setMessage('备份已读取，确认信息后可以恢复')
+        } catch (e) { setMessage('读取备份失败：' + e.message) }
+      }
+
+      const restoreSettings = async () => {
+        if (!backupCandidate) return
+        const exportedAt = backupCandidate.value.exportedAt ? new Date(backupCandidate.value.exportedAt).toLocaleString() : '未知时间'
+        if (!window.confirm(`将用 ${exportedAt} 的备份覆盖当前生活和相机设置。每日剧本、照片与日志不会改变。继续吗？`)) return
+        setBusy(true); setMessage('正在校验并恢复设置…')
+        try {
+          const data = await postJson(API + '/settings-restore', { backup: backupCandidate.value })
+          setMessage((data.issues || []).length ? `恢复成功，服务端同时修正了 ${(data.issues || []).length} 项旧配置` : '恢复成功，正在重新加载')
+          window.setTimeout(() => window.location.reload(), 350)
+        } catch (e) { setMessage('恢复失败，原设置未改变：' + e.message); setBusy(false) }
       }
 
       if (error) return h('div', { 'data-fl-wrap': '' }, h('div', { 'data-fl-note': '' }, error))
@@ -865,6 +914,30 @@ window.__ModuleLoader__.load({
           h(Field, { value: deviation.翘下午课, type: 'number', width: 'data-fl-num', step: '0.01', onChange: (v) => patch(['偏离', '翘下午课'], Number(v) || 0) })),
         h('div', { 'data-fl-note': '' }, '注意：这些都是按日期抽的种子，同一天里不会变来变去 —— 变的是"今天是不是这种日子"。'))
 
+      const backupValue = backupCandidate && backupCandidate.value
+      const dataPage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '把生活配置与相机配置装进一个 JSON 文件，适合换设备、升级前留档，或在大改设置前做保险。每日剧本、临时调整、照片原图和日志不会导出。'),
+        h('div', { 'data-fl-backup-card': '' },
+          h('div', null,
+            h('div', { 'data-fl-backup-title': '' }, '导出当前设置'),
+            h('div', { 'data-fl-backup-meta': '' }, '只导出服务端已经保存的配置；API Key 等宿主凭据不在插件配置中，也不会进入文件。')),
+          h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: exportSettings }, '下载备份')),
+        h('div', { 'data-fl-backup-card': '' },
+          h('div', null,
+            h('div', { 'data-fl-backup-title': '' }, '从备份恢复'),
+            h('div', { 'data-fl-backup-meta': '' }, '先在浏览器读取并展示摘要，确认后服务端会再次校验；任一步失败都会回滚原设置。')),
+          h('label', { 'data-fl-btn': '', style: { cursor: busy ? 'default' : 'pointer' } }, '选择 JSON',
+            h('input', { type: 'file', accept: 'application/json,.json', disabled: busy, style: { display: 'none' }, onChange: (e) => chooseBackup(e.target.files && e.target.files[0]) }))),
+        backupValue ? h('div', { 'data-fl-backup-card': '' },
+          h('div', null,
+            h('div', { 'data-fl-backup-title': '' }, backupCandidate.name),
+            h('div', { 'data-fl-backup-meta': '' }, [
+              `导出时间：${backupValue.exportedAt ? new Date(backupValue.exportedAt).toLocaleString() : '未知'}`,
+              `生活配置 v${backupValue.life && backupValue.life.配置版本 || '?'} · 相机配置 v${backupValue.camera && backupValue.camera.配置版本 || '?'}`,
+              `地点：${backupValue.life && backupValue.life.地图 && Array.isArray(backupValue.life.地图.地点) ? backupValue.life.地图.地点.length : 0} 个`,
+            ].join('｜'))),
+          h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy, onClick: restoreSettings }, '确认恢复')) : null)
+
       const planMeta = (meta && meta.plan) || {}
       const detour = meta && meta.deviation && (meta.deviation.flat ? '躺平' : meta.deviation.outing ? '临时出门' : meta.deviation.skipAfternoon ? '翘下午课' : '')
       return h('div', { 'data-fl-wrap': '' },
@@ -900,6 +973,7 @@ window.__ModuleLoader__.load({
         tab === 'day' ? dayPage : null,
         tab === 'body' ? bodyPage : null,
         tab === 'photo' ? h(ImagePanel.Panel) : null,
+        tab === 'data' ? dataPage : null,
         h('div', { 'data-fl-msg': '' }, message))
     }
 

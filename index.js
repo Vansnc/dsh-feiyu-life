@@ -17,10 +17,12 @@
 //   POST /dsh-feiyu-life/save     persist config (full replace)
 //   GET  /dsh-feiyu-life/preview  preview at ?ts=ms
 //   GET  /dsh-feiyu-life/replay   server-owned map/action keyframes for a day
+//   GET  /dsh-feiyu-life/settings-backup   portable life + camera settings
+//   POST /dsh-feiyu-life/settings-restore  validate and restore a backup
 
 import { existsSync, readFileSync } from 'node:fs'
 import {
-  readConfig, saveConfig, generate, validateConfig, CONFIG_PATH,
+  readConfig, saveConfig, replaceConfig, generate, validateConfig, CONFIG_PATH,
   zonedNow, zonedDateTimeMs, addZonedDays, todayCalendar, todayDeviation, menstrualDay,
 } from './life.js'
 import {
@@ -29,8 +31,9 @@ import {
 } from './plan.js'
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
-import { registerImage, readImageConfig, cleanupPhotos } from './image.js'
+import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } from './image.js'
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
+import { createSettingsBackup, restoreSettingsBackup } from './backup.js'
 
 export const name = 'feiyu-life'
 export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connection', 'llm', 'tools', 'attachments']
@@ -530,6 +533,54 @@ export function apply(ctx) {
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: replay')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/settings-backup',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const backup = createSettingsBackup(readConfig(), readImageConfig())
+          const data = Buffer.from(JSON.stringify(backup, null, 2), 'utf8')
+          const day = backup.exportedAt.slice(0, 10)
+          res.writeHead(200, {
+            'content-type': 'application/json; charset=utf-8',
+            'content-length': data.length,
+            'content-disposition': `attachment; filename="dsh-feiyu-life-settings-${day}.json"`,
+            'cache-control': 'no-store',
+          })
+          res.end(data)
+        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
+      }),
+    }), 'feiyu-life: settings backup')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/settings-restore',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        let body
+        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
+        let restored
+        try {
+          restored = restoreSettingsBackup(body && body.backup)
+        } catch (e) { return reply(res, 400, { ok: false, error: String((e && e.message) || e) }) }
+        const previousLife = readConfig()
+        const previousCamera = readImageConfig()
+        try {
+          replaceConfig(restored.life)
+          replaceImageConfig(restored.camera)
+          return reply(res, 200, { ok: true, summary: restored.summary, issues: restored.issues })
+        } catch (e) {
+          try { replaceConfig(previousLife); replaceImageConfig(previousCamera) } catch {}
+          return reply(res, 500, { ok: false, error: '恢复写入失败，已回滚原设置：' + String((e && e.message) || e) })
+        }
+      }),
+    }), 'feiyu-life: settings restore')
   } catch {}
 
   try {
