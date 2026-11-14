@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片']]
+    const tabs = [['now', '此刻'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -152,9 +152,13 @@ window.__ModuleLoader__.load({
 [data-fl-avatar-bubble] svg{display:block;width:17px;height:17px;}
 [data-fl-avatar-label]{position:absolute;left:50%;top:calc(100% + 4px);transform:translateX(-50%);white-space:nowrap;padding:2px 7px;border-radius:999px;background:rgba(16,66,68,.82);color:#fff;font-size:10px;box-shadow:0 3px 8px rgba(0,0,0,.14);}
 [data-fl-world-cards]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+[data-fl-replay-controls]{display:grid;grid-template-columns:auto minmax(180px,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--fl-line);border-radius:12px;background:rgba(127,127,127,.06);}
+[data-fl-replay-controls] input[type='range']{width:100%;accent-color:var(--fl-accent);}
+[data-fl-replay-time]{min-width:52px;text-align:center;font-size:15px;font-weight:750;font-variant-numeric:tabular-nums;color:var(--fl-accent);}
+[data-fl-replay-empty]{padding:24px;text-align:center;border:1px dashed rgba(127,127,127,.28);border-radius:14px;font-size:12px;opacity:.65;}
 @keyframes fl-sprite-4{0%,24.99%{background-position-x:0}25%,49.99%{background-position-x:-80px}50%,74.99%{background-position-x:-160px}75%,100%{background-position-x:-240px}}
 @media(prefers-reduced-motion:reduce){[data-fl-avatar]{transition:none!important;}[data-fl-avatar-sprite],[data-fl-road-mark]{animation:none!important;}[data-fl-avatar-sprite]{background-position-x:0!important;}}
-@media(max-width:720px){[data-fl-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fl-world-cards]{grid-template-columns:1fr;}[data-fl-map]{min-height:430px;}[data-fl-table]{display:block;overflow-x:auto;}[data-fl-tl-time]{flex-basis:78px;}[data-fl-track],[data-fl-ticks]{flex-basis:48%;}}
+@media(max-width:720px){[data-fl-stats]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fl-world-cards]{grid-template-columns:1fr;}[data-fl-map]{min-height:430px;}[data-fl-table]{display:block;overflow-x:auto;}[data-fl-tl-time]{flex-basis:78px;}[data-fl-track],[data-fl-ticks]{flex-basis:48%;}[data-fl-replay-controls]{grid-template-columns:auto 1fr;}[data-fl-replay-time]{grid-column:1/-1;grid-row:1;}}
 `
 
     // ── utilities ────────────────────────────────────────────────
@@ -215,6 +219,15 @@ window.__ModuleLoader__.load({
       if (Math.round(minute) === 1440) return '24:00'
       const m = ((Math.round(minute) % 1440) + 1440) % 1440
       return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+    }
+    function replayFrameAt(frames, minute) {
+      const rows = Array.isArray(frames) ? frames : []
+      let selected = rows[0] || null
+      for (const frame of rows) {
+        if (frame.minute > minute) break
+        selected = frame
+      }
+      return selected
     }
 
     function TimelineChart({ timeline, currentMinute }) {
@@ -396,6 +409,11 @@ window.__ModuleLoader__.load({
       const [meta, setMeta] = useState(null)
       const [adjustments, setAdjustments] = useState([])
       const [world, setWorld] = useState(null)
+      const [replay, setReplay] = useState(null)
+      const [replayMinute, setReplayMinute] = useState(0)
+      const [replayDate, setReplayDate] = useState('')
+      const [replayPlaying, setReplayPlaying] = useState(false)
+      const [replaySpeed, setReplaySpeed] = useState(10)
       const [inferenceText, setInferenceText] = useState('蹲着看猫吃完半根火腿肠')
       const [inference, setInference] = useState(null)
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
@@ -437,6 +455,14 @@ window.__ModuleLoader__.load({
         window.addEventListener('beforeunload', warn)
         return () => window.removeEventListener('beforeunload', warn)
       }, [dirty])
+      useEffect(() => {
+        if (!replayPlaying || tab !== 'replay') return undefined
+        const timer = window.setInterval(() => {
+          setReplayMinute((minute) => Math.min(1439, minute + replaySpeed))
+        }, 650)
+        return () => window.clearInterval(timer)
+      }, [replayPlaying, replaySpeed, tab])
+      useEffect(() => { if (replayMinute >= 1439 && replayPlaying) setReplayPlaying(false) }, [replayMinute, replayPlaying])
 
       const patch = (path, value) => setConfig((prev) => (prev ? setPath(prev, path, value) : prev))
 
@@ -512,6 +538,23 @@ window.__ModuleLoader__.load({
           setMessage('以下是在 ' + new Date(ts).toLocaleString() + ' 算出来的')
         } catch (e) { setMessage('预览失败：' + e.message) }
       }
+
+      const loadReplay = async (date = replayDate, jumpToNow = false) => {
+        setReplayPlaying(false)
+        setMessage('正在读取生活回放…')
+        try {
+          const at = date ? new Date(`${date}T12:00:00`) : new Date()
+          const data = await getJson(API + '/replay?ts=' + at.getTime())
+          setReplay(data)
+          setReplayDate(data.date || date || '')
+          setReplayMinute(jumpToNow ? (data.currentMinute || 0) : 0)
+          setMessage(`已加载 ${data.date || date} 的生活回放`)
+        } catch (e) { setMessage('回放读取失败：' + e.message) }
+      }
+
+      useEffect(() => {
+        if (tab === 'replay' && !replay) loadReplay('', true)
+      }, [tab])
 
       const testInference = async () => {
         const text = inferenceText.trim()
@@ -627,6 +670,48 @@ window.__ModuleLoader__.load({
         h('table', { 'data-fl-table': '' },
           h('thead', null, h('tr', null, h('th', null, '从'), h('th', null, '到'), h('th', null, '分钟'))),
           h('tbody', null, routeRows)))
+
+      const replayFrames = (replay && replay.frames) || []
+      const replayFrame = replayFrameAt(replayFrames, replayMinute)
+      const replayWorld = replayFrame && replayFrame.world
+      const replayCurrent = replayFrame && replayFrame.current
+      const replayMap = (replay && replay.map) || mapCfg
+      const replayPage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '把一天压缩成地图回放：地点、通勤路线和行为全部由服务端按真实时间线生成，拖动进度不会改变实际生活状态。'),
+        h('div', { 'data-fl-row': '' },
+          h(Field, { value: replayDate, type: 'date', width: 'data-fl-narrow', onChange: setReplayDate }),
+          h('button', { 'data-fl-btn': '', disabled: !replayDate, onClick: () => loadReplay(replayDate, replay && replayDate === replay.today) }, '加载这一天'),
+          h('button', {
+            'data-fl-btn': '', disabled: !replayFrames.length,
+            onClick: () => setReplayPlaying((playing) => !playing),
+          }, replayPlaying ? '暂停' : '播放'),
+          h('button', { 'data-fl-btn': '', disabled: !replayFrames.length, onClick: () => { setReplayPlaying(false); setReplayMinute(0) } }, '从零点开始'),
+          replay && replay.date === replay.today ? h('button', {
+            'data-fl-btn': '', onClick: () => { setReplayPlaying(false); setReplayMinute(replay.currentMinute || 0) },
+          }, '跳到此刻') : null,
+          h('span', { 'data-fl-note': '' }, '速度'),
+          h('select', { 'data-fl-input': '', value: replaySpeed, onChange: (e) => setReplaySpeed(Number(e.target.value) || 10) },
+            h('option', { value: 5 }, '5 分钟/帧'), h('option', { value: 10 }, '10 分钟/帧'),
+            h('option', { value: 30 }, '30 分钟/帧'), h('option', { value: 60 }, '60 分钟/帧'))),
+        replayFrames.length ? h('div', { 'data-fl-replay-controls': '' },
+          h('button', {
+            'data-fl-btn': '', 'aria-label': replayPlaying ? '暂停回放' : '播放回放',
+            onClick: () => setReplayPlaying((playing) => !playing),
+          }, replayPlaying ? 'Ⅱ' : '▶'),
+          h('input', {
+            type: 'range', min: 0, max: 1439, step: 1, value: replayMinute,
+            'aria-label': '回放时间', onChange: (e) => { setReplayPlaying(false); setReplayMinute(Number(e.target.value)) },
+          }),
+          h('span', { 'data-fl-replay-time': '' }, clockOf(replayMinute))) : h('div', { 'data-fl-replay-empty': '' }, '这一天还没有可回放的生活剧本'),
+        replayFrames.length ? h(WorldMap, { world: replayWorld, map: replayMap }) : null,
+        replayFrames.length ? h('div', { 'data-fl-world-cards': '' },
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '回放时间'), h('div', { 'data-fl-stat-v': '' }, `${replay.date || replayDate} ${clockOf(replayMinute)}`)),
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '正在做'), h('div', { 'data-fl-stat-v': '', title: replayCurrent && replayCurrent.what }, (replayCurrent && replayCurrent.what) || '等待状态')),
+          h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '位置 / 行为'), h('div', { 'data-fl-stat-v': '' }, [
+            replayWorld && replayWorld.moving && replayWorld.destination ? `去${replayWorld.destination.name}` : replayWorld && replayWorld.location && replayWorld.location.name,
+            (behaviorMeta[(replayWorld && replayWorld.behavior) || 'idle'] || behaviorMeta.idle)[1],
+          ].filter(Boolean).join(' · ')))) : null,
+        replay && replay.timeline && replay.timeline.length ? h(TimelineChart, { timeline: replay.timeline, currentMinute: replayMinute }) : null)
 
       const calendarTable = (key, label, withRoutine) => h('div', { 'data-fl-sec': '', key },
         h('div', { 'data-fl-h': '' }, label),
@@ -808,6 +893,7 @@ window.__ModuleLoader__.load({
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
         tab === 'now' ? nowPage : null,
+        tab === 'replay' ? replayPage : null,
         tab === 'map' ? mapPage : null,
         tab === 'year' ? yearPage : null,
         tab === 'week' ? weekPage : null,
@@ -1150,7 +1236,7 @@ window.__ModuleLoader__.load({
     return {
       inject: ['slots'],
       __test: {
-        CSS, WorldMap, IconifyGlyph, PlaceGlyph, behaviorMeta, placeIconOptions,
+        CSS, WorldMap, IconifyGlyph, PlaceGlyph, behaviorMeta, placeIconOptions, replayFrameAt,
         ImagePanel: ImagePanel.Panel, imageCSS: ImagePanel.CSS,
       },
       apply(ctx) {

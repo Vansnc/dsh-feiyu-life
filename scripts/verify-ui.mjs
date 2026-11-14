@@ -16,7 +16,9 @@ const plugin = definition.factory((name) => {
   if (name === 'react') return React
   throw new Error(`unexpected client dependency: ${name}`)
 })
-const { CSS, WorldMap } = plugin.__test
+const { CSS, WorldMap, replayFrameAt } = plugin.__test
+assert.equal(replayFrameAt([{ minute: 0, id: 'sleep' }, { minute: 480, id: 'wake' }], 479).id, 'sleep')
+assert.equal(replayFrameAt([{ minute: 0, id: 'sleep' }, { minute: 480, id: 'wake' }], 480).id, 'wake')
 
 const map = structuredClone(defaultWorldConfig)
 map.地点.push({ id: 'clinic', name: '校医院', icon: 'hospital', x: 25, y: 72, 关键词: ['校医院'] })

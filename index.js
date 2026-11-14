@@ -16,6 +16,7 @@
 //   GET  /dsh-feiyu-life/state    config + current preview
 //   POST /dsh-feiyu-life/save     persist config (full replace)
 //   GET  /dsh-feiyu-life/preview  preview at ?ts=ms
+//   GET  /dsh-feiyu-life/replay   server-owned map/action keyframes for a day
 
 import { existsSync, readFileSync } from 'node:fs'
 import {
@@ -501,6 +502,34 @@ export function apply(ctx) {
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: preview')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact',
+      path: ROUTE_PREFIX + '/replay',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        try {
+          const url = new URL(req.url || '/', 'http://x')
+          const ts = Number(url.searchParams.get('ts'))
+          const at = Number.isFinite(ts) && ts > 0 ? new Date(ts) : new Date()
+          const cfg = readConfig()
+          const r = generate(cfg, at, { replay: true })
+          const zoned = zonedNow(at, String(cfg.时区 || 'Asia/Shanghai'))
+          const today = zonedNow(new Date(), String(cfg.时区 || 'Asia/Shanghai')).ymd
+          return reply(res, 200, {
+            ok: true,
+            date: zoned.ymd,
+            today,
+            currentMinute: r.currentMinute || 0,
+            timeline: r.timeline || [],
+            frames: r.replay || [],
+            map: cfg.地图 || null,
+          })
+        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
+      }),
+    }), 'feiyu-life: replay')
   } catch {}
 
   try {

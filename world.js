@@ -317,3 +317,39 @@ export function worldStateAt(timeline, nowMs, worldConfig = defaultWorldConfig) 
     route: Array.isArray(current.route) ? current.route : [],
   }
 }
+
+/**
+ * Build compact server-owned replay keyframes. Ordinary activities need one
+ * frame; travel is sampled every two minutes so the client never has to
+ * reproduce route or state inference logic.
+ */
+export function buildReplayFrames(timeline, worldConfig = defaultWorldConfig, toMinute = (ms) => ms / 60000) {
+  const rows = Array.isArray(timeline) ? timeline.filter((item) => item && item.end > item.start) : []
+  const samples = new Map()
+  const add = (at, item) => {
+    const minute = Math.max(0, Math.min(1439, Math.round(Number(toMinute(at)) || 0)))
+    const world = worldStateAt(rows, at, worldConfig)
+    samples.set(minute, {
+      minute,
+      current: {
+        what: String(item?.what || world.what || ''),
+        phone: String(item?.phone || '在手'),
+        outfit: String(item?.outfit || ''),
+        source: String(item?.source || 'plan'),
+        behavior: String(item?.behavior || world.behavior || 'idle'),
+        locationId: String(item?.locationId || ''),
+      },
+      world,
+    })
+  }
+  for (const item of rows) {
+    add(item.start, item)
+    if (item.source === 'travel') {
+      const duration = item.end - item.start
+      const count = Math.max(2, Math.min(30, Math.ceil(duration / 120000)))
+      for (let i = 1; i < count; i++) add(item.start + duration * i / count, item)
+    }
+    add(Math.max(item.start, item.end - 1), item)
+  }
+  return [...samples.values()].sort((a, b) => a.minute - b.minute)
+}

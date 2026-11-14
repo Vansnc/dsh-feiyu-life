@@ -19,7 +19,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync, renameSync } from 'node:fs'
 import { dayType, dailyPlan } from './plan.js'
 import { readFacts, buildTimeline, segmentAt, recentSegments, nextSegment } from './state.js'
-import { addWorldToTimeline, defaultWorldConfig, normalizeWorldConfig, worldStateAt } from './world.js'
+import { addWorldToTimeline, buildReplayFrames, defaultWorldConfig, normalizeWorldConfig, worldStateAt } from './world.js'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -428,7 +428,7 @@ function minuteLabel(minute) {
 }
 
 /** Compress into a few lines, plus "why it computed this way". */
-export function generate(cfg, now = new Date()) {
+export function generate(cfg, now = new Date(), options = {}) {
   const empty = { text: '', evidence: [] }
   if (!cfg || cfg.总开关 === false) return empty
   const tz = String(cfg.时区 || 'Asia/Shanghai')
@@ -447,6 +447,7 @@ export function generate(cfg, now = new Date()) {
     const delta = dayDiff(t.ymd, at.ymd)
     return (Number.isFinite(delta) ? delta : 0) * 1440 + at.minuteOfDay
   }
+  const replay = options.replay ? buildReplayFrames(timeline, cfg.地图, localMinute) : undefined
 
   const evidence = []
   evidence.push(calendar.special ? `${calendar.special.名}第 ${calendar.dayIndex} 天`
@@ -524,6 +525,7 @@ export function generate(cfg, now = new Date()) {
       from: x.from || '',
       to: x.to || '',
     })),
+    ...(replay ? { replay } : {}),
   }
 }
 

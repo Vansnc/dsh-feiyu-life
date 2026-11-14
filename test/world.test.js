@@ -2,9 +2,23 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  addWorldToTimeline, behaviorFor, defaultWorldConfig, locationFor, normalizeWorldConfig,
+  addWorldToTimeline, behaviorFor, buildReplayFrames, defaultWorldConfig, locationFor, normalizeWorldConfig,
   PLACE_ICON_IDS, worldStateAt,
 } from '../world.js'
+
+test('day replay is server-owned and samples real travel movement', () => {
+  const timeline = addWorldToTimeline([
+    { start: 0, end: 20 * 60000, what: '在宿舍整理东西', source: 'plan' },
+    { start: 20 * 60000, end: 50 * 60000, what: '去图书馆看书', locationId: 'library', behavior: 'study', source: 'plan' },
+  ], defaultWorldConfig)
+  const frames = buildReplayFrames(timeline, defaultWorldConfig, (ms) => ms / 60000)
+  const moving = frames.filter((frame) => frame.world.moving)
+  assert.ok(moving.length >= 2)
+  assert.ok(moving.some((frame) => frame.world.progress > 0 && frame.world.progress < 1))
+  assert.ok(moving.every((frame) => frame.world.destination.id === 'library'))
+  assert.deepEqual(frames.map((frame) => frame.minute), [...frames.map((frame) => frame.minute)].sort((a, b) => a - b))
+  assert.equal(frames.at(-1).current.what, '去图书馆看书')
+})
 
 test('a location change creates a deterministic travel segment', () => {
   const timeline = addWorldToTimeline([
