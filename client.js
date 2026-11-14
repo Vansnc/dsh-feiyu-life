@@ -856,13 +856,15 @@ window.__ModuleLoader__.load({
   [data-fi-chip][data-bad]{background:rgba(230,90,80,.18);}
   [data-fi-msg]{font-size:12px;min-height:16px;opacity:.75;}
   [data-fi-preview]{display:block;max-width:min(100%,520px);max-height:520px;object-fit:contain;border-radius:10px;border:1px solid rgba(127,127,127,.3);cursor:zoom-in;}
-  [data-fi-lightbox]{position:fixed;inset:0;z-index:10000;display:grid;grid-template-columns:64px minmax(0,1fr) 64px;grid-template-rows:56px minmax(0,1fr) 54px;align-items:center;background:rgba(6,14,13,.88);backdrop-filter:blur(12px);color:white;}
-  [data-fi-lightbox-img]{grid-column:2;grid-row:2;display:block;max-width:100%;max-height:calc(100vh - 130px);margin:auto;object-fit:contain;border-radius:10px;box-shadow:0 18px 70px rgba(0,0,0,.38);}
+  [data-fi-lightbox]{position:fixed;inset:0;z-index:10000;display:grid;grid-template-columns:64px minmax(0,1fr) 64px;grid-template-rows:56px minmax(0,1fr) 104px;align-items:center;background:rgba(6,14,13,.88);backdrop-filter:blur(12px);color:white;}
+  [data-fi-lightbox-img]{grid-column:2;grid-row:2;display:block;max-width:100%;max-height:calc(100vh - 180px);margin:auto;object-fit:contain;border-radius:10px;box-shadow:0 18px 70px rgba(0,0,0,.38);}
   [data-fi-lightbox-close]{position:absolute;right:18px;top:14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.2);border-radius:50%;background:rgba(0,0,0,.28);color:white;font-size:24px;cursor:pointer;}
   [data-fi-lightbox-nav]{grid-row:2;width:42px;height:58px;margin:auto;border:0;border-radius:10px;background:rgba(255,255,255,.10);color:white;font-size:30px;cursor:pointer;}
   [data-fi-lightbox-nav='prev']{grid-column:1;}[data-fi-lightbox-nav='next']{grid-column:3;}
   [data-fi-lightbox-nav][disabled]{visibility:hidden;}
-  [data-fi-lightbox-caption]{grid-column:1/-1;grid-row:3;text-align:center;font-size:12px;opacity:.76;padding:0 70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  [data-fi-lightbox-caption]{grid-column:1/-1;grid-row:3;text-align:center;font-size:12px;line-height:1.55;padding:8px 70px;overflow:hidden;}
+  [data-fi-lightbox-caption] strong{display:block;font-size:13px;font-weight:650;color:white;}
+  [data-fi-lightbox-caption] span{display:block;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   @media(max-width:760px){[data-fi-status]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fi-settings]{grid-template-columns:1fr;}[data-fi-settings] [data-fi-sec][data-fi-wide]{grid-column:auto;}[data-fi-grid]{grid-template-columns:repeat(2,minmax(0,1fr));}[data-fi-lightbox]{grid-template-columns:46px minmax(0,1fr) 46px;}[data-fi-lightbox-caption]{padding:0 20px;}}
   `
 
@@ -981,7 +983,11 @@ window.__ModuleLoader__.load({
             const d = await r.json()
             if (!d.ok) throw new Error(d.error || '试拍失败')
             const name = String(d.image || '').split('/').pop()
-            setResult({ name, url: `${API}/file?n=${encodeURIComponent(name)}`, prompt: d.prompt, bytes: d.bytes, check: d.check || null, notes: d.notes || [] })
+            setResult({
+              name, url: `${API}/file?n=${encodeURIComponent(name)}`, prompt: d.prompt, bytes: d.bytes,
+              check: d.check || null, notes: d.notes || [], context: d.metadata && d.metadata.context,
+              model: d.metadata && d.metadata.model, quality: d.metadata && d.metadata.quality,
+            })
             setMessage(d.check ? (d.check.pass ? '拍好了，自检过了' : '拍好了，但自检说不合格') : '拍好了')
             await load(dirty, true)
           } catch (e) { setMessage('试拍失败：' + String(e.message || e)) } finally { setBusy(false) }
@@ -1001,12 +1007,16 @@ window.__ModuleLoader__.load({
         const formatPhotoTime = (time) => new Date(time).toLocaleString('zh-CN', {
           month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
         })
+        const photoContext = (photo) => {
+          const context = photo && photo.context
+          return [context && context.location, context && context.activity].filter(Boolean).join(' · ')
+        }
 
         return h('div', { 'data-fi-wrap': '' },
           h('div', { 'data-fi-status': '' },
             h('div', { 'data-fi-stat': '' }, h('div', { 'data-fi-stat-k': '' }, '相机'), h('div', { 'data-fi-stat-v': '' }, config.总开关 !== false ? '已开启' : '已关闭')),
             h('div', { 'data-fi-stat': '' }, h('div', { 'data-fi-stat-k': '' }, '火山方舟'), h('div', { 'data-fi-stat-v': '' }, status.ark && status.ark.ok ? '已连接' : '未配置')),
-            h('div', { 'data-fi-stat': '' }, h('div', { 'data-fi-stat-k': '' }, '角色参考图'), h('div', { 'data-fi-stat-v': '' }, status.hasRef ? '已就绪' : '缺失')),
+            h('div', { 'data-fi-stat': '' }, h('div', { 'data-fi-stat-k': '' }, '角色参考库'), h('div', { 'data-fi-stat-v': '' }, status.hasRef ? `${status.refCount || 1} 张` : '缺失')),
             h('div', { 'data-fi-stat': '' }, h('div', { 'data-fi-stat-k': '' }, '今日额度'), h('div', { 'data-fi-stat-v': '' }, `${status.today} / ${status.limit}`))),
 
           h('div', { 'data-fi-actions': '' },
@@ -1027,7 +1037,7 @@ window.__ModuleLoader__.load({
               h('button', { 'data-fi-btn': '', 'data-primary': '', disabled: busy || config.总开关 === false, onClick: shoot }, '拍一张')),
             dirty ? h('div', { 'data-fi-note': '' }, '当前有未保存设置；试拍仍使用上一次保存的配置。') : null,
             result && result.url ? h('div', { 'data-fi-row': '', style: { alignItems: 'flex-start' } },
-              h('img', { 'data-fi-preview': '', src: result.url, alt: '试拍结果', onClick: () => setLightbox({ name: result.name, label: '刚刚的试拍' }) }),
+              h('img', { 'data-fi-preview': '', src: result.url, alt: '试拍结果', onClick: () => setLightbox({ ...result, label: '刚刚的试拍' }) }),
               h('div', { style: { flex: '1 1 260px' } },
                 h('div', { 'data-fi-note': '' }, result.check
                   ? (result.check.pass ? '自检合格' : `自检未通过：${(result.check.problems || []).join('；') || '画面有问题'}`)
@@ -1044,7 +1054,7 @@ window.__ModuleLoader__.load({
               title: `${p.name} · ${Math.round(p.size / 1024)}KB`, 'aria-label': `放大查看 ${formatPhotoTime(p.time)} 的照片`,
             }, h('img', {
               src: photoUrl(p.name, true), alt: p.name, loading: i < 4 ? 'eager' : 'lazy', decoding: 'async',
-            }), h('span', { 'data-fi-photo-meta': '' }, `${formatPhotoTime(p.time)} · ${Math.round(p.size / 1024)}KB`)))) : h('div', { 'data-fi-note': '' }, '还没有照片。'),
+            }), h('span', { 'data-fi-photo-meta': '' }, `${formatPhotoTime(p.time)}${photoContext(p) ? ' · ' + photoContext(p) : ''}`)))) : h('div', { 'data-fi-note': '' }, '还没有照片。'),
             galleryLimit < photos.length ? h('button', { 'data-fi-btn': '', onClick: () => setGalleryLimit((n) => Math.min(n + 8, photos.length)) }, `再显示 ${Math.min(8, photos.length - galleryLimit)} 张`) : null),
 
           h('div', { 'data-fi-settings': '' },
@@ -1064,13 +1074,18 @@ window.__ModuleLoader__.load({
                 ...models.map((id) => h('option', { key: id, value: id }, id)), h('option', { key: '__custom', value: '__custom' }, '手动填写…')),
                 h('button', { 'data-fi-btn': '', onClick: () => loadModels(true) }, '刷新列表'), manual ? h('button', { 'data-fi-btn': '', onClick: () => setManual(false) }, '返回列表') : null)),
               h(Label, { label: '备用模型' }, h('input', { value: config.备用模型 || '', onChange: edit('备用模型'), style: { width: '100%' } })),
-              h('label', { 'data-fi-row': '' }, h('input', { type: 'checkbox', checked: Boolean(config.用参考图), onChange: editCheck('用参考图') }), h('span', null, '自拍时附带角色参考图')),
-              h(Label, { label: '参考图路径（留空使用默认路径）' }, h('input', { value: config.参考图 || '', onChange: edit('参考图'), placeholder: '~/.dsh/feiyu-life-image/角色设定/正面.jpg', style: { width: '100%' } })),
+              h('label', { 'data-fi-row': '' }, h('input', { type: 'checkbox', checked: Boolean(config.用参考图), onChange: editCheck('用参考图') }), h('span', null, '自拍时附带角色参考库')),
+              h(Label, { label: '参考图文件 / 目录（可多行，最多 10 张）' }, h('textarea', { value: config.参考图 || '', onChange: edit('参考图'), placeholder: '~/.dsh/feiyu-life-image/角色设定\n也可以逐行填写正面、侧面、背面图片', style: { width: '100%' } })),
+              h('div', { 'data-fi-note': '' }, status.hasRef
+                ? `已识别：${(status.refNames || []).join('、')}`
+                : '留空会自动扫描默认角色设定目录；支持 PNG、JPEG、WebP。'),
               h('div', { 'data-fi-note': '' }, modelNote ? `模型列表：${modelNote}` : '模型列表会从方舟实时读取。')),
 
             h('div', { 'data-fi-sec': '' },
               h('div', { 'data-fi-h': '' }, '生成质量'),
-              h('div', { 'data-fi-sub': '' }, '提示词加工、自检、重拍和超时策略。'),
+              h('div', { 'data-fi-sub': '' }, '默认使用 Seedream 标准质量模式；2K 更清楚，1.5K 更省时。'),
+              h(Label, { label: '输出清晰度' }, h('select', { value: config.清晰度 || '2K', onChange: edit('清晰度') },
+                h('option', { value: '2K' }, '2K · 细节优先'), h('option', { value: '1.5K' }, '1.5K · 速度优先'))),
               h(Label, { label: '提示词加工' }, h('select', { value: config.提示词加工 || '模型', onChange: edit('提示词加工') }, h('option', { value: '模型' }, '模型扩写'), h('option', { value: '模板' }, '本地模板'))),
               h('label', { 'data-fi-row': '' }, h('input', { type: 'checkbox', checked: config.出图自检 !== false, onChange: editCheck('出图自检') }), h('span', null, '出图后检查角色、肢体和水印')),
               h('div', { 'data-fi-row': '' },
@@ -1092,7 +1107,10 @@ window.__ModuleLoader__.load({
               h(Label, { label: '默认表情' }, h('input', { value: config.表情 || '', onChange: edit('表情') })),
               h(Label, { label: '画面细节' }, h('textarea', { value: config.细节 || '', onChange: edit('细节') })),
               h(Label, { label: '画幅' }, h('select', { value: config.画幅 || '竖幅', onChange: edit('画幅') },
-                h('option', { value: '竖幅' }, '竖幅 1440×1920'), h('option', { value: '方形' }, '方形 2048×2048'), h('option', { value: '横幅' }, '横幅 1920×1440')))),
+                h('option', { value: '竖幅' }, '竖幅 3:4'), h('option', { value: '方形' }, '方形 1:1'), h('option', { value: '横幅' }, '横幅 4:3'))),
+              h('div', { 'data-fi-note': '' }, config.清晰度 === '1.5K'
+                ? '当前尺寸：竖幅 1344×1792 / 方形 1536×1536 / 横幅 1792×1344'
+                : '当前尺寸：竖幅 1776×2368 / 方形 2048×2048 / 横幅 2368×1776')),
 
             h('div', { 'data-fi-sec': '', 'data-fi-wide': '' },
               h('div', { 'data-fi-h': '' }, '额度与存储'),
@@ -1108,7 +1126,10 @@ window.__ModuleLoader__.load({
             h('button', { 'data-fi-lightbox-nav': 'prev', 'aria-label': '上一张', disabled: lightboxIndex <= 0, onClick: () => setLightbox(photos[lightboxIndex - 1]) }, '‹'),
             h('img', { 'data-fi-lightbox-img': '', src: photoUrl(lightbox.name), alt: lightbox.name || '照片预览' }),
             h('button', { 'data-fi-lightbox-nav': 'next', 'aria-label': '下一张', disabled: lightboxIndex < 0 || lightboxIndex >= photos.length - 1, onClick: () => setLightbox(photos[lightboxIndex + 1]) }, '›'),
-            h('div', { 'data-fi-lightbox-caption': '' }, lightbox.label || `${lightbox.name} · ${lightbox.time ? formatPhotoTime(lightbox.time) : ''}`)) : null)
+            h('div', { 'data-fi-lightbox-caption': '' },
+              h('strong', null, lightbox.label || `${lightbox.time ? formatPhotoTime(lightbox.time) : '照片'}${photoContext(lightbox) ? ' · ' + photoContext(lightbox) : ''}`),
+              lightbox.context && lightbox.context.outfit ? h('span', null, `穿着：${lightbox.context.outfit}`) : null,
+              lightbox.prompt ? h('span', { title: lightbox.prompt }, lightbox.prompt) : null)) : null)
       }
 
       return { Panel, CSS }

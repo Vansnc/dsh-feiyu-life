@@ -14,7 +14,8 @@ import {
   existsSync, copyFileSync, unlinkSync,
 } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { generatePrompt, checkImage } from './image-prompt.js'
@@ -29,6 +30,7 @@ const OUT_DIR = join(dshHome(), 'feiyu-life-image')
 const LEGACY_OUT_DIR = join(dshHome(), 'feiyu-image')
 const ARK_CFG = join(dshHome(), 'ark', 'config.json')
 const LOG_FILE = join(dshHome(), 'feiyu-life-image.log')
+const PACKAGE_CHARACTER_SHEET = fileURLToPath(new URL('./assets/character-sheet.png', import.meta.url))
 const execFileAsync = promisify(execFile)
 const log = (m) => {
   try {
@@ -37,7 +39,8 @@ const log = (m) => {
   } catch {}
 }
 
-export const IMAGE_CONFIG_VERSION = 2
+export const IMAGE_CONFIG_VERSION = 3
+const LEGACY_DEFAULT_DETAILS = '发丝高光、耳鳍的半透明质感、脖颈阴影、衣服褶皱、背景里的生活杂物（画册、马克笔、奶茶、台灯）'
 
 const DEFAULT_CONFIG = {
   配置版本: IMAGE_CONFIG_VERSION,
@@ -51,8 +54,9 @@ const DEFAULT_CONFIG = {
   风格: '日系精细插画，赛璐璐分色加柔和厚涂阴影，清晰线稿，非 Q 版',
   镜头: '手机前置自拍近景，脸占画面大半，平视或微微仰起下巴看镜头，画面里不出现手',
   表情: '嘴角带一点得意的笑，眼睛看进镜头',
-  细节: '发丝高光、耳鳍的半透明质感、脖颈阴影、衣服褶皱、背景里的生活杂物（画册、马克笔、奶茶、台灯）',
+  细节: '虹膜纹理与多层高光、清楚的睫毛、成束发丝及发尾渐变、耳鳍半透明质感、蕾丝纤维、衣料纹理与自然褶皱',
   画幅: '竖幅',
+  清晰度: '2K',
   提示词加工: '模型',
   出图自检: true,
   自检重拍: 1,
@@ -108,11 +112,16 @@ function writeImageConfig(next) {
   renameSync(tmp, CONFIG_PATH)
 }
 
-const sizeByAspect = { 竖幅: '1440x1920', 方形: '2048x2048', 横幅: '1920x1440' }
+const sizeByQuality = {
+  '1.5K': { 竖幅: '1344x1792', 方形: '1536x1536', 横幅: '1792x1344' },
+  '2K': { 竖幅: '1776x2368', 方形: '2048x2048', 横幅: '2368x1776' },
+}
 const originalPhoto = /^feiyu-\d+\.(?:png|jpe?g|webp)$/i
 const generatedPhoto = /^feiyu-(?:retry-)?\d+(?:-(?:small|thumb))?\.(?:png|jpe?g|webp)$/i
+const generatedPhotoMeta = /^feiyu-(?:retry-)?\d+\.json$/i
 const photoTimestamp = (name) => /^feiyu-(\d+)\.(?:png|jpe?g|webp)$/i.exec(name)?.[1] || ''
 export const photoThumbnailName = (name) => String(name).replace(/\.(?:png|jpe?g|webp)$/i, '-thumb.jpg')
+export const photoMetadataName = (name) => String(name).replace(/\.(?:png|jpe?g|webp)$/i, '.json')
 
 export function detectImageFormat(buf, _contentType = '') {
   if (!Buffer.isBuffer(buf) || !buf.length) return null
@@ -144,6 +153,10 @@ function migrateImageConfig(raw) {
     if (next.生图超时秒 === undefined) next.生图超时秒 = DEFAULT_CONFIG.生图超时秒
     if (next.照片保留天数 === undefined) next.照片保留天数 = DEFAULT_CONFIG.照片保留天数
   }
+  if (version < 3) {
+    if (next.清晰度 === undefined) next.清晰度 = DEFAULT_CONFIG.清晰度
+    if (next.细节 === LEGACY_DEFAULT_DETAILS) next.细节 = DEFAULT_CONFIG.细节
+  }
   next.配置版本 = IMAGE_CONFIG_VERSION
   return { value: next, changed: version !== IMAGE_CONFIG_VERSION || '种子' in source || '后端' in source }
 }
@@ -157,20 +170,68 @@ export function normalizeImageConfig(raw) {
   next.模型超时秒 = Math.max(10, Math.min(300, Math.round(Number(next.模型超时秒) || DEFAULT_CONFIG.模型超时秒)))
   next.生图超时秒 = Math.max(30, Math.min(600, Math.round(Number(next.生图超时秒) || DEFAULT_CONFIG.生图超时秒)))
   next.照片保留天数 = Math.max(1, Math.min(3650, Math.round(Number(next.照片保留天数) || DEFAULT_CONFIG.照片保留天数)))
-  if (!Object.hasOwn(sizeByAspect, next.画幅)) next.画幅 = DEFAULT_CONFIG.画幅
+  if (!Object.hasOwn(sizeByQuality['2K'], next.画幅)) next.画幅 = DEFAULT_CONFIG.画幅
+  if (!Object.hasOwn(sizeByQuality, next.清晰度)) next.清晰度 = DEFAULT_CONFIG.清晰度
   return next
 }
 
-function readRefImage(cfg) {
-  const p = cfg.参考图 || join(OUT_DIR, '角色设定', '正面.jpg')
-  const candidates = [p, join(LEGACY_OUT_DIR, '角色设定', '正面.jpg')]
-  for (const x of candidates) {
+const referenceImage = /\.(?:png|jpe?g|webp)$/i
+
+const expandHome = (path) => {
+  const value = String(path || '').trim()
+  return value === '~' ? homedir() : value.startsWith('~/') ? join(homedir(), value.slice(2)) : value
+}
+
+const referenceRank = (path) => {
+  const name = basename(path).toLowerCase()
+  if (/正面|front/.test(name)) return 0
+  if (/三视图|设定|sheet/.test(name)) return 1
+  if (/侧面|side|profile/.test(name)) return 2
+  if (/背面|back|rear/.test(name)) return 3
+  return 4
+}
+
+function imagesIn(path) {
+  try {
+    const stat = statSync(path)
+    if (stat.isFile()) return referenceImage.test(path) ? [path] : []
+    if (!stat.isDirectory()) return []
+    return readdirSync(path)
+      .filter((name) => referenceImage.test(name))
+      .map((name) => join(path, name))
+  } catch { return [] }
+}
+
+/** Resolve a stable multi-view reference set. Files, directories and lists are accepted. */
+export function referenceImageFiles(cfg) {
+  const configured = String(cfg.参考图 || '').split(/[\n,，;；]+/u).map(expandHome).filter(Boolean)
+  const sources = configured.length ? configured : [
+    join(OUT_DIR, '角色设定'),
+    join(LEGACY_OUT_DIR, '角色设定'),
+  ]
+  const seen = new Set()
+  const files = []
+  for (const source of sources) {
+    for (const path of imagesIn(source)) {
+      if (seen.has(path)) continue
+      seen.add(path)
+      files.push(path)
+    }
+  }
+  if (!configured.length && !files.length && existsSync(PACKAGE_CHARACTER_SHEET)) files.push(PACKAGE_CHARACTER_SHEET)
+  return files.sort((a, b) => referenceRank(a) - referenceRank(b) || a.localeCompare(b, 'zh-CN')).slice(0, 10)
+}
+
+function readRefImages(cfg) {
+  const result = []
+  for (const path of referenceImageFiles(cfg)) {
     try {
-      const mime = /\.png$/i.test(x) ? 'image/png' : /\.webp$/i.test(x) ? 'image/webp' : 'image/jpeg'
-      return `data:${mime};base64,` + readFileSync(x).toString('base64')
+      const buf = readFileSync(path)
+      const mime = detectImageFormat(buf)?.mime
+      if (mime) result.push(`data:${mime};base64,` + buf.toString('base64'))
     } catch {}
   }
-  return ''
+  return result
 }
 
 function photoDirs(cfg) {
@@ -186,7 +247,7 @@ export function cleanupPhotos(cfg = readImageConfig(), now = Date.now()) {
     let names = []
     try { names = readdirSync(dir) } catch {}
     for (const name of names) {
-      if (!generatedPhoto.test(name)) continue
+      if (!generatedPhoto.test(name) && !generatedPhotoMeta.test(name)) continue
       const path = join(dir, name)
       try { if (statSync(path).mtimeMs < cutoff) { unlinkSync(path); removed++ } } catch {}
     }
@@ -206,13 +267,60 @@ function listPhotos(cfg) {
         // Before v1.0.8 the reduced JPEG reused the original timestamp. Keep
         // one gallery item and prefer the full PNG/WebP when both still exist.
         const rank = /\.png$/i.test(f) ? 3 : /\.webp$/i.test(f) ? 2 : 1
-        if (!current || rank > current.rank) byTimestamp.set(key, { name: f, time: st.mtimeMs, size: st.size, rank })
+        let meta = null
+        try { meta = JSON.parse(readFileSync(join(dir, photoMetadataName(f)), 'utf8')) } catch {}
+        if (!current || rank > current.rank) byTimestamp.set(key, {
+          name: f, time: st.mtimeMs, size: st.size, rank,
+          context: meta?.context || null,
+          prompt: String(meta?.prompt || '').slice(0, 300),
+          model: String(meta?.model || ''),
+          quality: String(meta?.quality || ''),
+          check: meta?.check && typeof meta.check === 'object' ? meta.check : null,
+        })
       }
     } catch {}
   }
   return [...byTimestamp.values()]
     .map(({ rank, ...photo }) => photo)
     .sort((a, b) => b.time - a.time).slice(0, 24)
+}
+
+export function buildPhotoMetadata(cfg, elements, check, notes, prompt, timestamp = Date.now()) {
+  return {
+    version: 1,
+    createdAt: new Date(timestamp).toISOString(),
+    model: String(cfg.模型 || ''),
+    quality: String(cfg.清晰度 || DEFAULT_CONFIG.清晰度),
+    aspect: String(cfg.画幅 || DEFAULT_CONFIG.画幅),
+    prompt: String(prompt || '').slice(0, 300),
+    context: {
+      type: String(elements?.type || 'selfie'),
+      clock: String(elements?.clock || ''),
+      location: String(elements?.location || ''),
+      activity: String(elements?.state?.what || elements?.hint || ''),
+      outfit: String(elements?.outfit || ''),
+      expression: String(elements?.expression || ''),
+      light: String(elements?.light || ''),
+    },
+    check: check || null,
+    notes: Array.isArray(notes) ? notes.map(String).slice(0, 4) : [],
+  }
+}
+
+function writePhotoMetadata(result, cfg, elements, check, notes, prompt) {
+  if (!result?.original) return null
+  const timestamp = Number(photoTimestamp(basename(result.original))) || Date.now()
+  const metadata = buildPhotoMetadata(cfg, elements, check, notes, prompt, timestamp)
+  const path = result.original.replace(/\.(?:png|jpe?g|webp)$/i, '.json')
+  const temp = path + '.tmp'
+  try {
+    writeFileSync(temp, JSON.stringify(metadata, null, 2), 'utf8')
+    renameSync(temp, path)
+    return metadata
+  } catch {
+    try { unlinkSync(temp) } catch {}
+    return null
+  }
 }
 
 /** Saved-today count and last shot time (retakes and character refs don't count). */
@@ -237,11 +345,14 @@ function todayUsage(cfg) {
   } catch { return { n: 0, last: 0 } }
 }
 
-/** QQ renders large images poorly: save a small copy (long edge 1440, JPEG q88). */
+/** Keep a high-quality sharing copy while retaining the untouched original. */
 async function shrink(imagePath) {
   try {
     const jpg = imagePath.replace(/\.(?:png|jpe?g|webp)$/i, '-small.jpg')
-    await execFileAsync('convert', [imagePath, '-resize', '1440x1440>', '-quality', '88', jpg], { timeout: 30000 })
+    await execFileAsync('convert', [
+      imagePath, '-auto-orient', '-resize', '2048x2048>', '-strip',
+      '-sampling-factor', '4:4:4', '-quality', '93', jpg,
+    ], { timeout: 30000 })
     const st = statSync(jpg)
     return st.size > 0 ? jpg : imagePath
   } catch { return imagePath }
@@ -289,17 +400,55 @@ async function generateImage(cfg, prompt, opts = {}) {
   }
 }
 
-async function arkGenerate(cfg, prompt, opts = {}) {
-  const ark = JSON.parse(readFileSync(ARK_CFG, 'utf8'))
+export function buildImageRequest(cfg, prompt) {
+  const quality = Object.hasOwn(sizeByQuality, cfg.清晰度) ? cfg.清晰度 : DEFAULT_CONFIG.清晰度
+  const sizes = sizeByQuality[quality]
   const body = {
     model: cfg.模型,
     prompt,
-    size: sizeByAspect[cfg.画幅] || '1440x1920',
+    size: sizes[cfg.画幅] || sizes.竖幅,
     response_format: 'url',
     watermark: false,
+    optimize_prompt_options: { mode: 'standard' },
   }
-  const ref = (cfg.用参考图 && opts.useRef !== false) ? readRefImage(cfg) : ''
-  if (ref) body.image = [ref]
+  // Seedream 5.x supports explicit lossless output. Older selectable models
+  // keep their native format so a compatibility fallback cannot be rejected.
+  if (/seedream-5-/i.test(String(cfg.模型 || ''))) body.output_format = 'png'
+  return body
+}
+
+const NO_TEXT_PROMPT = '画面里不要出现任何文字、水印、签名'
+
+function boundedPrompt(value, max = 300) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (text.length <= max) return text
+  const withoutTail = text.replace(/[；。]?画面里不要出现任何文字、水印、签名[；。]?$/u, '')
+  const tail = `；${NO_TEXT_PROMPT}`
+  return withoutTail.slice(0, Math.max(1, max - tail.length)).replace(/[，、；。\s]+$/u, '') + tail
+}
+
+export function composeImagePrompt(expanded, useRef = true) {
+  const identity = useRef
+    ? '保持参考图中角色的脸型、发色渐变、鲸鱼鳍耳、呆毛、瞳色和鲸鱼尾一致；'
+    : ''
+  return boundedPrompt(identity + String(expanded || ''), 300)
+}
+
+function composeRetakePrompt(base, check) {
+  const correction = [
+    ...(check?.problems || []).slice(0, 2),
+    check?.fix || '',
+  ].filter(Boolean).join('；')
+  if (!correction) return boundedPrompt(base, 300)
+  const suffix = `；修正：${boundedPrompt(correction, 82)}`
+  return boundedPrompt(base, 300 - suffix.length) + suffix
+}
+
+async function arkGenerate(cfg, prompt, opts = {}) {
+  const ark = JSON.parse(readFileSync(ARK_CFG, 'utf8'))
+  const body = buildImageRequest(cfg, prompt)
+  const refs = (cfg.用参考图 && opts.useRef !== false) ? readRefImages(cfg) : []
+  if (refs.length) body.image = refs
   const timeoutMs = Math.max(30, Math.min(600, Number(cfg.生图超时秒) || 120)) * 1000
   const r = await fetch(ark.baseUrl.replace(/\/+$/, '') + '/images/generations', {
     method: 'POST',
@@ -332,9 +481,12 @@ function markRetake(result) {
   const nextOriginal = rename(result.original)
   const nextSmall = rename(result.path)
   const nextThumbnail = result.thumbnail ? rename(result.thumbnail) : ''
+  const metadata = String(result.original).replace(/\.(?:png|jpe?g|webp)$/i, '.json')
+  const nextMetadata = metadata.replace(/([\\/]feiyu-)(\d+)(\.json)$/i, '$1retry-$2$3')
   try { if (nextOriginal !== result.original) renameSync(result.original, nextOriginal) } catch {}
   try { if (nextSmall !== result.path && nextSmall !== nextOriginal) renameSync(result.path, nextSmall) } catch {}
   try { if (nextThumbnail && nextThumbnail !== result.thumbnail) renameSync(result.thumbnail, nextThumbnail) } catch {}
+  try { if (nextMetadata !== metadata) renameSync(metadata, nextMetadata) } catch {}
   result.original = nextOriginal
   result.path = nextSmall
   if (nextThumbnail) result.thumbnail = nextThumbnail
@@ -347,10 +499,9 @@ async function shootAndCheck(ctx, cfg, { prompt, useRef, elements }) {
   const notes = []
   let last = null
   let check = null
-  let extra = ''
   let current = ''
   for (let i = 0; i < attempts; i++) {
-    current = (prompt + extra).trim()
+    current = i === 0 ? boundedPrompt(prompt, 300) : composeRetakePrompt(prompt, check)
     const r = await generateImage(cfg, current, { useRef })
     last = r
     if (cfg.出图自检 === false) { notes.push('自检关着，没看'); break }
@@ -360,11 +511,10 @@ async function shootAndCheck(ctx, cfg, { prompt, useRef, elements }) {
     notes.push(`第 ${i + 1} 张不合格：${check.problems.join('；') || '（没说出具体问题）'}`)
     if (i < attempts - 1) {
       markRetake(last)
-      extra = `。不要出现这些问题：${check.problems.join('；') || '画面缺陷'}` +
-        (check.fix ? `。按要求改：${check.fix}` : '')
     }
   }
-  return { ...last, check, notes, prompt: current }
+  const metadata = writePhotoMetadata(last, cfg, elements, check, notes, current)
+  return { ...last, check, notes, prompt: current, metadata }
 }
 
 // ── available models: ask Ark directly instead of hard-coding versions ──
@@ -456,6 +606,7 @@ function registerRoutes(ctx) {
       if (req.method !== 'GET') return reply(res, 405, { ok: false })
       const cfg = readImageConfig()
       const usage = todayUsage(cfg)
+      const referenceFiles = referenceImageFiles(cfg)
       let ark = { ok: false }
       try {
         const a = JSON.parse(readFileSync(ARK_CFG, 'utf8'))
@@ -468,7 +619,9 @@ function registerRoutes(ctx) {
         limit: cfg.每日上限,
         photos: listPhotos(cfg),
         ark,
-        hasRef: Boolean(readRefImage(cfg)),
+        hasRef: referenceFiles.length > 0,
+        refCount: referenceFiles.length,
+        refNames: referenceFiles.map((path) => basename(path)),
       })
     }),
   }), 'feiyu-life: image state')
@@ -508,9 +661,12 @@ function registerRoutes(ctx) {
           expression: body.expression || '',
         })
         const useRef = String(body.type || 'selfie') !== 'scene' && cfg.用参考图
-        const prompt = (useRef ? '保持参考图里这个角色的长相、发色渐变、鲸鱼鳍耳、呆毛、瞳色、鲸鱼尾不变；' : '') + expanded.prompt
+        const prompt = composeImagePrompt(expanded.prompt, useRef)
         const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
-        return reply(res, 200, { ok: true, image: r.path, prompt: r.prompt, bytes: r.bytes, check: r.check, notes: r.notes })
+        return reply(res, 200, {
+          ok: true, image: r.path, prompt: r.prompt, bytes: r.bytes,
+          check: r.check, notes: r.notes, metadata: r.metadata,
+        })
       } catch (e) { return reply(res, 500, { ok: false, error: String((e && e.message) || e).slice(0, 300) }) }
       finally { shooting = false }
     }),
@@ -588,7 +744,7 @@ export function registerImage(ctx) {
       additionalProperties: false,
     },
     output: {
-      schema: { type: 'object', properties: { ok: { type: 'boolean' }, image: { type: 'string' }, say: { type: 'string' }, prompt: { type: 'string' }, check: { type: 'object' }, notes: { type: 'array' } }, additionalProperties: true },
+      schema: { type: 'object', properties: { ok: { type: 'boolean' }, image: { type: 'string' }, say: { type: 'string' }, prompt: { type: 'string' }, check: { type: 'object' }, notes: { type: 'array' }, metadata: { type: 'object' } }, additionalProperties: true },
       render: (_a, v) => [{ type: 'text', text: String(v?.say || '') + (v?.image ? '\n图片：' + v.image : '') }],
     },
     async execute(rawArgs = {}) {
@@ -610,7 +766,7 @@ export function registerImage(ctx) {
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, args)
         const useRef = String(args.type || 'selfie') !== 'scene' && cfg.用参考图
-        const prompt = (useRef ? '保持参考图里这个角色的长相、发色渐变、鲸鱼鳍耳、呆毛、瞳色、鲸鱼尾不变；' : '') + expanded.prompt
+        const prompt = composeImagePrompt(expanded.prompt, useRef)
         const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
         const flawed = r.check && r.check.pass === false
           ? `（这张还不太对：${(r.check.problems[0] || '画面有问题')}）`
@@ -621,6 +777,7 @@ export function registerImage(ctx) {
           say: `拍好了（${Math.round(r.bytes / 1024)}KB）${expanded.usedModel ? '' : '（模板扩写）'}${flawed}`,
           prompt: r.prompt,
           notes: r.notes,
+          metadata: r.metadata,
         }
         if (r.check) out.check = r.check
         return out

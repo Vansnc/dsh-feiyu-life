@@ -132,7 +132,11 @@ export function templatePrompt(cfg, elements) {
   const { type, hint, outfit, location, expression, clock, light } = elements
   const r = rand(elements.hint + elements.location + elements.expression)
   const shotPool = shots[type] || shots.selfie
-  const shot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
+  const generatedShot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
+  const shot = type === 'selfie' && String(cfg.镜头 || '').trim()
+    ? String(cfg.镜头).trim() : generatedShot
+  const visualStyle = String(cfg.风格 || defaultStyle).trim()
+  const requestedDetails = String(cfg.细节 || '').trim()
   const pool = propsByPlace[location]
     || (/路上|门口|地铁|公交|街上/.test(location) ? propsByPlace['路上'] : propsByPlace['宿舍书桌'])
   const props = []
@@ -149,7 +153,8 @@ export function templatePrompt(cfg, elements) {
     parts.push(`表情：${expression}`)
     parts.push(`镜头：${shot}`)
     parts.push(`背景：${props.join('、')}`)
-    parts.push('细节：发丝高光、耳鳍的半透明质感、脖颈与锁骨的阴影、衣料褶皱、皮肤的通透感')
+    parts.push(`主体细节：${requestedDetails || '眼睛虹膜层次、成束发丝高光、耳鳍半透明质感、衣料褶皱与皮肤通透感'}`)
+    parts.push('细节优先级：脸、眼睛、发丝和衣料清楚，背景只作衬托')
   } else {
     parts.push(`时间 ${clock}，${light}`)
     parts.push(`地点：${location}`)
@@ -158,7 +163,7 @@ export function templatePrompt(cfg, elements) {
     parts.push(`环境细节：${props.join('、')}`)
     parts.push('质感：清晰的分色、柔和的环境光、空气里的细小颗粒')
   }
-  parts.push(`画风：${cfg.风格 || defaultStyle}`)
+  parts.push(`画风：${visualStyle}`)
   parts.push('不要画面里有任何文字、水印、签名')
   return parts.join('；')
 }
@@ -178,14 +183,18 @@ export async function modelPrompt(ctx, agent, cfg, elements) {
     `类型：${elements.type === 'selfie' ? '她本人在自拍，脸在画面里' : '只拍场景或物品，不出现她本人'}`,
     `她给的片段：${elements.hint || '（没有，按上面几点自由发挥）'}`,
     `表情：${elements.expression}`,
+    `镜头：${elements.type === 'selfie' ? (cfg.镜头 || '手机前置自拍近景') : '根据主体安排清楚的环境构图'}`,
+    `细节重点：${cfg.细节 || '眼睛虹膜、成束发丝、衣料褶皱、材质与光影层次'}`,
+    `指定画风：${cfg.风格 || defaultStyle}`,
     '',
     '要求：',
-    '1. 写成一段 120–200 字的中文描述，按「光线 → 地点与背景 → 她的动作/物体状态 → 镜头与构图 → 表情 → 材质细节 → 画风」的顺序；',
+    '1. 写成一段 150–220 字的中文描述，按「光线 → 地点与背景 → 她的动作/物体状态 → 镜头与构图 → 表情 → 材质细节 → 画风」的顺序，总长度不要超过 240 字；',
     '2. 具体到能画：写出 2–4 件环境里的东西（台灯、画册、奶茶、快递盒这类），写出光线方向；',
     '3. 自拍要写手机前置视角、脸占画面比例；不要写「手臂伸向镜头」这类手部前景——手最容易画崩；非自拍要写构图和主体位置；',
-    `4. 画风固定写：${defaultStyle}；`,
-    '5. 结尾加一句：画面里不要出现任何文字、水印、签名；',
-    '6. 不要写「参考图」「保持角色」这类词——那是另一层的事。',
+    '4. 主体细节优先于背景杂物：脸部轮廓、虹膜与睫毛、成束发丝、衣料褶皱必须清楚；不要只写“高细节”这种空话；',
+    `5. 画风严格使用：${cfg.风格 || defaultStyle}；`,
+    '6. 结尾加一句：画面里不要出现任何文字、水印、签名；',
+    '7. 不要写「参考图」「保持角色」这类词——那是另一层的事。',
   ].join('\n')
   // Reasoning budget eats the whole allowance on some models; expansion needs none.
   let result
@@ -258,7 +267,9 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
   let toCheck = imagePath
   try {
     tempImage = join(tmpdir(), `feiyu-check-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`)
-    await execFileAsync('convert', [imagePath, '-resize', '768x768>', '-quality', '85', tempImage], { timeout: 30000 })
+    await execFileAsync('convert', [
+      imagePath, '-resize', '1024x1024>', '-sampling-factor', '4:4:4', '-quality', '90', tempImage,
+    ], { timeout: 30000 })
     toCheck = tempImage
   } catch { toCheck = imagePath }
   let imageRef
@@ -284,7 +295,9 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
     `- 地点：${elements.location || '未知'}`,
     `- 穿着：${elements.outfit || '没指定，随意'}`,
     `- 表情：${elements.expression || '自然'}`,
-    `- 画风：${defaultStyle}；Q 版、3D 渲染、写实照片、厚涂美式都算错`,
+    `- 画风：${cfg.风格 || defaultStyle}`,
+    `- 镜头：${selfie ? (cfg.镜头 || '手机前置自拍近景') : '主体清晰的环境构图'}`,
+    `- 细节重点：${cfg.细节 || '眼睛、发丝、衣料与材质层次清楚'}`,
     '',
     '逐项看：',
     '1. 角色特征对不对：深蓝长卷发、发尾变浅蓝、头顶鲸鱼尾呆毛、两侧鲸鱼鳍耳、蓝瞳、鲸鱼尾；',
@@ -294,8 +307,9 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
     '5. 场景和时间光线对不对；',
     `6. ${selfie ? '有没有自拍视角：手机前置、脸占画面大半' : '构图有没有拍到主体，主体清不清楚'}`,
     '7. 画面里有没有伸向镜头的手、手指特写、粘在一起的手指——有就算画崩',
+    '8. 主体是否清晰：脸、眼睛、发丝和衣料有没有糊成大片色块，关键材质有没有基本层次',
     '',
-    '判定：背景杂物少一两样没关系，算合格；角色长相跑偏、画风错、画崩（含手）、有文字水印，这几类出现任何一样都必须判不合格。',
+    '判定：背景杂物少一两样没关系；角色长相跑偏、画风错、画崩（含手）、有文字水印，或主体关键细节明显发糊，出现任何一样都必须判不合格。',
     '',
     '只输出：{"合格":true 或 false,"问题":["最多 3 条，写你在图上实际看到了什么，不要空话"],"改法":"一句话，告诉生图模型下一张要怎么改"}',
   ].join('\n')
