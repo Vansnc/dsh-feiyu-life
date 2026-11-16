@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  activeEntities, continuityContext, continuityPath, continuityRevision, continuityView,
-  effectsDir, mutateEntity, planSyncInfo, projectsDir, readContinuity, readMemories, settleTimeline, writeContinuity,
+  activeEntities, activePeople, continuityContext, continuityPath, continuityRevision, continuityView,
+  effectsDir, mutateEntity, mutatePerson, planSyncInfo, projectsDir, readContinuity, readMemories,
+  relationshipSummary, settleTimeline, writeContinuity,
 } from '../continuity.js'
 import { normalizePlan } from '../gen.js'
 import { buildTimeline } from '../state.js'
@@ -55,6 +56,14 @@ test('continuity state can recover from the previous atomic version', () => sand
   assert.equal(readContinuity().needs.energy, 51)
 }))
 
+test('v1 continuity data migrates to v2 with an empty people list', () => sandbox(() => {
+  writeFileSync(continuityPath(), JSON.stringify({ v: 1, needs: { energy: 61 }, threads: [], tasks: [], commitments: [] }))
+  const state = readContinuity(10)
+  assert.equal(state.v, 2)
+  assert.deepEqual(state.people, [])
+  assert.equal(state.needs.energy, 61)
+}))
+
 test('life_adjust overlay prevents a linked plan activity from settling', () => sandbox(() => {
   const task = mutateEntity('tasks', 'create', { title: '取快递', origin: '设置页' }, 1)
   const timeline = buildTimeline(
@@ -92,6 +101,61 @@ test('model links are allowlisted and cannot invent continuity ids', () => {
   ] }, undefined, [{ kind: 'thread', id: 'known' }])
   assert.deepEqual(plan.items[1].links, [{ type: 'thread', id: 'known', progressDelta: 20 }])
 })
+
+test('people require provenance and model interaction links are allowlisted', () => sandbox(() => {
+  const beforeRevision = continuityRevision()
+  assert.throws(() => mutatePerson('create', { name: '小满', origin: '' }), /origin/)
+  const person = mutatePerson('create', { name: '小满', relation: '室友', notes: '最近在为恋爱烦恼', origin: '角色设定' }, 1)
+  assert.notEqual(continuityRevision(), beforeRevision)
+  assert.equal(activePeople()[0].name, '小满')
+  assert.match(relationshipSummary(), /最近在为恋爱烦恼/)
+  assert.throws(() => mutatePerson('create', { name: '小满', origin: '重复输入' }), /already exists/)
+  assert.throws(() => mutateEntity('commitments', 'create', { title: '见陌生人', personId: 'invented' }), /unknown active person/)
+  const plan = normalizePlan({ items: [
+    { start: '00:00', end: '07:00', what: '睡着了' },
+    { start: '07:00', end: '24:00', what: '陪小满聊了会儿', people: [
+      { id: person.id, tone: 'warm' }, { id: 'invented', tone: 'tense' },
+    ] },
+  ] }, undefined, [], activePeople())
+  assert.deepEqual(plan.items[1].people, [{ id: person.id, tone: 'warm' }])
+}))
+
+test('a fulfilled commitment linked to a person also settles a neutral interaction', () => sandbox(() => {
+  const person = mutatePerson('create', { name: '妈妈', relation: '家人', origin: '用户明确提供' }, 1)
+  const commitment = mutateEntity('commitments', 'create', { title: '周日晚视频', personId: person.id, origin: '用户明确约定' }, 2)
+  const segment = { start: 1000, end: 3601000, what: '和妈妈视频聊近况', source: 'plan', links: [{ type: 'commitment', id: commitment.id }] }
+  settleTimeline({ date: '2026-11-16', timeline: [segment], nowMs: 4000000 })
+  const state = readContinuity()
+  assert.equal(state.commitments[0].status, 'completed')
+  assert.equal(state.people[0].interactionCount, 1)
+  assert.equal(state.people[0].closeness, 50)
+}))
+
+test('an intact interaction updates relationship and shared memory exactly once', () => sandbox(() => {
+  const person = mutatePerson('create', { name: '妈妈', relation: '家人', origin: '用户明确提供', closeness: 70 }, 1)
+  const segment = { start: 1000, end: 3601000, what: '和妈妈视频聊近况', source: 'plan', behavior: 'phone', people: [{ id: person.id, tone: 'warm' }] }
+  const beforeSocial = readContinuity().needs.socialNeed
+  settleTimeline({ date: '2026-11-16', timeline: [segment], nowMs: 4000000 })
+  const afterFirst = readContinuity()
+  settleTimeline({ date: '2026-11-16', timeline: [segment], nowMs: 5000000 })
+  const state = readContinuity()
+  assert.equal(state.people[0].interactionCount, 1)
+  assert.equal(state.people[0].closeness, 71)
+  assert.ok(state.needs.socialNeed < beforeSocial)
+  assert.equal(state.needs.socialNeed, afterFirst.needs.socialNeed)
+  assert.match(readMemories()[0].summary, /妈妈有过互动/)
+  assert.equal(state.recentChanges.filter((x) => x.entityId === person.id && x.source === 'timeline:2026-11-16').length, 1)
+}))
+
+test('life_adjust overlay prevents a planned person interaction from settling', () => sandbox(() => {
+  const person = mutatePerson('create', { name: '阿岚', relation: '室友', origin: '角色设定' }, 1)
+  const timeline = buildTimeline(
+    [{ start: 0, end: 60, what: '和阿岚聊作业', people: [{ id: person.id, tone: 'neutral' }] }],
+    [{ start: 20 * 60000, end: 40 * 60000, what: '临时接电话' }], 0,
+  )
+  settleTimeline({ date: '2026-11-16', timeline, nowMs: 70 * 60000 })
+  assert.equal(readContinuity().people[0].interactionCount, 0)
+}))
 
 test('active entity limits are enforced', () => sandbox(() => {
   for (let i = 0; i < 5; i++) mutateEntity('threads', 'create', { title: `主线 ${i}`, origin: '测试' })

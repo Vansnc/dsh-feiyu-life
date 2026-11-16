@@ -121,6 +121,7 @@ export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute
       locationId: String(x.locationId || ''),
       behavior: String(x.behavior || ''),
       links: Array.isArray(x.links) ? x.links : [],
+      people: Array.isArray(x.people) ? x.people : [],
       overridden: false,
       source: 'plan',
     }]
@@ -139,6 +140,7 @@ export function buildTimeline(planItems, facts, dayStartMs, minuteToMs = (minute
       locationId: String(fact.locationId || ''),
       behavior: String(fact.behavior || ''),
       links: [],
+      people: [],
       source: 'adjust',
     }])
   }

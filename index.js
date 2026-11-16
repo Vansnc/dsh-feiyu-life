@@ -17,6 +17,8 @@
 //   POST /dsh-feiyu-life/save     persist config (full replace)
 //   GET  /dsh-feiyu-life/preview  preview at ?ts=ms
 //   GET  /dsh-feiyu-life/replay   server-owned map/action keyframes for a day
+//   GET  /dsh-feiyu-life/continuity   needs, projects, people and memories
+//   POST /dsh-feiyu-life/continuity/person   explicit relationship updates
 //   GET  /dsh-feiyu-life/settings-backup   portable life + camera settings
 //   POST /dsh-feiyu-life/settings-restore  validate and restore a backup
 
@@ -35,8 +37,9 @@ import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } fro
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
 import { createSettingsBackup, restoreSettingsBackup } from './backup.js'
 import {
-  activeEntities, cleanupContinuity, continuityContext, continuityRevision,
-  continuitySummary, continuityView, mutateEntity, planSyncInfo, readContinuity, readMemories, settleTimeline,
+  activeEntities, activePeople, cleanupContinuity, continuityContext, continuityRevision,
+  continuitySummary, continuityView, mutateEntity, mutatePerson, planSyncInfo, readContinuity, readMemories,
+  relationshipSummary, settleTimeline,
 } from './continuity.js'
 
 export const name = 'feiyu-life'
@@ -128,7 +131,7 @@ export function apply(ctx) {
           const life = generate(cfg).text
           if (cfg.连续性?.启用 === false) return life
           const state = readContinuity()
-          return `${life}\n（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动才算完成；不要把计划说成成果。`
+          return `${life}\n（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`
         } catch { return '' }
       },
     }))
@@ -218,7 +221,7 @@ export function apply(ctx) {
               action: { type: 'string', enum: ['create', 'update', 'complete', 'cancel', 'pause', 'resume'] },
               id: { type: 'string' }, title: { type: 'string' }, detail: { type: 'string' },
               origin: { type: 'string', description: '来源说明；创建长期主线时必须明确' },
-              dueAt: { type: 'number', description: '可选的 Unix 毫秒时间' }, placeId: { type: 'string' }, with: { type: 'string' },
+              dueAt: { type: 'number', description: '可选的 Unix 毫秒时间' }, placeId: { type: 'string' }, with: { type: 'string' }, personId: { type: 'string' },
               nextStep: { type: 'string' }, progress: { type: 'number' },
               artifactType: { type: 'string', enum: ['none', 'document', 'album'] }, artifactName: { type: 'string' },
             },
@@ -241,6 +244,30 @@ export function apply(ctx) {
         if (typeof off === 'function') offs.push(off)
       } catch {}
     }
+    try {
+      const off = agent.ctx.tools.register({
+        name: 'life_person',
+        description: '管理角色明确认识的人。只能记录用户明确提供的人物，不会联系对方或读取外部通讯录。',
+        parameters: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', enum: ['create', 'update', 'archive', 'restore'] },
+            id: { type: 'string' }, name: { type: 'string' }, relation: { type: 'string' }, notes: { type: 'string' },
+            origin: { type: 'string', description: '人物信息来源；创建时必须明确' }, closeness: { type: 'number' },
+          },
+          required: ['action'], additionalProperties: false,
+        },
+        output: { schema: { type: 'object', additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: String(v?.say || '') }] },
+        async execute(args = {}) {
+          try {
+            if (args.action === 'create' && (!String(args.name || '').trim() || !String(args.origin || '').trim())) return { ok: false, say: '创建人物需要姓名和明确来源' }
+            const value = mutatePerson(args.action, { ...args, source: 'tool', origin: args.origin || '对话中由用户明确提出' })
+            return { ok: true, value, say: `${args.action === 'create' ? '已经记住' : '人物已更新'}：${value?.name || args.id}` }
+          } catch (e) { return { ok: false, say: String(e?.message || e) } }
+        },
+      })
+      if (typeof off === 'function') offs.push(off)
+    } catch {}
     return () => { for (const f of offs) { try { f() } catch {} } }
   }
 
@@ -280,6 +307,8 @@ export function apply(ctx) {
           recent: recentSummary(cfg, t),
           continuity: `${continuitySummary(continuityState, { timeZone: cfg.时区 })}\n${continuityContext(continuityState, readMemories(2), { timeZone: cfg.时区 })}`,
           continuityEntities: activeEntities(continuityState),
+          relationships: relationshipSummary(continuityState, { timeZone: cfg.时区 }),
+          continuityPeople: activePeople(continuityState),
         })
       }
       if (result) {
@@ -451,8 +480,9 @@ export function apply(ctx) {
     return {
       ok: true, state, view: continuityView(state, { timeZone: tz }),
       summary: continuitySummary(state, { timeZone: tz }), memories: readMemories(7),
+      relationships: relationshipSummary(state, { timeZone: tz }),
       planSync: { ...planSyncInfo(state, plan, date), historyCount: listPlanHistory(date).length },
-      limits: { threads: 5, tasks: 30, commitments: 20 },
+      limits: { threads: 5, tasks: 30, commitments: 20, people: 20 },
       boundaries: ['不执行外部现实动作', '不自主生图', '只写插件专属目录', '计划不等于完成'],
     }
   }
@@ -509,6 +539,22 @@ export function apply(ctx) {
         } catch (e) { return reply(res, 400, { ok: false, error: String(e?.message || e) }) }
       }),
     }), 'feiyu-life: continuity entity')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/continuity/person',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        let body
+        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
+        try {
+          if (body?.action === 'create' && (!String(body?.name || '').trim() || !String(body?.origin || '').trim())) return reply(res, 400, { ok: false, error: 'person name and origin required' })
+          mutatePerson(String(body?.action || ''), { ...body, source: 'settings', origin: body.origin || '连续性设置页手动创建' })
+          return reply(res, 200, continuityPayload())
+        } catch (e) { return reply(res, 400, { ok: false, error: String(e?.message || e) }) }
+      }),
+    }), 'feiyu-life: continuity person')
   } catch {}
 
   try {

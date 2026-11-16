@@ -149,7 +149,7 @@ try {
   assert.equal(await page.getByText('角色形象与画面').count(), 1)
   await page.screenshot({ path: join(outputDir, 'photo-settings.png'), fullPage: true })
 
-  // Mount the complete settings panel and verify the 1.2.0 continuity page.
+  // Mount the complete settings panel and verify continuity + relationship state.
   await page.setContent('<!doctype html><meta charset="utf-8"><div id="root"></div>')
   const lifeState = {
     ok: true, config: defaultConfig, preview: { text: '此刻在宿舍', evidence: [] }, timeline: [],
@@ -162,6 +162,7 @@ try {
       needs: { energy: 68, stress: 32, socialNeed: 24, sleepDebtMinutes: 30 },
       threads: [{ id: 't1', title: '视觉作品集', status: 'active', progress: 20, origin: '用户明确提出', nextStep: '整理封面' }],
       tasks: [{ id: 'q1', title: '取快递', status: 'open', origin: '设置页' }], commitments: [],
+      people: [{ id: 'p1', name: '小满', relation: '室友', notes: '最近在为恋爱烦恼', status: 'active', closeness: 67, interactionCount: 3, origin: '角色设定' }],
     },
     view: { needs: ['有点累', '压力尚可', '社交需求平常', '有一点睡眠欠账'], entities: [
       { id: 't1', due: { label: '', state: 'none' } }, { id: 'q1', due: { label: '今天 18:00', state: 'today' } },
@@ -186,6 +187,8 @@ try {
   assert.equal(await page.getByText('取快递', { exact: true }).count(), 1, 'one-off pickup is rendered as a short task')
   assert.equal(await page.getByText('计划只是意图', { exact: false }).count(), 1, 'completion boundary is visible')
   assert.equal(await page.getByText('同步到明日剧本', { exact: true }).count(), 1, 'stale tomorrow plan can be explicitly synchronized')
+  assert.equal(await page.getByText('小满', { exact: true }).count(), 1, 'known people are visible as durable relationship cards')
+  assert.equal(await page.getByText('最近在为恋爱烦恼', { exact: true }).count(), 1, 'relationship notes are visible')
   await page.screenshot({ path: join(outputDir, 'continuity-settings.png'), fullPage: true })
 } finally {
   await browser.close()

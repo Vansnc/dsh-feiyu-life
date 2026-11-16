@@ -9,8 +9,8 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, 
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 
-export const CONTINUITY_VERSION = 1
-export const ENTITY_LIMITS = { threads: 5, tasks: 30, commitments: 20 }
+export const CONTINUITY_VERSION = 2
+export const ENTITY_LIMITS = { threads: 5, tasks: 30, commitments: 20, people: 20 }
 const kinds = ['threads', 'tasks', 'commitments']
 const root = () => process.env.DSH_HOME || join(homedir(), '.dsh')
 export const continuityPath = () => join(root(), 'feiyu-life-continuity.json')
@@ -58,7 +58,24 @@ export function defaultContinuity(now = Date.now()) {
   return {
     v: CONTINUITY_VERSION,
     needs: { energy: 70, stress: 30, sleepDebtMinutes: 0, socialNeed: 30, lastMealAt: 0, updatedAt: now },
-    threads: [], tasks: [], commitments: [], recentChanges: [], appliedEffects: [], lastSettledAt: 0,
+    threads: [], tasks: [], commitments: [], people: [], recentChanges: [], appliedEffects: [], lastSettledAt: 0,
+  }
+}
+
+function normalizePerson(x, now = Date.now()) {
+  return {
+    id: text(x?.id, 80) || randomUUID(),
+    name: text(x?.name, 60),
+    relation: text(x?.relation, 60),
+    notes: text(x?.notes, 300),
+    status: x?.status === 'archived' ? 'archived' : 'active',
+    source: text(x?.source, 80) || 'manual',
+    origin: text(x?.origin, 160) || '设置页手动创建',
+    closeness: clamp(x?.closeness ?? 50),
+    interactionCount: Math.max(0, Math.round(Number(x?.interactionCount) || 0)),
+    lastInteractionAt: Math.max(0, Number(x?.lastInteractionAt) || 0),
+    createdAt: Number(x?.createdAt) || now,
+    updatedAt: Number(x?.updatedAt) || now,
   }
 }
 
@@ -84,6 +101,7 @@ function normalizeEntity(kind, x, now = Date.now()) {
     completedAt: Math.max(0, Number(x?.completedAt) || 0),
     placeId: text(x?.placeId, 60),
     with: text(x?.with, 80),
+    personId: text(x?.personId, 80),
     progress: kind === 'threads' ? clamp(x?.progress) : undefined,
     nextStep: kind === 'threads' ? text(x?.nextStep, 160) : undefined,
     artifact: kind === 'threads' ? normalizeArtifact(x?.artifact) : undefined,
@@ -103,6 +121,7 @@ export function normalizeContinuity(raw, now = Date.now()) {
     updatedAt: Math.max(0, Number(raw.needs?.updatedAt) || now),
   }
   for (const kind of kinds) out[kind] = (Array.isArray(raw[kind]) ? raw[kind] : []).map((x) => normalizeEntity(kind, x, now)).filter((x) => x.title).slice(0, ENTITY_LIMITS[kind] * 3)
+  out.people = (Array.isArray(raw.people) ? raw.people : []).map((x) => normalizePerson(x, now)).filter((x) => x.name).slice(0, ENTITY_LIMITS.people * 3)
   out.recentChanges = (Array.isArray(raw.recentChanges) ? raw.recentChanges : []).slice(-80)
   out.appliedEffects = (Array.isArray(raw.appliedEffects) ? raw.appliedEffects : []).map(String).slice(-2000)
   out.lastSettledAt = Math.max(0, Number(raw.lastSettledAt) || 0)
@@ -129,12 +148,18 @@ export function activeEntities(state = readContinuity()) {
     ...state.commitments.filter((x) => x.status === 'open').map((x) => ({ ...x, kind: 'commitment' }))]
 }
 
+export function activePeople(state = readContinuity()) {
+  return state.people.filter((x) => x.status === 'active')
+}
+
 /** Stable fingerprint of the inputs that can change a generated plan. */
 export function continuityRevision(state = readContinuity()) {
   const rows = activeEntities(state).map((x) => ({
     kind: x.kind, id: x.id, title: x.title, detail: x.detail, dueAt: x.dueAt,
-    placeId: x.placeId, with: x.with, nextStep: x.nextStep,
-  })).sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`))
+    placeId: x.placeId, with: x.with, personId: x.personId, nextStep: x.nextStep,
+  })).concat(activePeople(state).map((x) => ({
+    kind: 'person', id: x.id, name: x.name, relation: x.relation, notes: x.notes,
+  }))).sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`))
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 16)
 }
 
@@ -191,6 +216,7 @@ export function mutateEntity(kind, action, input = {}, now = Date.now()) {
     : ['create', 'update', 'complete', 'cancel', 'delete']
   if (!allowedActions.includes(action)) throw new Error('unknown continuity action')
   const state = readContinuity(now)
+  if (kind === 'commitments' && input.personId && !activePeople(state).some((x) => x.id === String(input.personId))) throw new Error('unknown active person')
   const list = state[kind]
   const index = list.findIndex((x) => x.id === String(input.id || ''))
   if (action === 'create') {
@@ -219,12 +245,52 @@ export function mutateEntity(kind, action, input = {}, now = Date.now()) {
   return action === 'delete' ? null : state[kind].find((x) => x.id === input.id)
 }
 
+export function mutatePerson(action, input = {}, now = Date.now()) {
+  const allowed = ['create', 'update', 'archive', 'restore', 'delete']
+  if (!allowed.includes(action)) throw new Error('unknown person action')
+  const state = readContinuity(now)
+  const index = state.people.findIndex((x) => x.id === String(input.id || ''))
+  if (action === 'create') {
+    if (!text(input.origin, 160)) throw new Error('person origin is required')
+    if (activePeople(state).length >= ENTITY_LIMITS.people) throw new Error('people active limit reached')
+    const person = normalizePerson(input, now)
+    if (!person.name) throw new Error('name is required')
+    if (activePeople(state).some((x) => x.name === person.name)) throw new Error('active person name already exists')
+    state.people.push(person)
+    state.recentChanges.push({ at: now, entityId: person.id, kind: 'people', reason: `记住人物：${person.origin}` })
+    writeContinuity(state)
+    return person
+  }
+  if (index < 0) throw new Error('person not found')
+  if (action === 'delete') state.people.splice(index, 1)
+  else {
+    const patch = { ...state.people[index], ...input, id: state.people[index].id, createdAt: state.people[index].createdAt, updatedAt: now }
+    if (action === 'archive') patch.status = 'archived'
+    if (action === 'restore') patch.status = 'active'
+    if (patch.status === 'active' && state.people.some((x, i) => i !== index && x.status === 'active' && x.name === text(patch.name, 60))) throw new Error('active person name already exists')
+    state.people[index] = normalizePerson(patch, now)
+  }
+  state.recentChanges.push({ at: now, entityId: input.id, kind: 'people', reason: `${action}：${text(input.reason, 100) || '用户明确操作'}` })
+  writeContinuity(state)
+  return action === 'delete' ? null : state.people.find((x) => x.id === input.id)
+}
+
 export function continuitySummary(state = readContinuity(), options = {}) {
   const rows = continuityView(state, options).entities.slice(0, 12).map((x) => {
-    const details = [x.due.label, x.with ? `和${x.with}` : '', x.placeId ? `地点 ${x.placeId}` : '', x.kind === 'thread' && x.nextStep ? `下一步：${x.nextStep}` : ''].filter(Boolean)
+    const person = x.personId ? state.people.find((p) => p.id === x.personId) : null
+    const details = [x.due.label, person ? `和 person:${person.id}「${person.name}」` : x.with ? `和${x.with}` : '', x.placeId ? `地点 ${x.placeId}` : '', x.kind === 'thread' && x.nextStep ? `下一步：${x.nextStep}` : ''].filter(Boolean)
     return `${x.kind}:${x.id}「${x.title}」${details.length ? `（${details.join('；')}）` : ''}`
   })
   return rows.length ? rows.join('\n') : '没有待关联的长期主线、短期待办或约定。'
+}
+
+export function relationshipSummary(state = readContinuity(), options = {}) {
+  const timeZone = String(options.timeZone || 'Asia/Shanghai')
+  const rows = activePeople(state).slice(0, ENTITY_LIMITS.people).map((x) => {
+    const details = [x.relation, x.notes, x.lastInteractionAt ? `上次互动 ${localDay(x.lastInteractionAt, timeZone)}` : ''].filter(Boolean)
+    return `person:${x.id}「${x.name}」${details.length ? `（${details.join('；')}）` : ''}`
+  })
+  return rows.length ? rows.join('\n') : '还没有由用户明确记下的人物。'
 }
 
 export function continuityContext(state = readContinuity(), memories = readMemories(2), options = {}) {
@@ -235,7 +301,9 @@ export function continuityContext(state = readContinuity(), memories = readMemor
     ? `那天${latest.segments.slice(-3).map((x) => x.what).join('，后来')}`
     : latest?.summary
   const yesterday = remembered || '还没有可回想的昨日生活'
-  return `身体感觉：${view.needs.join('，')}。\n挂在心上的事：${concerns}。\n最近记得：${yesterday}。`
+  const people = activePeople(state).filter((x) => x.lastInteractionAt).sort((a, b) => b.lastInteractionAt - a.lastInteractionAt).slice(0, 3)
+    .map((x) => `${x.name}${x.relation ? `（${x.relation}）` : ''}`).join('、') || '还没有清楚的人际近况'
+  return `身体感觉：${view.needs.join('，')}。\n挂在心上的事：${concerns}。\n最近记得：${yesterday}。\n人际近况：${people}。`
 }
 
 function effectId(date, seg, suffix) {
@@ -298,7 +366,7 @@ function writeMemory(date, settled, state, now) {
   const segments = [...byId.values()].sort((a, b) => a.start - b.start)
   const memory = {
     v: 1, date, updatedAt: now, segments,
-    summary: segments.length ? `记得${segments.slice(-3).map((x) => x.what).join('，后来')}。` : '这天还没有留下清楚的生活记忆。',
+    summary: segments.length ? `记得${segments.slice(-3).map((x) => `${x.what}${x.people?.length ? `，和${x.people.join('、')}有过互动` : ''}`).join('，后来')}。` : '这天还没有留下清楚的生活记忆。',
     unresolved: [...state.tasks, ...state.commitments].filter((x) => x.status === 'open').slice(0, 8).map((x) => ({ id: x.id, title: x.title })),
   }
   atomicJson(file, memory)
@@ -330,11 +398,13 @@ export function settleTimeline({ date, timeline, nowMs = Date.now(), maxArtifact
     const dayEffects = new Set(Array.isArray(previousLedger.effects) ? previousLedger.effects.map(String) : [])
     for (const seg of (timeline || []).filter((x) => x && x.end <= nowMs && x.end > x.start && x.source !== 'travel')) {
       const segmentEffect = effectId(date, seg, 'needs')
+      let memorySegment = settled.find((x) => x.start === seg.start && x.end === seg.end && x.what === text(seg.what))
       if (!applied.has(segmentEffect)) {
         applyNeeds(state.needs, needsDelta(seg), seg.end)
         applied.add(segmentEffect); count++
         dayEffects.add(segmentEffect)
-        settled.push({ id: segmentEffect, start: seg.start, end: seg.end, what: text(seg.what), locationId: text(seg.locationId), source: seg.source })
+        memorySegment = { id: segmentEffect, start: seg.start, end: seg.end, what: text(seg.what), locationId: text(seg.locationId), source: seg.source, people: [] }
+        settled.push(memorySegment)
       }
       // A linked plan segment only counts when it survived life_adjust intact.
       const intactPlan = seg.source === 'plan' && !seg.overridden
@@ -361,6 +431,41 @@ export function settleTimeline({ date, timeline, nowMs = Date.now(), maxArtifact
         state.recentChanges.push({ at: seg.end, entityId: entity.id, kind, reason, source: `timeline:${date}` })
         applied.add(linkEffect); count++
         dayEffects.add(linkEffect)
+      }
+      let interactionApplied = false
+      const explicitPeople = Array.isArray(seg.people) ? seg.people : []
+      const implicitPeople = (Array.isArray(seg.links) ? seg.links : []).flatMap((link) => {
+        if (link.type !== 'commitment') return []
+        const commitment = state.commitments.find((x) => x.id === link.id)
+        return commitment?.personId ? [{ id: commitment.personId, tone: 'neutral' }] : []
+      })
+      const personLinks = [...new Map([...implicitPeople, ...explicitPeople].map((x) => [x.id, x])).values()]
+      for (const link of personLinks) {
+        const interactionEffect = effectId(date, seg, `person:${link.id}`)
+        if (applied.has(interactionEffect)) continue
+        const person = state.people.find((x) => x.id === link.id && x.status === 'active')
+        if (!person) continue
+        const tone = ['warm', 'tense'].includes(link.tone) ? link.tone : 'neutral'
+        const delta = tone === 'warm' ? 1 : tone === 'tense' ? -1 : 0
+        person.closeness = clamp(person.closeness + delta)
+        person.interactionCount += 1
+        person.lastInteractionAt = seg.end
+        person.updatedAt = seg.end
+        const toneText = tone === 'warm' ? '相处得挺温暖，亲近感 +1' : tone === 'tense' ? '相处有些紧绷，亲近感 -1' : '有过一次普通互动'
+        state.recentChanges.push({ at: seg.end, entityId: person.id, kind: 'people', reason: `最终真实时间线「${text(seg.what)}」：${toneText}`, source: `timeline:${date}` })
+        if (memorySegment) memorySegment.people = [...new Set([...(memorySegment.people || []), person.name])]
+        applied.add(interactionEffect); dayEffects.add(interactionEffect); count++
+        interactionApplied = true
+      }
+      const peopleNeedsEffect = effectId(date, seg, 'people-needs')
+      if (interactionApplied && !applied.has(peopleNeedsEffect)) {
+        const minutes = Math.max(1, Math.round((seg.end - seg.start) / 60000))
+        const tones = personLinks.map((x) => x.tone)
+        applyNeeds(state.needs, {
+          socialNeed: -Math.min(12, 4 + Math.round(minutes / 30)),
+          stress: tones.includes('tense') ? 3 : tones.includes('warm') ? -2 : 0,
+        }, seg.end)
+        applied.add(peopleNeedsEffect); dayEffects.add(peopleNeedsEffect); count++
       }
     }
     const realSegments = (timeline || []).filter((x) => x && x.end > x.start && x.source !== 'travel')

@@ -264,6 +264,10 @@ function normalizePlan(data) {
       id: String(link?.id || ''),
       progressDelta: Number(link?.progressDelta) || undefined,
     })).filter((link) => ['thread', 'task', 'commitment'].includes(link.type) && link.id) : [],
+    people: Array.isArray(x.people) ? x.people.map((person) => ({
+      id: String(person?.id || ''),
+      tone: ['warm', 'tense'].includes(String(person?.tone || '')) ? String(person.tone) : 'neutral',
+    })).filter((person) => person.id).slice(0, 3) : [],
   })).filter((x) => x.end > x.start)
   if (!items.length) return null
   return {
