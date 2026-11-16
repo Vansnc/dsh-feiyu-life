@@ -31,7 +31,7 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 8
+export const LIFE_CONFIG_VERSION = 9
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
@@ -42,6 +42,17 @@ export const defaultConfig = {
   模型超时秒: 60,
   历史保留天数: 180,
   连续性: { 启用: true, 结算间隔分钟: 10, 每日成果上限: 2, 自主主线: false },
+  内在: {
+    启用: true,
+    反思模式: '重要回合',
+    每日反思上限: 30,
+    基线心情: 55,
+    回稳半衰期小时: 8,
+    注入阈值: 6,
+    反思超时秒: 45,
+    反思Provider: '',
+    反思模型: '',
+  },
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
   校历: {
     学期: [
@@ -187,6 +198,18 @@ export function normalizeConfig(input, issues = []) {
     每日成果上限: Math.round(clamp(continuity.每日成果上限, 0, 10, defaultConfig.连续性.每日成果上限)),
     // 1.2.0 deliberately does not autonomously create long-term threads.
     自主主线: false,
+  }
+  const inner = raw.内在 && typeof raw.内在 === 'object' ? raw.内在 : defaultConfig.内在
+  cfg.内在 = {
+    启用: inner.启用 !== false,
+    反思模式: ['关闭', '重要回合', '每轮'].includes(inner.反思模式) ? inner.反思模式 : defaultConfig.内在.反思模式,
+    每日反思上限: Math.round(clamp(inner.每日反思上限, 1, 200, defaultConfig.内在.每日反思上限)),
+    基线心情: Math.round(clamp(inner.基线心情, 20, 80, defaultConfig.内在.基线心情)),
+    回稳半衰期小时: Math.round(clamp(inner.回稳半衰期小时, 1, 72, defaultConfig.内在.回稳半衰期小时)),
+    注入阈值: Math.round(clamp(inner.注入阈值, 1, 20, defaultConfig.内在.注入阈值)),
+    反思超时秒: Math.round(clamp(inner.反思超时秒, 10, 120, defaultConfig.内在.反思超时秒)),
+    反思Provider: String(inner.反思Provider || '').trim().slice(0, 100),
+    反思模型: String(inner.反思模型 || '').trim().slice(0, 160),
   }
   cfg.地图 = normalizeWorldConfig(raw.地图 || defaultConfig.地图)
 

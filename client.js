@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
+    const tabs = [['now', '此刻'], ['inner', '内在'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -76,6 +76,10 @@ window.__ModuleLoader__.load({
 [data-fl-cont-card]{padding:12px;border:1px solid var(--fl-line);border-radius:12px;background:rgba(127,127,127,.045);}
 [data-fl-cont-card] strong{display:block;margin-bottom:4px;}
 [data-fl-cont-meta]{font-size:11px;opacity:.58;line-height:1.5;}
+[data-fl-meter]{height:7px;margin-top:7px;overflow:hidden;border-radius:999px;background:rgba(127,127,127,.14);}
+[data-fl-meter]>i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--fl-warm),var(--fl-accent));}
+[data-fl-event][data-status='failed']{border-color:rgba(210,70,70,.28);}
+[data-fl-event-type]{display:inline-flex;margin-left:6px;padding:1px 6px;border-radius:999px;background:var(--fl-accent-soft);color:var(--fl-accent);font-size:10px;}
 [data-fl-due]{display:inline-flex;margin-top:5px;padding:2px 7px;border-radius:999px;background:rgba(217,119,50,.12);color:var(--fl-warm);font-size:10.5px;font-weight:650;}
 [data-fl-due][data-state='overdue']{background:rgba(210,70,70,.13);color:#c94e4e;}
 [data-fl-sync]{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--fl-line);border-radius:11px;background:var(--fl-accent-soft);}
@@ -430,6 +434,7 @@ window.__ModuleLoader__.load({
       const [inferenceText, setInferenceText] = useState('蹲着看猫吃完半根火腿肠')
       const [inference, setInference] = useState(null)
       const [continuity, setContinuity] = useState(null)
+      const [affect, setAffect] = useState(null)
       const [continuityDraft, setContinuityDraft] = useState({ kind: 'tasks', title: '', detail: '', origin: '', dueLocal: '', with: '', personId: '', nextStep: '', placeId: '', artifactType: 'none' })
       const [personDraft, setPersonDraft] = useState({ name: '', relation: '', notes: '', origin: '', closeness: 50 })
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
@@ -571,7 +576,21 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (tab === 'replay' && !replay) loadReplay('', true)
         if (tab === 'continuity' && !continuity) loadContinuity()
+        if (tab === 'inner' && !affect) loadAffect()
       }, [tab])
+
+      const loadAffect = async () => {
+        try { setAffect(await getJson(API + '/affect')) }
+        catch (e) { setMessage('内在状态读取失败：' + e.message) }
+      }
+
+      const resetInner = async () => {
+        if (!window.confirm('重置心情到基线？事件审计记录会保留。')) return
+        setBusy(true)
+        try { setAffect(await postJson(API + '/affect/reset', {})); setMessage('内在状态已回到基线') }
+        catch (e) { setMessage('重置失败：' + e.message) }
+        setBusy(false)
+      }
 
       const loadContinuity = async () => {
         try { setContinuity(await getJson(API + '/continuity')) }
@@ -1098,6 +1117,40 @@ window.__ModuleLoader__.load({
           h('span', { 'data-fl-note': '' }, '每日成果上限'), h(Field, { value: config.连续性?.每日成果上限 ?? 2, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['连续性', '每日成果上限'], Number(v) || 0) })),
         h('div', { 'data-fl-warn': '' }, '边界：不执行现实动作、不自主生图、不任意操作用户文件；不会自主创建长期主线或人物。'))
 
+      const innerState = affect && affect.state
+      const dimensionNames = { joy: '愉悦', calm: '平静', worry: '担忧', sadness: '低落' }
+      const innerPage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '每个符合条件的回合最多反思一次，更新短期情绪并留下可追溯原因；反思异步运行，失败不会挡住正常聊天。'),
+        h('div', { 'data-fl-stats': '' },
+          [['心情', innerState ? `${Math.round(innerState.valence)} · ${innerState.label}` : '—'], ['激活度', innerState ? Math.round(innerState.arousal) : '—'], ['今日反思', affect ? `${affect.usage.attempted} / ${affect.usage.limit}` : '—'], ['最近变化', innerState?.lastEventAt ? new Date(innerState.lastEventAt).toLocaleString() : '暂无']].map(([k, v]) => h('div', { key: k, 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, k), h('div', { 'data-fl-stat-v': '', title: String(v) }, v)))),
+        innerState?.lastReason ? h('div', { 'data-fl-warn': '' }, `变化原因：${innerState.lastReason}（置信度 ${Math.round((innerState.lastConfidence || 0) * 100)}%）`) : null,
+        h('div', { 'data-fl-h': '' }, '情绪维度'),
+        h('div', { 'data-fl-cont-grid': '' }, Object.entries((innerState && innerState.dimensions) || {}).map(([key, value]) => h('div', { key, 'data-fl-cont-card': '' },
+          h('strong', null, `${dimensionNames[key] || key} ${Math.round(value)}`),
+          h('div', { 'data-fl-meter': '' }, h('i', { style: { width: `${Math.max(0, Math.min(100, value))}%` } }))))),
+        h('div', { 'data-fl-h': '' }, '反思设置'),
+        h('div', { 'data-fl-row': '' },
+          h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.内在?.启用 !== false, onChange: (e) => patch(['内在', '启用'], e.target.checked) }), '启用原生内在状态'),
+          h('span', { 'data-fl-note': '' }, '模式'), h('select', { 'data-fl-input': '', value: config.内在?.反思模式 || '重要回合', onChange: (e) => patch(['内在', '反思模式'], e.target.value) },
+            h('option', { value: '关闭' }, '关闭反思'), h('option', { value: '重要回合' }, '重要回合'), h('option', { value: '每轮' }, '每轮')),
+          h('span', { 'data-fl-note': '' }, '每日上限'), h(Field, { value: config.内在?.每日反思上限 || 30, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['内在', '每日反思上限'], Number(v) || 30) }),
+          h('span', { 'data-fl-note': '' }, '回稳半衰期（小时）'), h(Field, { value: config.内在?.回稳半衰期小时 || 8, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['内在', '回稳半衰期小时'], Number(v) || 8) })),
+        h('div', { 'data-fl-row': '' },
+          h('span', { 'data-fl-note': '' }, '基线心情'), h(Field, { value: config.内在?.基线心情 || 55, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['内在', '基线心情'], Number(v) || 55) }),
+          h('span', { 'data-fl-note': '' }, '注入阈值'), h(Field, { value: config.内在?.注入阈值 || 6, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['内在', '注入阈值'], Number(v) || 6) }),
+          h('span', { 'data-fl-note': '' }, '超时（秒）'), h(Field, { value: config.内在?.反思超时秒 || 45, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['内在', '反思超时秒'], Number(v) || 45) }),
+          h('button', { 'data-fl-btn': '', disabled: busy, onClick: resetInner }, '重置到基线')),
+        h('div', { 'data-fl-row': '' },
+          h('input', { 'data-fl-input': '', value: config.内在?.反思Provider || '', placeholder: '反思 Provider（留空跟随会话）', onChange: (e) => patch(['内在', '反思Provider'], e.target.value) }),
+          h('input', { 'data-fl-input': '', value: config.内在?.反思模型 || '', placeholder: '反思模型（留空跟随会话）', onChange: (e) => patch(['内在', '反思模型'], e.target.value) })),
+        h('div', { 'data-fl-note': '' }, affect?.privacy || '本地不保存对话原文。'),
+        h('div', { 'data-fl-h': '' }, '统一事件账本'),
+        affect && affect.events?.length ? h('div', { 'data-fl-cont-grid': '' }, affect.events.map((item) => h('div', { key: item.id, 'data-fl-cont-card': '', 'data-fl-event': '', 'data-status': item.status },
+          h('strong', null, new Date(item.at).toLocaleString(), h('span', { 'data-fl-event-type': '' }, item.type === 'life.settled' ? '生活结算' : item.type === 'turn.reflection' ? '回合反思' : '状态操作')),
+          h('div', { 'data-fl-cont-meta': '' }, `${item.reason || '无原因'} · ${item.status}${item.model ? ` · ${item.model}` : ''}`),
+          item.memoryCandidates?.length ? h('div', { 'data-fl-cont-meta': '' }, `记忆候选（未写入）：${item.memoryCandidates.map((x) => x.summary).join('；')}`) : null))) : h('div', { 'data-fl-empty': '' }, '还没有反思或生活结算记录'),
+        h('div', { 'data-fl-warn': '' }, '边界：候选记忆与关系只用于审计，本版不会自动写入长期记忆或创建人物；事件账本不保存对话原文。'))
+
       const planMeta = (meta && meta.plan) || {}
       const detour = meta && meta.deviation && (meta.deviation.flat ? '躺平' : meta.deviation.outing ? '临时出门' : meta.deviation.skipAfternoon ? '翘下午课' : '')
       return h('div', { 'data-fl-wrap': '' },
@@ -1126,6 +1179,7 @@ window.__ModuleLoader__.load({
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
         tab === 'now' ? nowPage : null,
+        tab === 'inner' ? innerPage : null,
         tab === 'continuity' ? continuityPage : null,
         tab === 'replay' ? replayPage : null,
         tab === 'map' ? mapPage : null,

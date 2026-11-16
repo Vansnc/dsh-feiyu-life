@@ -17,9 +17,13 @@ test('configuration is normalized at the save boundary', () => {
     日常: [['09:99', '10:00', '坏时间', '未知']],
   }, issues)
   assert.equal(cfg.时区, 'Asia/Shanghai')
-  assert.equal(cfg.配置版本, 8)
+  assert.equal(cfg.配置版本, 9)
   assert.equal(cfg.模型超时秒, 60)
   assert.equal(cfg.历史保留天数, 180)
+  assert.deepEqual(cfg.内在, {
+    启用: true, 反思模式: '重要回合', 每日反思上限: 30, 基线心情: 55,
+    回稳半衰期小时: 8, 注入阈值: 6, 反思超时秒: 45, 反思Provider: '', 反思模型: '',
+  })
   assert.deepEqual(cfg.偏离, { 躺平日: 1, 出门日: 0, 翘下午课: 0.25 })
   assert.deepEqual(cfg.日常, [])
   assert.equal(Object.hasOwn(cfg, '事件池'), false)
@@ -38,7 +42,7 @@ test('v7 migrates stock maps, location icons and the legacy event pool', () => {
     路径: [{ from: 'dorm', to: 'canteen', minutes: 8 }],
   }
   const migrated = migrateConfig({ 配置版本: 3, 地图: legacyMap, 事件池: [['下午', '重复的小事']] }).value
-  assert.equal(migrated.配置版本, 8)
+  assert.equal(migrated.配置版本, 9)
   assert.equal(Object.hasOwn(migrated, '事件池'), false)
   assert.equal(migrated.地图.底图, 'xueyuan-road')
   assert.deepEqual(migrated.地图.地点.map(({ id, x, y }) => ({ id, x, y })), [

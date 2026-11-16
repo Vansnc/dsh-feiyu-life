@@ -37,6 +37,11 @@ import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } fro
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
 import { createSettingsBackup, restoreSettingsBackup } from './backup.js'
 import {
+  affectContext, affectLabel, appendEvent, applyReflection, cleanupEvents, eventId, eventText,
+  readAffect, readEvents, recordLifeSettlement, reflectTurn, reflectionUsage,
+  resetAffect, shouldReflect, sourceKind,
+} from './reflection.js'
+import {
   activeEntities, activePeople, cleanupContinuity, continuityContext, continuityRevision,
   continuitySummary, continuityView, mutateEntity, mutatePerson, planSyncInfo, readContinuity, readMemories,
   relationshipSummary, settleTimeline,
@@ -99,6 +104,7 @@ const clockOf = (minute) => {
 
 export function apply(ctx) {
   const mounted = new Map()
+  let reflectionInFlight = 0
 
   const sessions = () => {
     try {
@@ -129,12 +135,97 @@ export function apply(ctx) {
           const cfg = readConfig()
           if (!inWorkspace(cfg, cwd)) return ''
           const life = generate(cfg).text
-          if (cfg.连续性?.启用 === false) return life
+          const inner = cfg.内在?.启用 === false ? '' : affectContext(readAffect(cfg.内在), cfg.内在)
+          if (cfg.连续性?.启用 === false) return [life, inner].filter(Boolean).join('\n')
           const state = readContinuity()
-          return `${life}\n（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`
+          return `${life}\n${inner ? inner + '\n' : ''}（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`
         } catch { return '' }
       },
     }))
+    // One asynchronous reflection at most for each root-session turn. The
+    // original transcript is not persisted; only bounded conclusions enter
+    // the plugin-owned audit ledger. A failure never delays or changes chat.
+    let pendingInbox = null
+    let reflectionChain = Promise.resolve()
+    const latestTurnTexts = () => {
+      try {
+        const events = agent?.session?.snapshotEvents?.() || []
+        const rows = Array.isArray(events) ? events : []
+        let reply = ''; let replyId = ''; let input = ''; let kind = ''
+        for (let i = rows.length - 1; i >= 0; i--) {
+          const event = rows[i] || {}
+          const row = event?.data?.message || event?.data?.item || event?.event || event?.message || event
+          const type = String(event?.type || '')
+          const role = row?.role || (type === 'assistant/message' ? 'assistant' : (type === 'user/message' || type === 'inbox/inserted') ? 'user' : '')
+          if (!reply && role === 'assistant') {
+            reply = eventText(row); replyId = String(row?.id || event?.id || i)
+            continue
+          }
+          if (reply && role === 'user') {
+            const value = eventText(row)
+            const source = sourceKind(row) || sourceKind(event)
+            if (value && !/runtime-context|time-context|system|tool-result|plugin/.test(source)) {
+              input = value; kind = source || 'human'
+              return { input, reply, kind, token: `${String(row?.id || event?.id || i)}:${replyId}` }
+            }
+          }
+        }
+      } catch {}
+      return { input: '', reply: '', kind: '', token: '' }
+    }
+    try {
+      const off = agent.ctx.on('agent/inbox/inserted', (payload) => {
+        const value = eventText(payload)
+        const kind = sourceKind(payload)
+        if (!value || /runtime-context|time-context|system|tool-result/.test(kind)) return
+        pendingInbox = { text: value, kind: kind || 'human', token: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}` }
+      })
+      if (typeof off === 'function') offs.push(off)
+    } catch {}
+    try {
+      let lastReflectedTurn = ''
+      const off = agent.ctx.on('agent/turn-stopping', (payload) => {
+        const captured = pendingInbox
+        const snapshot = latestTurnTexts()
+        const inbox = captured || (snapshot.input ? { text: snapshot.input, kind: snapshot.kind, token: snapshot.token } : null)
+        if (!inbox || inbox.handled || (snapshot.token && snapshot.token === lastReflectedTurn)) return
+        inbox.handled = true
+        if (snapshot.token) lastReflectedTurn = snapshot.token
+        const payloadReply = eventText(payload?.message || payload?.response || '')
+        reflectionChain = reflectionChain.then(async () => {
+          const cfg = readConfig()
+          const inner = cfg.内在 || {}
+          if (inner.启用 === false || !inWorkspace(cfg, cwd)) return
+          const replyText = payloadReply || snapshot.reply
+          if (!shouldReflect(inner.反思模式, inbox.text, replyText, inbox.kind)) return
+          const usage = reflectionUsage(inner, Date.now(), cfg.时区)
+          if (usage.remaining <= reflectionInFlight) return
+          reflectionInFlight++
+          const id = eventId([agent?.session?.id, inbox.token, inbox.kind])
+          try {
+            const result = await reflectTurn(ctx, agent, {
+              userText: inbox.text, replyText, source: inbox.kind,
+              config: inner, timeoutSeconds: inner.反思超时秒,
+            })
+            applyReflection(id, result.reflection, inner)
+            appendEvent({
+              id, at: Date.now(), type: 'turn.reflection', source: inbox.kind, status: 'applied',
+              reason: result.reflection.affect.reason, model: result.model,
+              affect: result.reflection.affect, memoryCandidates: result.reflection.memoryCandidates,
+              relationshipCandidates: result.reflection.relationshipCandidates, usage: result.usage,
+              meta: { inputChars: inbox.text.length, replyChars: replyText.length },
+            }, { timeZone: cfg.时区 })
+          } catch (e) {
+            appendEvent({
+              id, at: Date.now(), type: 'turn.reflection', source: inbox.kind, status: 'failed',
+              reason: String(e?.message || e).slice(0, 180), meta: { inputChars: inbox.text.length, replyChars: replyText.length },
+            }, { timeZone: cfg.时区 })
+            try { console.log('[feiyu-life] turn reflection skipped after failure: ' + String(e?.message || e)) } catch {}
+          } finally { reflectionInFlight = Math.max(0, reflectionInFlight - 1) }
+        }).catch(() => {})
+      })
+      if (typeof off === 'function') offs.push(off)
+    } catch {}
     // She can change today's plan on purpose; that writes an adjustment segment.
     try {
       const off = agent.ctx.tools.register({
@@ -377,6 +468,7 @@ export function apply(ctx) {
         const life = generate(cfg, at, { rawTimeline: true })
         const result = settleTimeline({ date, timeline: life.rawTimeline || [], nowMs: now.getTime(), maxArtifacts: cfg.连续性?.每日成果上限 })
         applied += Number(result.applied) || 0
+        if (result.applied) recordLifeSettlement(date, result, { timeZone: tz, now: now.getTime() })
       }
       return { ok: true, applied }
     } finally { settling = false }
@@ -487,6 +579,19 @@ export function apply(ctx) {
     }
   }
 
+  const affectPayload = (now = new Date()) => {
+    const cfg = readConfig()
+    const at = now instanceof Date ? now.getTime() : Number(now) || Date.now()
+    const state = readAffect(cfg.内在, at)
+    return {
+      ok: true, state: { ...state, label: affectLabel(state) },
+      events: readEvents({ timeZone: cfg.时区, now: at, limit: 60 }).slice().reverse(),
+      usage: reflectionUsage(cfg.内在, at, cfg.时区),
+      privacy: '本地只保存反思结论、原因、候选摘要与用量，不保存对话原文。',
+      boundaries: ['候选记忆不会自动写入长期记忆', '候选关系不会自动创建人物', '反思失败不影响正常回复'],
+    }
+  }
+
   try {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
@@ -496,6 +601,29 @@ export function apply(ctx) {
         try { return reply(res, 200, statePayload(new Date())) } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: state')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/affect',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        return reply(res, 200, affectPayload())
+      }),
+    }), 'feiyu-life: affect')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/affect/reset',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        const cfg = readConfig()
+        resetAffect(cfg.内在)
+        appendEvent({ id: eventId(['affect.reset', Date.now()]), at: Date.now(), type: 'affect.reset', source: 'settings', status: 'applied', reason: '用户在设置页重置内在状态' }, { timeZone: cfg.时区 })
+        return reply(res, 200, affectPayload())
+      }),
+    }), 'feiyu-life: affect reset')
   } catch {}
 
   try {
@@ -898,6 +1026,7 @@ export function apply(ctx) {
       cleanupPlans(cfg.历史保留天数)
       cleanupFacts(cfg.历史保留天数)
       cleanupContinuity(Math.max(365, cfg.历史保留天数))
+      cleanupEvents(cfg.历史保留天数)
       cleanupPhotos(readImageConfig())
     } catch (e) {
       try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}

@@ -170,10 +170,17 @@ try {
     memories: [{ date: '2026-11-14', summary: '真实时间线已结算 3 段' }],
     planSync: { date: '2026-11-17', synced: false, source: 'llm' },
   }
-  await page.evaluate(({ life, continuity }) => {
+  const affectState = {
+    ok: true,
+    state: { valence: 68, arousal: 43, label: '心情不错', dimensions: { joy: 18, calm: 24, worry: 3, sadness: 0 }, lastReason: '用户认真听她讲完了', lastConfidence: 0.86, lastEventAt: Date.now() },
+    usage: { attempted: 3, limit: 30, remaining: 27 },
+    privacy: '本地只保存反思结论、原因、候选摘要与用量，不保存对话原文。',
+    events: [{ id: 'r1', at: Date.now(), type: 'turn.reflection', source: 'human', status: 'applied', reason: '用户认真听她讲完了', model: 'test/model', memoryCandidates: [{ summary: '用户愿意听她聊作品集' }] }],
+  }
+  await page.evaluate(({ life, continuity, affect }) => {
     window.fetch = async (url) => ({
       ok: true,
-      async json() { return String(url).includes('/continuity') ? continuity : life },
+      async json() { return String(url).includes('/continuity') ? continuity : String(url).includes('/affect') ? affect : life },
     })
     const plugin = window.__photoDefinition.factory((name) => {
       if (name === 'react') return window.React
@@ -181,7 +188,7 @@ try {
     })
     const style = document.createElement('style'); style.textContent = plugin.__test.CSS; document.head.appendChild(style)
     window.ReactDOM.createRoot(document.getElementById('root')).render(window.React.createElement(plugin.__test.Panel))
-  }, { life: lifeState, continuity: continuityState })
+  }, { life: lifeState, continuity: continuityState, affect: affectState })
   await page.getByText('连续性', { exact: true }).click()
   await page.getByText('视觉作品集').waitFor()
   assert.equal(await page.getByText('取快递', { exact: true }).count(), 1, 'one-off pickup is rendered as a short task')
@@ -190,6 +197,12 @@ try {
   assert.equal(await page.getByText('小满', { exact: true }).count(), 1, 'known people are visible as durable relationship cards')
   assert.equal(await page.getByText('最近在为恋爱烦恼', { exact: true }).count(), 1, 'relationship notes are visible')
   await page.screenshot({ path: join(outputDir, 'continuity-settings.png'), fullPage: true })
+  await page.getByText('内在', { exact: true }).click()
+  await page.getByText('统一事件账本', { exact: true }).waitFor()
+  assert.equal(await page.getByText('心情不错', { exact: false }).count(), 1, 'native affect label is visible')
+  assert.equal(await page.getByText('用户认真听她讲完了', { exact: false }).count() >= 1, true, 'auditable affect reason is visible')
+  assert.equal(await page.getByText('记忆候选（未写入）', { exact: false }).count(), 1, 'candidate boundary is explicit')
+  await page.screenshot({ path: join(outputDir, 'inner-settings.png'), fullPage: true })
 } finally {
   await browser.close()
 }
