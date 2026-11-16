@@ -1,43 +1,52 @@
 // dsh-feiyu-life · life line (pure local computation, no model)
 //
-// Answers four questions:
+// Answers five questions:
 //   1. What kind of day is it? (term / vacation / festival / exam week)
 //   2. Which routine table applies? (日常 / 晚起 / 假期 / 备考)
-//   3. What is she doing right now, is her phone at hand?
-//   4. What is weighing on her today? (late night, period, cold)
+//   3. What is she doing right now, can she reply?
+//   4. How much energy does she actually have today, and why?
+//   5. What small thing of the day is still going on?
 //
 // Output is compressed into a few short lines, injected via systemPrompt.context.
 //
-// Determinism: three layers of variation (day / hour / ten-minute) keep the
-// answer stable within a window but different across hours — like asking a real
-// person "what are you doing": same answer twice in five minutes, different two
-// hours later.
+// Determinism: the plan is fixed for a date; within it, only segment boundaries
+// and the stages of "today's small thing" can change the wording. There is no
+// hourly resampling, so two questions five minutes apart cannot produce two
+// different lives.
 //
 // State is NOT inferred from chat text. State flows from the plan (advanced by
 // the clock) plus explicit life_adjust adjustments only — see state.js.
 
-import { readFileSync, writeFileSync, mkdirSync, statSync, renameSync } from 'node:fs'
-import { dayType, dailyPlan } from './plan.js'
-import { readFacts, buildTimeline, segmentAt, recentSegments, nextSegment } from './state.js'
+import { mkdirSync, statSync } from 'node:fs'
+import { dayType, dailyPlan, readPlan, normalizeRoutine, normalizeWardrobe, timelineCoverage } from './plan.js'
+import { readFacts, buildTimeline, segmentAt, recentSegments } from './state.js'
 import { addWorldToTimeline, buildReplayFrames, defaultWorldConfig, normalizeWorldConfig, worldStateAt } from './world.js'
+import { ensureMoments, momentContext } from './moments.js'
+import { atomicWriteJson, quarantine, readJsonBounded, withLock } from './storage.js'
+import { defaultSharingConfig, normalizeSharingConfig } from './sharing.js'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
+export const configPath = () => join(dshHome(), 'feiyu-life-config.json')
+// Kept for callers that display the path; read/write always resolve it live.
 export const CONFIG_PATH = join(dshHome(), 'feiyu-life-config.json')
 
-const phoneSuffix = { 静音: '，手机静音', 在手: '', 在床头: '，手机在床头', 不在手边: '，手机不在手边' }
 const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 10
+const CONFIG_MAX_BYTES = 2 * 1024 * 1024
+const sleepText = /(?:睡着|午睡|补觉|还睡着|睡熟|睡了|睡到|睡觉)/
+export const LIFE_CONFIG_VERSION = 12
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
   总开关: true,
   时区: 'Asia/Shanghai',
   工作区: [],
+  角色设定: '',
+  衣柜: normalizeWardrobe(),
   地图: defaultWorldConfig,
   模型超时秒: 60,
   历史保留天数: 180,
@@ -68,6 +77,7 @@ export const defaultConfig = {
     外部插件兼容: '内建优先',
     主动: { 启用: false, 检查间隔分钟: 15, 安静开始: 0, 安静结束: 8, 冷却分钟: 240, 每日上限: 2, 未互动分钟: 180, 基础概率: 0.15, 外部主动搭话优先: true },
   },
+  主动分享: defaultSharingConfig,
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
   校历: {
     学期: [
@@ -163,7 +173,7 @@ function validTimeZone(value) {
 
 function normalizeRows(rows, path, issues) {
   if (!Array.isArray(rows)) {
-    issues.push(`${path} 不是数组，已恢复为空`)
+    issues.push(`${path} 不是数组，已忽略`)
     return []
   }
   return rows.flatMap((row, i) => {
@@ -192,6 +202,14 @@ function normalizeRanges(rows, path, withRoutine, issues) {
   })
 }
 
+function validMonthDay(month, day) {
+  const m = Math.round(Number(month))
+  const d = Math.round(Number(day))
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return false
+  const dt = new Date(Date.UTC(2024, m - 1, d))
+  return dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+}
+
 /** Normalize all user-editable configuration at the persistence boundary. */
 export function normalizeConfig(input, issues = []) {
   const raw = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
@@ -204,6 +222,8 @@ export function normalizeConfig(input, issues = []) {
   cfg.工作区 = Array.isArray(raw.工作区)
     ? [...new Set(raw.工作区.map((x) => String(x || '').trim()).filter(Boolean))]
     : copy(defaultConfig.工作区)
+  cfg.角色设定 = String(raw.角色设定 || '').trim().slice(0, 500)
+  cfg.衣柜 = normalizeWardrobe(raw.衣柜)
   cfg.模型超时秒 = Math.round(clamp(raw.模型超时秒, 10, 300, defaultConfig.模型超时秒))
   cfg.历史保留天数 = Math.round(clamp(raw.历史保留天数, 7, 3650, defaultConfig.历史保留天数))
   const continuity = raw.连续性 && typeof raw.连续性 === 'object' ? raw.连续性 : defaultConfig.连续性
@@ -254,6 +274,7 @@ export function normalizeConfig(input, issues = []) {
     },
   }
   cfg.地图 = normalizeWorldConfig(raw.地图 || defaultConfig.地图)
+  cfg.主动分享 = normalizeSharingConfig(raw.主动分享, issues)
 
   const period = raw.经期 && typeof raw.经期 === 'object' ? raw.经期 : {}
   const cycle = Math.round(clamp(period.周期, 1, 120, defaultConfig.经期.周期))
@@ -280,14 +301,17 @@ export function normalizeConfig(input, issues = []) {
     } else {
       const month = Math.round(Number(row.月))
       const day = Math.round(Number(row.日))
-      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) return [{ 名: name, 月: month, 日: day }]
+      if (validMonthDay(month, day)) return [{ 名: name, 月: month, 日: day }]
     }
     issues.push(`节日[${i}] 无效，已忽略`)
     return []
   })
 
-  for (const name of routineNames) cfg[name] = normalizeRows(raw[name] ?? defaultConfig[name], name, issues)
-  const timetable = raw.课表 && typeof raw.课表 === 'object' ? raw.课表 : defaultConfig.课表
+  for (const name of routineNames) {
+    const rows = raw[name]
+    cfg[name] = Array.isArray(rows) ? normalizeRows(rows, name, issues) : copy(defaultConfig[name])
+  }
+  const timetable = raw.课表 && typeof raw.课表 === 'object' && !Array.isArray(raw.课表) ? raw.课表 : defaultConfig.课表
   cfg.课表 = {}
   for (let day = 1; day <= 7; day++) cfg.课表[day] = normalizeRows(timetable[day] || [], `课表.${day}`, issues)
   cfg.晚起日 = [...new Set((Array.isArray(raw.晚起日) ? raw.晚起日 : defaultConfig.晚起日)
@@ -305,23 +329,58 @@ export function normalizeConfig(input, issues = []) {
   return cfg
 }
 
+function routineRowBounds(config, name) {
+  return (config[name] || []).map((row) => {
+    const start = toMinute(row[0])
+    let end = toMinute(row[1])
+    if (end <= start) end += 1440
+    return { start, end }
+  }).sort((a, b) => a.start - b.start)
+}
+
 export function validateConfig(input) {
   const issues = []
   const config = normalizeConfig(input, issues)
   for (const name of routineNames) {
+    if (!config[name].length) { issues.push(`${name}作息为空，运行时会退回内置模板`); continue }
     if (!config[name].some((row) => /睡/.test(row[2]))) issues.push(`${name}作息里没有包含「睡」的时段`)
-    const rows = config[name].map((row) => {
-      const start = toMinute(row[0])
-      let end = toMinute(row[1])
-      if (end <= start) end += 1440
-      return { start, end }
-    }).sort((a, b) => a.start - b.start)
-    if (rows.length && rows[0].start > 0) issues.push(`${name}作息从 00:00 到 ${rows[0].start < 60 ? '00:' + pad2(rows[0].start) : minuteLabel(rows[0].start)} 没有覆盖`)
+    const rows = routineRowBounds(config, name)
+    if (rows.length && rows[0].start > 0) issues.push(`${name}作息从 00:00 到 ${minuteLabel(rows[0].start)} 没有覆盖`)
     for (let i = 1; i < rows.length; i++) {
       if (rows[i].start < rows[i - 1].end) { issues.push(`${name}作息存在重叠时段`); break }
       if (rows[i].start > rows[i - 1].end) { issues.push(`${name}作息存在未覆盖的空档`); break }
     }
     if (rows.length && rows.at(-1).end < 1440) issues.push(`${name}作息没有覆盖到 24:00`)
+  }
+  for (let day = 1; day <= 7; day++) {
+    const rows = routineRowBounds(config.课表, String(day)).filter((x) => x.start >= 0 && x.end > x.start)
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].start < rows[i - 1].end) { issues.push(`课表.${day} 存在课程时间重叠，运行时后者会被截断`); break }
+    }
+  }
+  for (const [key, label] of [['学期', '校历.学期'], ['假期', '校历.假期'], ['特殊', '校历.特殊']]) {
+    const rows = (config.校历[key] || []).slice().sort((a, b) => a.起.localeCompare(b.起))
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].起 <= rows[i - 1].止) { issues.push(`${label} 日期范围重叠：${rows[i].名}`); break }
+    }
+  }
+  const rawInput = input && typeof input === 'object' && !Array.isArray(input) ? input : {}
+  if (typeof rawInput.角色设定 !== 'undefined' && typeof rawInput.角色设定 !== 'string') issues.push('角色设定必须是文本')
+  if (typeof rawInput.角色设定 === 'string' && rawInput.角色设定.length > 500) issues.push('角色设定超过 500 字，保存时会截断')
+  if (rawInput.衣柜 !== undefined) {
+    if (!rawInput.衣柜 || typeof rawInput.衣柜 !== 'object' || Array.isArray(rawInput.衣柜)) {
+      issues.push('衣柜必须是按分类分组的对象，已恢复默认')
+    } else {
+      for (const key of Object.keys(defaultConfig.衣柜)) {
+        const list = rawInput.衣柜[key]
+        if (list === undefined) continue
+        if (!Array.isArray(list)) { issues.push(`衣柜.${key} 必须是数组，已恢复默认`); continue }
+        if (!list.length) issues.push(`衣柜.${key} 不能为空，已恢复默认`)
+        if (list.length > 12) issues.push(`衣柜.${key} 最多 12 件，多余项会截断`)
+        if (list.some((x) => String(x || '').trim().length > 12)) issues.push(`衣柜.${key} 有名称超过 12 字，会截断`)
+        if (list.some((x) => !String(x || '').trim())) issues.push(`衣柜.${key} 有空名称，已忽略`)
+      }
+    }
   }
   return { config, issues }
 }
@@ -336,6 +395,13 @@ function toMinute(hhmm) {
 }
 
 function pad2(n) { return String(n).padStart(2, '0') }
+
+function minuteLabel(minute) {
+  const m = ((Math.round(minute) % 1440) + 1440) % 1440
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`
+}
+
+const clockOf = (minute) => minuteLabel(minute)
 
 export function zonedNow(now, tz) {
   const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -360,19 +426,27 @@ export function zonedNow(now, tz) {
   }
 }
 
-/** Epoch milliseconds for 00:00 in the already-resolved local day. */
+/**
+ * Epoch milliseconds for a wall-clock minute in an already-resolved local day.
+ * Iteration is bounded. For a nonexistent local time (spring-forward gap), the
+ * first representable instant after the gap wins, which is the conventional
+ * interpretation; for a repeated time, the earlier occurrence is used.
+ */
 export function zonedDateTimeMs(ymd, minuteOfDay, tz = 'Asia/Shanghai') {
-  const target = Date.parse(`${ymd}T00:00:00Z`) + minuteOfDay * 60000
+  const [y, m, d] = String(ymd).split('-').map(Number)
+  if (!y || !m || !d) return NaN
+  const target = Date.UTC(y, m - 1, d, 0, 0) + Number(minuteOfDay) * 60000
   if (!Number.isFinite(target)) return NaN
   let guess = target
-  for (let i = 0; i < 4; i++) {
+  let high = null
+  for (let i = 0; i < 6; i++) {
     const p = zonedNow(new Date(guess), tz)
     const represented = Date.parse(`${p.ymd}T${pad2(p.hour)}:${pad2(p.minute)}:00Z`)
-    const delta = target - represented
-    guess += delta
-    if (!delta) break
+    if (represented === target) return guess
+    if (represented < target) guess += target - represented
+    else { high = guess; guess -= represented - target }
   }
-  return guess
+  return high ?? guess
 }
 
 export function zonedDayStartMs(_now, zoned, tz = 'Asia/Shanghai') {
@@ -407,6 +481,11 @@ function dayDiff(a, b) {
   const y = Date.parse(b + 'T00:00:00Z')
   if (!Number.isFinite(x) || !Number.isFinite(y)) return NaN
   return Math.floor((y - x) / 86400000)
+}
+
+function shiftDay(ymd, days) {
+  const base = Date.parse(`${ymd}T00:00:00Z`)
+  return Number.isFinite(base) ? new Date(base + days * 86400000).toISOString().slice(0, 10) : ''
 }
 
 function inRange(ymd, start, end) {
@@ -450,7 +529,7 @@ export function todayDeviation(cfg, t, routine) {
   const out = {}
   if (routine !== '假期' && r() < Number(p.躺平日 ?? 0.12)) out.flat = true
   else if (routine !== '备考' && r() < Number(p.出门日 ?? 0.1)) out.outing = true
-  if (routine === '日常' && (cfg.课表 || {})[t.weekday] && r() < Number(p.翘下午课 ?? 0.08)) out.skipAfternoon = true
+  if (!out.flat && routine === '日常' && (cfg.课表 || {})[t.weekday] && r() < Number(p.翘下午课 ?? 0.08)) out.skipAfternoon = true
   return out
 }
 
@@ -467,38 +546,224 @@ export function menstrualDay(cfg, ymd) {
   return pos < length ? pos + 1 : 0
 }
 
-function hourVariant(t, what) {
-  const r = rng(hashSeed(t.ymd, 'hour' + t.hour))
-  if (r() > 0.4) return ''
-  const pool = /睡/.test(what) ? ['', '', '']
-    : /课/.test(what) ? ['，有点坐不住', '，眼睛发干', '，在想下课吃什么']
-      : ['，有点坐不住', '，眼睛发干', '，脖子有点僵', '，想喝冰的']
-  return pool[Math.floor(r() * pool.length) % pool.length]
-}
-
-/** Today's base mood: doesn't touch the mood value, just one line about how she feels. */
-function moodTint(period, cold, tired) {
-  if (period === 1 || period === 2) return '整个人有点蔫'
-  if (tired) return '眼皮沉'
-  return ''
-}
-
-function wakeMinute(cfg, t, calendar) {
-  const table = cfg[calendar.routine] || cfg.日常 || []
-  for (const b of table) {
-    if (Array.isArray(b) && /睡/.test(String(b[2] || ''))) return toMinute(b[1])
+/**
+ * A cold is an episode, not an independent daily coin flip: a start day seeded
+ * by the date lasts 2–3 days, so "嗓子有点紧" cannot appear and vanish overnight.
+ */
+export function coldEpisode(cfg, ymd) {
+  const month = Number(String(ymd).slice(5, 7))
+  if (!Number.isFinite(month)) return null
+  const chance = [3, 4, 10, 11].includes(month) ? 0.075 : [12, 1, 2].includes(month) ? 0.05 : 0.02
+  // Prefer an older ongoing episode over a fresh start, so a runny nose
+  // does not reset to "day 1" just because today's coin also landed cold.
+  for (let back = 2; back >= 0; back--) {
+    const day = shiftDay(ymd, -back)
+    if (!day) continue
+    const startRoll = rng(hashSeed(day, 'cold-start'))()
+    if (startRoll >= chance) continue
+    const duration = rng(hashSeed(day, 'cold-duration'))() < 0.45 ? 2 : 3
+    const dayIndex = back + 1
+    if (dayIndex <= duration) return { day: dayIndex, duration, start: day }
   }
-  const starts = table.map((b) => toMinute(Array.isArray(b) ? b[0] : '')).filter((x) => x >= 0)
-  return starts.length ? Math.min(...starts) : 8 * 60
+  return null
+}
+
+function spokenClock(minute) {
+  const m = ((Math.round(minute) % 1440) + 1440) % 1440
+  const h = Math.floor(m / 60)
+  const mm = m % 60
+  const words = ['十二', '一', '两', '三', '四', '五', '六', '七', '八', '九', '十', '十一']
+  const hw = words[h % 12]
+  if (mm === 0) return `${hw}点`
+  if (mm === 30) return `${hw}点半`
+  return `${pad2(h)}:${pad2(mm)}`
+}
+
+/**
+ * Last night's sleep, combining yesterday evening and today before noon. Falls
+ * back to the routine's own sleep row when neither plan exists yet.
+ */
+export function lastNightSleep(cfg, t, todayItems, nowMinute = null) {
+  const yesterday = readPlan(shiftDay(t.ymd, -1))
+  const limit = Number.isFinite(nowMinute) ? nowMinute : 12 * 60
+  const evening = (yesterday?.items || []).filter((x) => x && sleepText.test(x.what) && x.start >= 16 * 60)
+  const morning = (todayItems || []).filter((x) => x && sleepText.test(x.what) && x.end <= Math.min(12 * 60, limit) && x.start < 12 * 60)
+  let minutes = 0
+  let startMinute = null
+  let wakeMinute = null
+  let source = 'plans'
+  for (const row of evening) {
+    minutes += Math.max(0, row.end - row.start)
+    if (startMinute === null) startMinute = row.start
+  }
+  for (const row of morning) {
+    minutes += Math.max(0, row.end - row.start)
+    if (startMinute === null) startMinute = row.start
+    wakeMinute = Math.max(wakeMinute ?? 0, row.end)
+  }
+  // Still inside today's main sleep: this is not "last night", it is this
+  // night. Keep the elapsed part only, so a 00:30 question does not claim 8h.
+  const ongoing = (todayItems || []).find((x) => x && /睡/.test(x.what) && x.start <= limit && x.end > limit)
+  if (ongoing) {
+    minutes = Math.max(0, limit - ongoing.start)
+    startMinute = ongoing.start
+    wakeMinute = null
+    source = 'ongoing'
+  } else if (!morning.length && limit < 6 * 60 && (yesterday?.items || []).length) {
+    // Before dawn with no ongoing sleep: use the last completed main sleep
+    // instead of pretending the future 02:00–08:30 segment already happened.
+    const longest = (yesterday.items || []).filter((x) => sleepText.test(x.what)).sort((a, b) => (b.end - b.start) - (a.end - a.start))[0]
+    if (longest && longest.end - longest.start >= 120) {
+      minutes = longest.end - longest.start
+      startMinute = longest.start
+      wakeMinute = longest.end
+      source = 'previous'
+    }
+  }
+  if (minutes < 120 && !morning.length && source !== 'ongoing') {
+    const routine = normalizeRoutine(cfg, t && t.routine)
+    const sleep = (routine || []).find((x) => sleepText.test(x.what))
+    if (sleep) {
+      minutes = Math.max(0, sleep.end - sleep.start)
+      startMinute = sleep.start
+      wakeMinute = sleep.end
+      // Before dawn this is still a projection, not a fact — even if a short
+      // evening nap exists in yesterday's plan.
+      source = limit < 6 * 60 ? 'future' : 'routine'
+    }
+  }
+  return {
+    minutes: Math.round(minutes),
+    startMinute: Number.isFinite(startMinute) ? startMinute : null,
+    wakeMinute: Number.isFinite(wakeMinute) ? wakeMinute : null,
+    source,
+  }
+}
+
+/** How coherent are phone, activity and reply speed? */
+export function replyReadiness({ phone = '在手', what = '', behavior = '', source = '' } = {}) {
+  const text = String(what || '')
+  if (behavior === 'sleep' || sleepText.test(text)) return { id: 'asleep', label: '睡着了，回不了' }
+  if (behavior === 'bath' || /洗澡|冲澡|洗漱|刷牙|洗脸|面膜|洗头/.test(text)) return { id: 'later', label: '手机不在手边，等会儿回' }
+  if (phone === '不在手边') return { id: 'later', label: '手机不在手边，等会儿回' }
+  if (source === 'travel' || behavior === 'walk') return { id: 'slow', label: '在路上，回得慢' }
+  if (phone === '静音') return { id: 'slow', label: '手机静音，可能过会儿才看到' }
+  if (phone === '在床头') return { id: 'slow', label: '手机在床头，回得慢' }
+  return { id: 'now', label: '手机在手，能马上回' }
+}
+
+/**
+ * Energy is derived from real sleep + body state + what she is doing, then
+ * blended lightly with the slow continuity baseline. It never announces
+ * "精力不错" on a four-hour night.
+ */
+export function vitalityFor({ sleep, t, period = 0, cold = null, current = {}, baseline } = {}) {
+  const minutes = Number(sleep?.minutes) || 420
+  let energy = 58 + (minutes - 420) * 0.12
+  const reasons = []
+  const unfinishedNight = ['previous', 'future', 'ongoing'].includes(sleep?.source)
+  if (!unfinishedNight && minutes < 300) { energy -= 8; reasons.push('昨晚没怎么睡够') }
+  else if (!unfinishedNight && minutes < 400) reasons.push('睡得不太够')
+  if (period === 1 || period === 2) { energy -= 12; reasons.push('腰有点酸') }
+  else if (period) { energy -= 5; reasons.push('肚子还坠着') }
+  if (cold) { energy -= cold.day >= 2 ? 6 : 10; reasons.push(cold.day === 1 ? '嗓子发紧' : '还有点鼻音') }
+  const minute = Number(t?.minuteOfDay) || 0
+  const wake = Number.isFinite(sleep?.wakeMinute) ? sleep.wakeMinute : 8 * 60
+  const awake = minute >= wake ? minute - wake : minute + 1440 - wake
+  const early = minute < 6 * 60 && unfinishedNight
+  if (!early && awake > 9 * 60) { energy -= 6; reasons.push('坐得有点久') }
+  if (awake < 30) energy -= 6
+  if (early && !sleepText.test(String(current.what || ''))) reasons.push('这个点还醒着')
+  if (/课|复习|考试|背书/.test(String(current.what || '')) || current.behavior === 'study') energy -= 4
+  energy = clamp(energy, 15, 95, 55)
+  if (Number.isFinite(Number(baseline))) energy = energy * 0.7 + Number(baseline) * 0.3
+  energy = Math.round(clamp(energy, 12, 96, 55))
+  const label = energy >= 82 ? '精力挺足' : energy >= 65 ? '还行' : energy >= 48 ? '有点累' : energy >= 32 ? '快没电了' : '撑不太住'
+  const lateStart = !unfinishedNight && Number.isFinite(sleep?.startMinute) && (sleep.startMinute >= 60 || sleep.startMinute >= 23 * 60)
+  if (lateStart && minutes < 420) {
+    reasons.unshift(minute >= 14 * 60 ? '昨晚没睡够' : `昨晚${spokenClock(sleep.startMinute)}才睡`)
+    for (let i = reasons.length - 1; i > 0; i--) if (/睡/.test(reasons[i])) reasons.splice(i, 1)
+  }
+  const sleepDebt = unfinishedNight ? 0 : Math.max(0, 480 - minutes)
+  const sleepDebtLabel = sleep?.source === 'ongoing' ? '这觉还没睡完'
+    : sleep?.source === 'future' ? '这觉还没睡'
+      : sleep?.source === 'previous' ? '还没睡这一觉'
+        : minutes >= 480 ? '睡得还行' : minutes >= 420 ? '睡眠欠一点' : minutes >= 300 ? '昨晚没睡够' : '昨晚睡得太少'
+  return {
+    energy,
+    label,
+    reasons: [...new Set(reasons)].slice(0, 3),
+    sleepDebt,
+    sleepDebtLabel,
+    spokenStart: Number.isFinite(sleep?.startMinute) ? spokenClock(sleep.startMinute) : '',
+    asleep: Boolean(current.behavior === 'sleep' || sleepText.test(String(current.what || ''))),
+  }
+}
+
+const texturePools = {
+  class: ['笔记本摊着，没写几行', '前排有人在打瞌睡', '窗外有人在打球'],
+  study: ['耳机里循环同一首', '桌上摊着没剪完的片子', '杯子里的水凉了'],
+  eat: ['人有点多，端着盘子找了会儿座', '今天的菜有点咸'],
+  phone: ['刷到一个很旧的视频', '一条消息看了两遍'],
+  idle: ['窗帘没拉开', '桌上那杯水凉了', '被子踢到一边'],
+  photo: ['光刚好落在墙上'],
+  walk: ['路边有人在遛狗'],
+  bath: [],
+  sleep: [],
+}
+
+export function placeCategory(current = {}) {
+  const location = String(current.locationId || '')
+  const text = String(current.what || '')
+  if (location === 'dorm') return 'dorm'
+  if (location === 'classroom') return 'class'
+  if (location === 'library') return 'library'
+  if (location === 'canteen') return 'canteen'
+  if (['outdoor', 'shop', 'mall', 'cafe', 'mcdonalds'].includes(location)) return 'out'
+  if (/宿舍|床上|躺|被窝|窝在/.test(text)) return 'dorm'
+  if (/图书馆/.test(text)) return 'library'
+  if (/课|教室|教学楼/.test(text)) return 'class'
+  if (/食堂|餐厅/.test(text)) return 'canteen'
+  if (/出门|外面|街上|逛|拍照|超市|便利店/.test(text) || current.behavior === 'walk' || current.source === 'travel') return 'out'
+  return 'any'
+}
+
+function segmentTexture(current, t, { asleep, hasMoment }) {
+  if (asleep || hasMoment || current.source === 'travel') return ''
+  const behavior = String(current.behavior || '')
+  const location = String(current.locationId || '')
+  const what = String(current.what || '')
+  let pool = texturePools[behavior] || []
+  if (behavior === 'eat' && location === 'dorm') pool = ['外卖盒摊在桌上', '汤洒了一点在袋子上']
+  if (behavior === 'idle' && location === 'dorm') pool = [/躺|床|窝/.test(what) ? '被子踢到一边' : '窗帘没拉开', '桌上那杯水凉了']
+  if (behavior === 'idle' && location === 'classroom') pool = ['前排有人在打瞌睡', '投影有点糊']
+  if (behavior === 'phone' && location === 'dorm') pool = ['刷到一个很旧的视频', '一条消息看了两遍']
+  if (!pool.length) return ''
+  const random = rng(hashSeed(t.ymd, 'texture|' + current.start + '|' + current.what))
+  if (random() > 0.52) return ''
+  return pool[Math.floor(random() * pool.length) % pool.length]
+}
+
+function nearestSegment(timeline, nowMs) {
+  if (!timeline.length) return null
+  let previous = timeline[0]
+  for (const row of timeline) {
+    if (row.start <= nowMs) previous = row
+    if (row.start > nowMs) break
+  }
+  return previous || timeline[0]
 }
 
 function weekdayName(n) {
   return ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'][n] || ''
 }
 
-function minuteLabel(minute) {
-  const m = ((Math.round(minute) % 1440) + 1440) % 1440
-  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`
+function calendarEvidence(calendar) {
+  if (calendar.special) return `${calendar.special.名}第 ${calendar.dayIndex} 天`
+  if (calendar.vacation) return `${calendar.vacation.名}第 ${calendar.dayIndex} 天`
+  if (calendar.festival && calendar.festival.起) return `${calendar.festival.名}放假`
+  if (calendar.term) return `学期中（${calendar.term.名}）`
+  return '不在校历里，按平常走'
 }
 
 /** Compress into a few lines, plus "why it computed this way". */
@@ -510,12 +775,15 @@ export function generate(cfg, now = new Date(), options = {}) {
   const calendar = todayCalendar(cfg, t)
   const deviation = todayDeviation(cfg, t, calendar.routine)
   const type = dayType(cfg, t, calendar)
-  const plan = dailyPlan(cfg, t, calendar, deviation, type)
+  const plan = dailyPlan(cfg, t, calendar, deviation, type, { mergeFuture: true, nowMinute: t.minuteOfDay })
   const dayStartMs = zonedDayStartMs(now, t, tz)
   const baseTimeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs, (minute) => zonedDateTimeMs(t.ymd, minute, tz))
   const timeline = addWorldToTimeline(baseTimeline, cfg.地图)
-  const current = segmentAt(timeline, now.getTime()) || { what: '闲着', phone: '在手', outfit: '' }
+  let current = segmentAt(timeline, now.getTime()) || nearestSegment(timeline, now.getTime()) || {
+    what: '闲着', phone: '在手', outfit: '', behavior: 'idle', locationId: 'dorm', source: 'fallback',
+  }
   const world = worldStateAt(timeline, now.getTime(), cfg.地图)
+  const coverage = timelineCoverage(plan.items)
   const localMinute = (ms) => {
     const at = zonedNow(new Date(ms), tz)
     const delta = dayDiff(t.ymd, at.ymd)
@@ -523,58 +791,139 @@ export function generate(cfg, now = new Date(), options = {}) {
   }
   const replay = options.replay ? buildReplayFrames(timeline, cfg.地图, localMinute) : undefined
 
+  // Body, sleep and the resulting energy.
+  const period = menstrualDay(cfg, t.ymd)
+  const cold = coldEpisode(cfg, t.ymd)
+  const sleep = lastNightSleep(cfg, { ...t, routine: calendar.routine }, plan.items, t.minuteOfDay)
+  const reply = replyReadiness({ phone: current.phone, what: current.what, behavior: current.behavior, source: current.source })
+  const vitality = vitalityFor({ sleep, t, period, cold, current, baseline: options.energyBaseline })
+  // Older/model plans can leave "手机在手" on a sleep segment; the displayed
+  // state must still be coherent with being asleep.
+  const displayPhone = vitality.asleep && current.phone === '在手' ? '在床头' : current.phone
+  if (displayPhone !== current.phone) current = { ...current, phone: displayPhone }
+
+  // Whole-timeline facts used to keep today's small things honest.
+  const outLocations = new Set(['outdoor', 'shop', 'mall', 'cafe', 'mcdonalds'])
+  const outings = timeline
+    .filter((x) => x.source !== 'travel' && (outLocations.has(x.locationId) || /出门|外面|街上|逛|拍照/.test(String(x.what || ''))))
+    .map((x) => ({ start: localMinute(x.start), end: localMinute(x.end) }))
+  const meals = timeline
+    .filter((x) => x.behavior === 'eat' || /吃|饭|外卖|夜宵|零食/.test(String(x.what || '')))
+    .map((x) => ({ start: localMinute(x.start), end: localMinute(x.end) }))
+  const currentCategory = placeCategory(current)
+
+  // Today's small thing is persisted and advances by its own stages.
+  let moments = null
+  let moment = null
+  if (options.moments !== false) {
+    const people = (Array.isArray(options.people) ? options.people : []).map((x) => String(x || '').trim()).filter(Boolean)
+    moments = ensureMoments(cfg, t, calendar, {
+      deviation,
+      term: Boolean(calendar.term && !calendar.holiday && !calendar.special),
+      outing: outings.length > 0,
+      cold: Boolean(cold),
+      period: Boolean(period),
+      tired: vitality.energy < 55,
+      people,
+      now: now.getTime(),
+    })
+    moment = momentContext(moments, t.minuteOfDay, {
+      asleep: vitality.asleep,
+      maxAgeMinutes: 360,
+      currentCategory,
+      outings,
+      meals,
+    })
+    // A background errand is not worth mentioning in the middle of a class,
+    // or while walking to the next place without a stable location.
+    if (currentCategory === 'class' || /课|自习|复习|背书/.test(String(current.what || '')) || current.source === 'travel') moment = null
+  }
+
+  const conditions = []
+  if (deviation.flat) conditions.push(type.id === 'schoolDay' ? '今天没去上课' : '今天没打算出门')
+  else if (deviation.skipAfternoon) conditions.push('下午的课没去')
+  if (period === 1 || period === 2) conditions.push('腰有点酸')
+  else if (period) conditions.push('肚子还坠着')
+  if (cold) conditions.push(cold.day === 1 ? '嗓子有点紧' : '还有点鼻音')
+  if (vitality.reasons.length) {
+    for (const reason of vitality.reasons) {
+      if (conditions.length >= 2) break
+      if (!conditions.includes(reason)) conditions.push(reason)
+    }
+  }
+
   const evidence = []
-  evidence.push(calendar.special ? `${calendar.special.名}第 ${calendar.dayIndex} 天`
-    : calendar.vacation ? `${calendar.vacation.名}第 ${calendar.dayIndex} 天`
-      : (calendar.festival && calendar.festival.起) ? `${calendar.festival.名}放假`
-        : calendar.term ? `学期中（${calendar.term.名}）`
-          : '不在校历里，按平常走')
+  evidence.push(calendarEvidence(calendar))
   evidence.push(`日子类型：${type.name}｜作息表：${calendar.routine}`)
   if (world.location) evidence.push(world.moving && world.destination
     ? `位置：${world.location.name} → ${world.destination.name}`
     : `位置：${world.location.name}`)
-  evidence.push(`此刻命中：${current.what}（手机${current.phone || '在手'}${current.outfit ? '，穿' + current.outfit : ''}）`)
+  evidence.push(`此刻命中：${current.what}（手机${displayPhone || '在手'}${current.outfit ? '，穿' + current.outfit : ''}）`)
+  evidence.push(`昨晚睡眠：${Math.round((sleep.minutes || 0) / 60 * 10) / 10} 小时（${sleep.source}）｜精力：${vitality.label} ${vitality.energy}`)
+  evidence.push(`回复：${reply.label}`)
+  if (cold) evidence.push(`感冒第 ${cold.day} 天，共约 ${cold.duration} 天`)
+  if (moment) evidence.push(`今天的小事：${moment.title}（第 ${moment.stageIndex + 1} 阶段，${moment.ageMinutes} 分钟前）`)
+  if (!coverage.complete) evidence.push(`时间线需要修复：空档 ${coverage.gaps.length}，重叠 ${coverage.overlaps.length}`)
   if (deviation.flat) evidence.push('今天没按表走：躺平')
   if (deviation.outing) evidence.push('今天没按表走：临时出门')
   if (deviation.skipAfternoon) evidence.push('今天没按表走：翘了下午的课')
 
-  const r = rng(hashSeed(t.ymd, 'sleep'))
-  const sleepAt = [60, 120, 150][Math.floor(r() * 3) % 3]
-  const wake = wakeMinute(cfg, t, calendar)
-  const tired = wake - sleepAt < 360
-  const period = menstrualDay(cfg, t.ymd)
-  const cold = r() < 0.08 && [3, 4, 10, 11].includes(t.month)
-  const conditions = []
-  if (tired && t.minuteOfDay < 15 * 60) conditions.push(`昨晚${sleepAt === 60 ? '一点' : sleepAt === 120 ? '两点' : '两点半'}才睡`)
-  if (period) conditions.push(period <= 3 ? '腰有点酸' : '肚子还坠着')
-  if (cold) conditions.push('嗓子有点紧')
-  const tint = moodTint(period, cold, tired)
-  if (tint) conditions.push(tint)
-
+  const texture = segmentTexture(current, t, { asleep: vitality.asleep, hasMoment: Boolean(moment) })
   const lines = []
-  lines.push(`（今天）${t.month}月${t.day}日 ${weekdayName(t.weekday)}·${type.name}${conditions.length ? '。' + conditions.slice(0, 2).join('；') : '。'}。`)
+  const bodyText = conditions.slice(0, 2).join('；')
+  lines.push(`（今天）${t.month}月${t.day}日 ${weekdayName(t.weekday)}·${type.name}${bodyText ? '。' + bodyText : ''}。`)
 
   let nowLine = `（此刻）${current.what}`
-  if (current.phone && current.phone !== '在手') nowLine += phoneSuffix[current.phone] || ''
-  if (current.outfit && !/睡/.test(current.what)) nowLine += `，身上是${current.outfit}`
-  if (!/睡/.test(current.what) && !deviation.flat) nowLine += hourVariant(t, current.what)
+  if (current.outfit && !/睡|洗澡|冲澡|洗漱|浴巾/.test(current.what) && !['sleep', 'bath'].includes(current.behavior)) {
+    nowLine += `，身上是${current.outfit}`
+  }
+  if (reply.id !== 'asleep' && reply.label) nowLine += `，${reply.label}`
+  else if (vitality.asleep && displayPhone) nowLine += `，手机${displayPhone}`
+  if (texture) nowLine += `，${texture}`
   lines.push(nowLine + '。')
 
-  const recent = recentSegments(timeline, now.getTime()).slice(0, 2).reverse()
-  if (recent.length) lines.push(`（早些时候）${recent.map((x) => x.what).join('，然后')}。`)
-  const next = nextSegment(timeline, now.getTime())
-  if (next) lines.push(`（接下来）${minuteLabel(localMinute(next.start))} ${next.what}。`)
+  const activityKey = (what, behavior) => {
+    const text = String(what || '')
+    // Check eating first: "坐在床边吃" is not lying in bed.
+    if (/吃|饭|外卖/.test(text) || behavior === 'eat') return 'eat'
+    if (/躺|窝|刷手机|在床上|被窝/.test(text) || behavior === 'phone') return 'bed'
+    if (/课|自习|复习|背书/.test(text) || behavior === 'study') return 'study'
+    return behavior || text
+  }
+  const startedAt = new Set([activityKey(current.what, current.behavior)])
+  const recent = []
+  for (const row of recentSegments(timeline, now.getTime(), 240)) {
+    if (!row.what || /睡/.test(row.what) || row.source === 'travel' || row.what === current.what) continue
+    const key = activityKey(row.what, row.behavior)
+    if (startedAt.has(key)) continue
+    startedAt.add(key)
+    recent.push(row.what)
+    if (recent.length >= 2) break
+  }
+  recent.reverse()
+  if (recent.length) lines.push(`（刚才）${recent.join('，然后')}。`)
+  if (moment) lines.push(`（零碎）${moment.text}。`)
+
+  const next = vitality.asleep ? null : timeline
+    .filter((x) => x.start > now.getTime() && x.source !== 'travel' && !/睡/.test(x.what))
+    .sort((a, b) => a.start - b.start)[0]
+  const nextAt = next ? localMinute(next.start) : NaN
+  if (next && Number.isFinite(nextAt) && nextAt < 1440 && next.start - now.getTime() <= 6 * 3600000) {
+    lines.push(`（接下来）${clockOf(nextAt)} 大概${next.what}。`)
+  }
 
   if (t.hour >= 18) {
     const tomorrow = zonedNow(addZonedDays(now, tz, 1), tz)
     const tomorrowCal = todayCalendar(cfg, tomorrow)
     const tomorrowType = dayType(cfg, tomorrow, tomorrowCal)
     const tomorrowPlan = dailyPlan(cfg, tomorrow, tomorrowCal, {}, tomorrowType)
+    const sleepEnd = tomorrowPlan.items.find((x) => /睡/.test(x.what) && x.end <= 12 * 60)?.end
     const firstWake = tomorrowPlan.items.find((x) => x.start >= 6 * 60 && !/睡/.test(x.what))
-    lines.push(`（明天）${weekdayName(tomorrow.weekday)}·${tomorrowType.name}${firstWake ? `，${minuteLabel(firstWake.start)} ${firstWake.what}` : ''}。`)
+    const wakeMinute = Number.isFinite(sleepEnd) ? sleepEnd : (firstWake ? firstWake.start : null)
+    lines.push(`（明天）${weekdayName(tomorrow.weekday)}·${tomorrowType.name}${wakeMinute ? `，${minuteLabel(wakeMinute)} 左右起` : ''}。`)
   }
 
-  lines.push('（说话）这些是你自己的日子，别当时间表念：不说"按日程/计划/安排"，不报时间段、不列清单；他问起就像闲聊挑一两件说，带点感受。你的场景以「（此刻）」这行为准；他说他在地铁/公司/家，那是他的场景，别安到自己身上。')
+  lines.push('（说话）这是你自己的日子，别当时间表念：不报时间段、不列清单，他问起挑一两件说就行。括号里写死的是确定发生的事；没写到的细节可以随口补，但别改正在做的事、地点和手机状态。他说自己在地铁/公司/家，那是他的场景，别安到你身上。')
 
   return {
     text: lines.join('\n'),
@@ -600,12 +949,25 @@ export function generate(cfg, now = new Date(), options = {}) {
       to: x.to || '',
       links: Array.isArray(x.links) ? x.links : [],
     })),
+    vitality,
+    reply,
+    lastNight: sleep,
+    cold,
+    period,
+    moment,
+    moments,
+    coverage,
     ...(options.rawTimeline ? { rawTimeline: timeline } : {}),
     ...(replay ? { replay } : {}),
   }
 }
 
-let cache = { at: 0, cfg: null }
+let cache = { path: '', mtimeMs: 0, size: 0, cfg: null }
+
+function writeConfigFile(value) {
+  mkdirSync(dirname(configPath()), { recursive: true })
+  return atomicWriteJson(configPath(), value)
+}
 
 export function migrateConfig(raw) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
@@ -645,51 +1007,62 @@ export function migrateConfig(raw) {
   // v8 adds the continuity settlement policy. Runtime history remains in
   // separate plugin-owned files and is intentionally not part of settings.
   if (version < 8 && (!next.连续性 || typeof next.连续性 !== 'object')) next.连续性 = copy(defaultConfig.连续性)
+  // v11 moves the optional role description and wardrobe into validated
+  // settings, so the life layer no longer ships hardcoded persona copy.
+  if (version < 11) {
+    if (typeof next.角色设定 !== 'string') next.角色设定 = ''
+    if (!next.衣柜 || typeof next.衣柜 !== 'object') next.衣柜 = copy(defaultConfig.衣柜)
+  }
+  // v12 adds sharing policy; old configs keep working with low-disturbance
+  // defaults and no persisted ledger until the first real share.
+  if (version < 12) next.主动分享 = { ...defaultSharingConfig, ...(next.主动分享 || {}) }
   next.配置版本 = LIFE_CONFIG_VERSION
   return { value: next, changed: version !== LIFE_CONFIG_VERSION || Object.hasOwn(source, '事件池') }
 }
 
-function writeConfigFile(value) {
-  mkdirSync(dirname(CONFIG_PATH), { recursive: true })
-  const tmp = CONFIG_PATH + '.tmp'
-  writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8')
-  renameSync(tmp, CONFIG_PATH)
-}
-
 export function readConfig() {
-  try {
-    const st = statSync(CONFIG_PATH)
-    if (cache.cfg && cache.at === st.mtimeMs) return cache.cfg
-    const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
-    const migrated = migrateConfig(raw)
+  const path = configPath()
+  const read = readJsonBounded(path, { maxBytes: CONFIG_MAX_BYTES })
+  if (read.ok) {
+    if (cache.cfg && cache.path === path && cache.mtimeMs === read.mtimeMs && cache.size === read.size) return cache.cfg
+    const migrated = migrateConfig(read.value)
     const cfg = normalizeConfig(migrated.value)
-    if (migrated.changed) writeConfigFile(cfg)
-    cache = { at: statSync(CONFIG_PATH).mtimeMs || st.mtimeMs, cfg }
-    return cfg
-  } catch (e) {
-    if (e && e.code === 'ENOENT') {
-      try { writeConfigFile(defaultConfig) } catch {}
+    if (migrated.changed) {
+      writeConfigFile(cfg)
+      try {
+        const st = statSync(path)
+        cache = { path, mtimeMs: st.mtimeMs, size: st.size, cfg }
+        return cfg
+      } catch {}
     }
-    cache = { at: 0, cfg: defaultConfig }
-    return defaultConfig
+    cache = { path, mtimeMs: read.mtimeMs, size: read.size, cfg }
+    return cfg
   }
+  // Missing or corrupt: never keep serving a broken file forever.
+  if (read.reason !== 'missing') quarantine(path)
+  try { writeConfigFile(defaultConfig) } catch {}
+  cache = { path, mtimeMs: 0, size: 0, cfg: defaultConfig }
+  return defaultConfig
 }
 
 export function saveConfig(patch) {
-  const prev = readConfig()
-  const next = normalizeConfig({ ...prev, ...(patch && typeof patch === 'object' ? patch : {}) })
-  writeConfigFile(next)
-  cache = { at: 0, cfg: null }
-  return next
+  const run = () => {
+    const prev = readConfig()
+    const next = normalizeConfig({ ...prev, ...(patch && typeof patch === 'object' ? patch : {}) })
+    writeConfigFile(next)
+    cache = { path: configPath(), mtimeMs: 0, size: 0, cfg: null }
+    return next
+  }
+  const locked = withLock(configPath() + '.lock', run, { staleMs: 10000 })
+  return locked === undefined ? run() : locked
 }
 
 /** Replace the whole life configuration after a complete external validation. */
 export function replaceConfig(input) {
   const next = normalizeConfig(input)
   writeConfigFile(next)
-  cache = { at: 0, cfg: null }
+  cache = { path: configPath(), mtimeMs: 0, size: 0, cfg: null }
   return next
 }
 
-export { pad2, phoneChoices }
-
+export { pad2, phoneChoices, minuteLabel, clockOf, spokenClock, segmentTexture }

@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "2.0.0",
+  "version": "2.3.0",
   "description": "大肥鱼的完整人格智能体（DSH 插件）：生活、内在、长期记忆、自我叙事、关系、目标、主动性、地图与相机。",
   "type": "module",
   "license": "MIT",
@@ -27,7 +27,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check continuity.js && node --check reflection.js && node --check mind.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check backup.js && node --check client.js && node --check scripts/build-xueyuan-map.mjs",
+    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check storage.js && node --check moments.js && node --check sharing.js && node --check continuity.js && node --check reflection.js && node --check mind.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check backup.js && node --check client.js && node --check scripts/build-xueyuan-map.mjs && node --check scripts/simulate-sharing.mjs",
     "test": "node --test",
     "test:ui": "node scripts/verify-ui.mjs",
     "test:all": "npm test && npm run test:ui"
@@ -51,6 +51,9 @@
     "image-prompt.js",
     "life.js",
     "state.js",
+    "storage.js",
+    "moments.js",
+    "sharing.js",
     "world.js",
     "runtime.js",
     "plan.js",

@@ -15,6 +15,7 @@ import { appendRotatingLog, withStreamTimeout } from './runtime.js'
 import { BEHAVIOR_RULES, defaultWorldConfig, normalizeWorldConfig } from './world.js'
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
+const sleepText = /(?:睡着|午睡|补觉|还睡着|睡熟|睡了|睡到|睡觉)/
 
 const log = (m) => {
   try {
@@ -44,8 +45,13 @@ export function pickModel(agent, cfg = {}) {
 }
 
 export function buildPrompt(o) {
-  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, recent, continuity, relationships } = o
-  const persona = String(cfg.角色设定 || '大肥鱼：21 岁，在北京读大三，学视觉传达；懒、嘴硬心软、爱损人；室友阿岚（考研）和小满（恋爱脑）；周日晚上跟妈妈视频。')
+  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, sleep, recent, continuity, relationships } = o
+  // Persona is user settings, never a constant in the life layer. If nothing
+  // is configured, write a day without inventing a personality for her.
+  // The life layer writes a day, not a personality. Persona stays in the
+  // chat prompt / mind layer; here only an explicit role description is used.
+  const configured = [String(cfg.角色设定 || '').trim()].filter(Boolean)
+  const persona = configured.length ? configured.join('\n') : '（没有配置角色设定：只写作息与生活事实，不要添加性格评价。）'
   const schedule = classes.length ? classes.map((x) => `${x[0]}-${x[1]} ${x[2]}`).join('；') : '这天没课'
   const routineRows = Array.isArray(routine) ? routine : []
   const routineSkeleton = routineRows.length ? routineRows.map((x) => `${x[0]}-${x[1]} ${x[2]}`).join('；') : '没有额外作息约束'
@@ -64,6 +70,7 @@ export function buildPrompt(o) {
     `- 课表：${schedule}`,
     `- ${calendarLabel}`,
     `- 身体/状态：${body || '平常'}`,
+    `- 昨晚睡眠：${sleep || '还没有记录，按作息骨架推断'}`,
     '',
     '## 最近三天（这些桥段**不要再写**，换别的）',
     recent || '（还没有记录）',
@@ -81,14 +88,16 @@ export function buildPrompt(o) {
     '4. 「outfit」写一件具体的衣服（睡衣 / 藏青卫衣 / 黑大衣 / 牛仔外套…），睡觉那几段写睡衣；',
     '5. 「phone」只能是：在手 / 静音 / 在床头 / 不在手边；',
     '6. 以作息骨架为主，课表覆盖冲突时段；可以细化生活细节，但不要擅自改变睡醒、上课和用餐的大致区间，身体/状态要求优先；',
-    '7. 全天要有起伏：赖床、走神、临时出门、被老师点名、快递、猫，都可以有，但别夸张；最近三天出现过的具体桥段不要重复；',
+    '7. 全天最多一两件小插曲（快递、猫、洗衣服、被叫走），不要堆戏剧化事件；最近三天出现过的具体桥段不要重复；',
     '8. 每段都填写 locationId 和 behavior；locationId 只能从下面地点中选，behavior 只能从下面行为中选；',
     `   地点：${locations}`,
     `   行为：${behaviors}`,
     '9. locationId 表示这一段实际停留的地点；behavior 表示她本人正在做的动作，不要把猫、狗、室友的动作算成她的；',
-    '10. 如果某一段确实推进了上面已有项目，可填写 links；只能使用上面列出的 type 和 id，不得虚构。长期主线可附 progressDelta（1–20）；取快递等一次性事项只能关联 task；',
-    '11. 如果这一段确实和上面已有的人互动，可填写 people；只能使用 person id，tone 只能是 warm / neutral / tense，不得凭空创建人物；',
-    '12. links 和 people 都只是意图关联，只有该段到时真实结束且没有被 life_adjust 覆盖，系统才会结算；不要出现"日程""计划""安排表"这类词；',
+    '10. 手机状态要和正在做的事一致：睡觉写「在床头」，洗澡/洗漱写「不在手边」，上课写「静音」；不要一边睡着一边「在手」；',
+    '11. 两段之间留出真实的过渡（走路、收拾、洗澡），不要上一秒在教室下一秒已经躺下；精力要和睡眠、身体状态对得上；',
+    '12. 如果某一段确实推进了上面已有项目，可填写 links；只能使用上面列出的 type 和 id，不得虚构。长期主线可附 progressDelta（1–20）；取快递等一次性事项只能关联 task；',
+    '13. 如果这一段确实和上面已有的人互动，可填写 people；只能使用 person id，tone 只能是 warm / neutral / tense，不得凭空创建人物；',
+    '14. links 和 people 都只是意图关联，只有该段到时真实结束且没有被 life_adjust 覆盖，系统才会结算；不要出现"日程""计划""安排表"这类词；',
     '',
     '## 只输出 JSON，不要解释、不要代码块外的文字',
     '{"title":"一句话概括这一天","mood":"两句以内的心情底色","items":[{"start":"07:40","end":"08:10","what":"刚起，脸还有点肿","phone":"在手","outfit":"睡衣","locationId":"dorm","behavior":"idle","links":[{"type":"task","id":"已有ID"}],"people":[{"id":"已有person ID","tone":"warm"}]}]}',
@@ -118,7 +127,7 @@ function clockOf(minute) {
 }
 
 function fillLabel(x) {
-  return /睡/.test(x.what) ? '还睡着' : '闲一会儿'
+  return sleepText.test(x.what) ? '还睡着' : '闲一会儿'
 }
 
 /** Turn model output into a usable timeline; null if unusable. */
@@ -161,6 +170,12 @@ export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEnti
     })
   }
   if (!segs.length) return null
+  // A sleep segment with the phone "in hand" is the most common model slip;
+  // enforce the same coherence the local template and context rely on.
+  for (const row of segs) {
+    if (/睡着|午睡|补觉|还睡着|睡熟/.test(row.what) || row.behavior === 'sleep') row.phone = '在床头'
+    if (/洗澡|冲澡|洗漱|刷牙|洗脸|面膜|洗头/.test(row.what) || row.behavior === 'bath') row.phone = '不在手边'
+  }
   segs.sort((p, q) => p.start - q.start)
   const clean = []
   const inferred = (what, fallback = {}) => ({
@@ -179,10 +194,10 @@ export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEnti
   }
   const last = clean[clean.length - 1]
   if (last && last.end < 1440) {
-    const what = /睡/.test(last.what) ? '还睡着' : '躺床上刷手机'
+    const what = sleepText.test(last.what) ? '还睡着' : '躺床上刷手机'
     clean.push({ start: last.end, end: 1440, what, phone: '在床头', outfit: last.outfit || '睡衣', ...inferred(what) })
   }
-  const sleep = clean.filter((x) => /睡/.test(x.what)).reduce((n, x) => n + (x.end - x.start), 0)
+  const sleep = clean.filter((x) => sleepText.test(x.what)).reduce((n, x) => n + (x.end - x.start), 0)
   if (sleep < 360) return null
   return { title: String(raw.title || '').slice(0, 40), mood: String(raw.mood || '').slice(0, 80), items: clean }
 }

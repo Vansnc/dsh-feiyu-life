@@ -24,15 +24,19 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import {
-  readConfig, saveConfig, replaceConfig, generate, validateConfig, CONFIG_PATH,
-  zonedNow, zonedDateTimeMs, addZonedDays, todayCalendar, todayDeviation, menstrualDay,
+  readConfig, saveConfig, replaceConfig, generate, validateConfig, configPath,
+  zonedNow, zonedDateTimeMs, addZonedDays, todayCalendar, todayDeviation, menstrualDay, coldEpisode, lastNightSleep, spokenClock, placeCategory,
 } from './life.js'
 import {
-  dayType, dailyPlan, planPath, writePlan, deletePlan, archivePlan,
+  dayType, dailyPlan, planPath, readPlan, scheduleRevision, writePlan, deletePlan, archivePlan,
   restoreLatestPlan, listPlanHistory, cleanupPlans,
 } from './plan.js'
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
+import { cleanupMoments, momentSummary } from './moments.js'
+import {
+  buildCandidates, buildSharePrompt, commitShare, normalizeSharingConfig, readSharing, releaseShare, sharingStatus, takeShare,
+} from './sharing.js'
 import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } from './image.js'
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
 import { createSettingsBackup, restoreSettingsBackup } from './backup.js'
@@ -42,7 +46,7 @@ import {
   resetAffect, shouldReflect, sourceKind,
 } from './reflection.js'
 import {
-  applyCognition, externalPluginStatus, initiativeDecision, markInitiative, mindContext,
+  applyCognition, externalPluginStatus, mindContext,
   mutateGoal, mutateMemory, mutatePreference, readMind, writeMind,
 } from './mind.js'
 import {
@@ -74,8 +78,11 @@ function bodyHint(cfg, t, deviation = {}) {
     : deviation.outing ? '今天临时想出门走走'
       : deviation.skipAfternoon ? '今天不想去下午的课' : ''
   const d = menstrualDay(cfg, t.ymd)
+  const cold = coldEpisode(cfg, t.ymd)
   const body = d && d <= 3 ? '经期头几天，腰酸、想吃甜的、没力气'
-    : d ? '经期后段，肚子还坠着' : ''
+    : d ? '经期后段，肚子还坠着'
+      : cold ? (cold.day === 1 ? '有点感冒，嗓子发紧、没力气' : '感冒还没好，鼻子有点堵')
+        : ''
   return [body, detour].filter(Boolean).join('；')
 }
 
@@ -85,10 +92,15 @@ function recentSummary(cfg, t) {
   for (let i = 1; i <= 3; i++) {
     const d = new Date(Date.parse(t.ymd + 'T00:00:00Z') - i * 86400000).toISOString().slice(0, 10)
     try {
-      const plan = JSON.parse(readFileSync(planPath(d), 'utf8'))
+      const plan = readPlan(d)
+      if (!plan) continue
       const title = plan.title || (plan.type && plan.type.name) || ''
-      const bits = (plan.items || []).slice(0, 3).map((x) => x.what ?? x.在).join('、')
-      lines.push(`- ${d}：${title}${bits ? '（' + bits + '…）' : ''}`)
+      const items = plan.items || []
+      const head = items.slice(0, 3).map((x) => x.what ?? x.在).filter(Boolean).join('、')
+      const tail = items.slice(-2).map((x) => x.what ?? x.在).filter(Boolean).join('、')
+      const small = momentSummary(d)
+      const bits = [head ? head + '…' : '', tail ? '后段：' + tail : '', small.length ? '小事：' + small.join('、') : ''].filter(Boolean).join('；')
+      lines.push(`- ${d}：${title}${bits ? '（' + bits + '）' : ''}`)
     } catch {}
   }
   return lines.join('\n')
@@ -110,7 +122,8 @@ export function apply(ctx) {
   const mounted = new Map()
   let reflectionInFlight = 0
   const lastHumanAt = new Map()
-  const initiativeCheckedAt = new Map()
+  const lastHumanText = new Map()
+  const sharingCheckedAt = new Map()
   const initiativeRunning = new Set()
 
   const sessions = () => {
@@ -134,6 +147,7 @@ export function apply(ctx) {
   const mount = (agent) => {
     const cwd = String((agent && agent.session && agent.session.cwd) || '')
     if (!lastHumanAt.has(agent.id)) lastHumanAt.set(agent.id, Date.now())
+    if (!lastHumanText.has(agent.id)) lastHumanText.set(agent.id, '')
     const offs = []
     offs.push(agent.ctx.systemPrompt.context({
       name: 'feiyu-life',
@@ -142,15 +156,26 @@ export function apply(ctx) {
         try {
           const cfg = readConfig()
           if (!inWorkspace(cfg, cwd)) return ''
-          const life = generate(cfg).text
           const external = externalPluginStatus()
           const externalFirst = cfg.人格?.外部插件兼容 === '外部优先'
+          const state = cfg.连续性?.启用 === false ? null : readContinuity()
+          const people = state ? activePeople(state).map((x) => x.name) : []
+          const life = generate(cfg, new Date(), {
+            energyBaseline: state?.needs?.energy,
+            people,
+          })
           const inner = cfg.内在?.启用 === false || (externalFirst && external.mood) ? '' : affectContext(readAffect(cfg.内在), cfg.内在)
           const personalityCfg = externalFirst && external.memory ? { ...cfg.人格, 记忆启用: false } : cfg.人格
           const personality = cfg.人格?.启用 === false ? '' : mindContext(readMind(cfg.人格), pendingInbox?.text || '', personalityCfg)
-          if (cfg.连续性?.启用 === false) return [life, inner, personality].filter(Boolean).join('\n')
-          const state = readContinuity()
-          return `${life}\n${inner ? inner + '\n' : ''}${personality ? personality + '\n' : ''}（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`
+          if (!state) return [life.text, inner, personality].filter(Boolean).join('\n')
+          return [
+            life.text,
+            inner,
+            personality,
+            `（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区, vitality: life.vitality })}`,
+            continuitySummary(state, { timeZone: cfg.时区 }),
+            `（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`,
+          ].filter(Boolean).join('\n')
         } catch { return '' }
       },
     }))
@@ -176,7 +201,7 @@ export function apply(ctx) {
           if (reply && role === 'user') {
             const value = eventText(row)
             const source = sourceKind(row) || sourceKind(event)
-            if (value && !/runtime-context|time-context|system|tool-result|plugin/.test(source)) {
+            if (value && !/runtime-context|time-context|system|tool-result|plugin|feiyu-life-share/.test(source)) {
               input = value; kind = source || 'human'
               return { input, reply, kind, token: `${String(row?.id || event?.id || i)}:${replyId}` }
             }
@@ -190,8 +215,12 @@ export function apply(ctx) {
         const value = eventText(payload)
         const kind = sourceKind(payload)
         if (!value || /runtime-context|time-context|system|tool-result/.test(kind)) return
+        if (/feiyu-life-share/.test(kind)) return
         pendingInbox = { text: value, kind: kind || 'human', token: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}` }
-        if (!/feiyu-life-initiative|speak-up|bili-duty-scan/.test(kind)) lastHumanAt.set(agent.id, Date.now())
+        if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
+          lastHumanAt.set(agent.id, Date.now())
+          lastHumanText.set(agent.id, String(value).slice(0, 400))
+        }
       })
       if (typeof off === 'function') offs.push(off)
     } catch {}
@@ -422,13 +451,19 @@ export function apply(ctx) {
     const cfg = readConfig()
     const tz = String(cfg.时区 || 'Asia/Shanghai')
     const t = zonedNow(when, tz)
-    if (existsSync(planPath(t.ymd))) return true
+    if (readPlan(t.ymd)) return true
     if (writing.has(t.ymd)) return false
     writing.add(t.ymd)
     try {
       const calendar = todayCalendar(cfg, t)
       const deviation = todayDeviation(cfg, t, calendar.routine)
       const type = dayType(cfg, t, calendar)
+      const sleep = lastNightSleep(cfg, { ...t, routine: calendar.routine }, [], t.minuteOfDay)
+      const sleepHint = sleep.source === 'future' || sleep.source === 'ongoing'
+        ? '这一觉还没睡完'
+        : sleep.minutes
+          ? `约 ${(sleep.minutes / 60).toFixed(1)} 小时${Number.isFinite(sleep.startMinute) ? `，${spokenClock(sleep.startMinute)} 开始睡` : ''}`
+          : ''
       const agent = modelAgent()
       const continuityState = readContinuity()
       const revision = continuityRevision(continuityState)
@@ -443,6 +478,7 @@ export function apply(ctx) {
           classes: ((cfg.课表 || {})[t.weekday] || []).map((x) => [x[0], x[1], x[2]]),
           calendarLabel: calendarLabel(calendar),
           body: bodyHint(cfg, t, deviation),
+          sleep: sleepHint,
           recent: recentSummary(cfg, t),
           continuity: `${continuitySummary(continuityState, { timeZone: cfg.时区 })}\n${continuityContext(continuityState, readMemories(2), { timeZone: cfg.时区 })}`,
           continuityEntities: activeEntities(continuityState),
@@ -451,11 +487,11 @@ export function apply(ctx) {
         })
       }
       if (result) {
-        if (!writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model, continuityRevision: revision })) return false
+        if (!writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model, continuityRevision: revision, scheduleRevision: scheduleRevision(cfg) })) return false
         try { console.log('[feiyu-life] plan written by model: ' + t.ymd) } catch {}
       } else {
         const fallback = dailyPlan(cfg, t, calendar, deviation, type)
-        if (!writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template', continuityRevision: revision })) return false
+        if (!writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template', continuityRevision: revision, scheduleRevision: scheduleRevision(cfg) })) return false
         try { console.log('[feiyu-life] plan fell back to template: ' + t.ymd) } catch {}
       }
       return true
@@ -484,8 +520,7 @@ export function apply(ctx) {
 
   const runInitiative = async (forcedAgent = null, force = false) => {
     const cfg = readConfig()
-    const persona = cfg.人格 || {}
-    const proactive = persona.主动 || {}
+    const sharingCfg = normalizeSharingConfig(cfg.主动分享)
     const now = Date.now()
     const candidates = forcedAgent ? [forcedAgent] : sessions()
     const results = []
@@ -493,34 +528,76 @@ export function apply(ctx) {
       if (!agent || initiativeRunning.has(agent.id)) { if (agent) results.push({ sessionId: agent.id, sent: false, reason: 'busy' }); continue }
       const cwd = String(agent?.session?.cwd || '')
       if (!inWorkspace(cfg, cwd)) { results.push({ sessionId: agent.id, sent: false, reason: 'outside-workspace' }); continue }
-      const checked = initiativeCheckedAt.get(agent.id) || 0
-      if (!force && now - checked < Math.max(5, Number(proactive.检查间隔分钟) || 15) * 60000) { results.push({ sessionId: agent.id, sent: false, reason: 'check-interval' }); continue }
-      initiativeCheckedAt.set(agent.id, now)
-      const external = externalPluginStatus()
-      const life = generate(cfg, new Date(now))
-      const decision = initiativeDecision({
-        mind: readMind(persona, now), config: proactive, now, timeZone: cfg.时区,
-        lastHumanAt: lastHumanAt.get(agent.id) || now,
-        phone: life.current?.phone || '', behavior: life.world?.behavior || life.current?.behavior || '',
-        agentIdle: agent.status === undefined || agent.status === 'idle',
-        externalSpeakUp: persona.外部插件兼容 === '外部优先' && external.speakUp,
+      if (!sharingCfg.启用) { results.push({ sessionId: agent.id, sent: false, reason: 'disabled' }); continue }
+      const checked = sharingCheckedAt.get(agent.id) || 0
+      if (!force && now - checked < sharingCfg.检查间隔分钟 * 60000) { results.push({ sessionId: agent.id, sent: false, reason: 'check-interval' }); continue }
+      sharingCheckedAt.set(agent.id, now)
+      const continuity = readContinuity(now)
+      const life = generate(cfg, new Date(now), {
+        energyBaseline: cfg.连续性?.启用 === false ? undefined : continuity.needs.energy,
+        people: cfg.连续性?.启用 === false ? [] : activePeople(continuity).map((x) => x.name),
       })
-      if (!decision.ok) { results.push({ sessionId: agent.id, sent: false, reason: decision.reason }); continue }
-      if (!force && Math.random() >= decision.chance) { results.push({ sessionId: agent.id, sent: false, reason: 'probability' }); continue }
+      const current = life.current || {}
+      const ledger = readSharing(now)
+      const date = life.plan?.date || zonedNow(new Date(now), String(cfg.时区 || 'Asia/Shanghai')).ymd
+      const candidateList = buildCandidates({
+        now,
+        nowMinute: Number(life.currentMinute) || 0,
+        date,
+        life,
+        ledger,
+        continuityChanges: Array.isArray(continuity.recentChanges) ? continuity.recentChanges : [],
+        recentText: lastHumanText.get(agent.id) || '',
+      })
+      const decision = takeShare({
+        now,
+        timeZone: cfg.时区,
+        config: sharingCfg,
+        candidates: candidateList,
+        lastHumanAt: lastHumanAt.get(agent.id) || now,
+        phone: current.phone || '',
+        behavior: life.world?.behavior || current.behavior || '',
+        currentCategory: placeCategory(current),
+        what: current.what || '',
+        asleep: Boolean(life.vitality?.asleep),
+        agentBusy: agent.status !== undefined && agent.status !== 'idle',
+      })
+      if (!decision.ok) { results.push({ sessionId: agent.id, sent: false, reason: decision.reason || 'no-candidate' }); continue }
       initiativeRunning.add(agent.id)
       try {
+        const prompt = buildSharePrompt(decision.claim, { now, timeZone: cfg.时区 })
         const message = {
-          role: 'user', id: eventId(['initiative-message', agent.id, now]),
-          content: [{ type: 'text', text: `<feiyu-initiative>\n这是你自己在此刻浮现、并决定主动说出的念头，不是对方发来的话。\n缘由：${decision.reason}\n可以自然聊起：${decision.topic}\n只说你真想说的一两句；不要解释标签、后台、概率或“主动搭话”。如果此刻不适合说，也可以保持安静。\n</feiyu-initiative>` }],
-          source: { kind: 'feiyu-life-initiative' },
+          role: 'user', id: eventId(['share-message', agent.id, now, decision.claim.eventId]),
+          content: [{ type: 'text', text: prompt }],
+          source: { kind: 'feiyu-life-share' },
         }
-        await agent.followup(message)
-        markInitiative(readMind(persona, now), decision, persona, now)
-        appendEvent({ id: eventId(['initiative.sent', agent.id, now]), at: now, type: 'initiative.sent', source: 'native-personality', status: 'applied', reason: decision.reason, meta: { topic: decision.topic, chance: decision.chance, forced: force } }, { timeZone: cfg.时区 })
-        results.push({ sessionId: agent.id, sent: true, reason: decision.reason, topic: decision.topic })
+        // DSH's current followup(message) is a void inbox enqueue and exposes no
+        // model-reply receipt. Treat "accepted without throwing" as delivery;
+        // tolerate a future Promise-returning implementation without relying on it.
+        const accepted = agent.followup(message)
+        if (accepted && typeof accepted.then === 'function') await accepted
+        const committed = commitShare(decision.claim.claimId, { now: Date.now(), timeZone: cfg.时区 })
+        appendEvent({
+          id: eventId(['sharing.sent', agent.id, decision.claim.eventId, now]), at: now, type: 'sharing.sent',
+          source: 'feiyu-life-sharing', status: committed.ok ? 'applied' : 'commit-failed',
+          reason: decision.claim.title || '生活分享', meta: {
+            eventId: decision.claim.eventId, stageKey: decision.claim.stageKey,
+            category: decision.claim.category, score: decision.claim.score,
+            followup: decision.claim.followup, claimId: decision.claim.claimId,
+          },
+        }, { timeZone: cfg.时区 })
+        results.push({
+          sessionId: agent.id, sent: true, reason: 'shared', eventId: decision.claim.eventId,
+          title: decision.claim.title, score: decision.claim.score, committed: committed.ok,
+        })
       } catch (e) {
-        results.push({ sessionId: agent.id, sent: false, reason: 'followup-failed', error: String(e?.message || e).slice(0, 180) })
-        appendEvent({ id: eventId(['initiative.failed', agent.id, now]), at: now, type: 'initiative.failed', source: 'native-personality', status: 'failed', reason: String(e?.message || e).slice(0, 180) }, { timeZone: cfg.时区 })
+        const released = releaseShare(decision.claim.claimId, String(e?.message || e), { now: Date.now() })
+        appendEvent({
+          id: eventId(['sharing.failed', agent.id, decision.claim.eventId, now]), at: now, type: 'sharing.failed',
+          source: 'feiyu-life-sharing', status: 'failed', reason: String(e?.message || e).slice(0, 180),
+          meta: { eventId: decision.claim.eventId, stageKey: decision.claim.stageKey, released: released.ok },
+        }, { timeZone: cfg.时区 })
+        results.push({ sessionId: agent.id, sent: false, reason: 'followup-failed', eventId: decision.claim.eventId, error: String(e?.message || e).slice(0, 180) })
       } finally { initiativeRunning.delete(agent.id) }
     }
     return results
@@ -558,7 +635,7 @@ export function apply(ctx) {
       let applied = 0
       for (const at of days) {
         const date = zonedNow(at, tz).ymd
-        const life = generate(cfg, at, { rawTimeline: true })
+        const life = generate(cfg, at, { rawTimeline: true, moments: false })
         const result = settleTimeline({ date, timeline: life.rawTimeline || [], nowMs: now.getTime(), maxArtifacts: cfg.连续性?.每日成果上限 })
         applied += Number(result.applied) || 0
         if (result.applied) recordLifeSettlement(date, result, { timeZone: tz, now: now.getTime() })
@@ -625,8 +702,12 @@ export function apply(ctx) {
 
   const statePayload = (now) => {
     const cfg = readConfig()
-    const r = generate(cfg, now)
-    const t = zonedNow(now instanceof Date ? now : new Date(now), String(cfg.时区 || 'Asia/Shanghai'))
+    const at = now instanceof Date ? now : new Date(now)
+    const tz = String(cfg.时区 || 'Asia/Shanghai')
+    const sameDay = zonedNow(at, tz).ymd === zonedNow(new Date(), tz).ymd
+    // Previewing another date must not create decorative state for it.
+    const r = generate(cfg, at, { moments: sameDay })
+    const t = zonedNow(at, tz)
     return {
       ok: true,
       config: cfg,
@@ -648,9 +729,13 @@ export function apply(ctx) {
           model: r.plan.model || '',
         } : null,
         planHistoryCount: listPlanHistory(t.ymd).length,
+        vitality: r.vitality || null,
+        reply: r.reply || null,
+        moment: r.moment || null,
+        coverage: r.coverage || null,
       },
-      configPath: CONFIG_PATH,
-      time: (now instanceof Date ? now : new Date()).toISOString(),
+      configPath: configPath(),
+      time: at.toISOString(),
     }
   }
 
@@ -697,7 +782,7 @@ export function apply(ctx) {
         goals: mind.goals.filter((x) => x.status === 'active').length,
         relationships: mind.relationships.length,
       },
-      boundaries: ['长期记忆可查看、修正和淡忘', '敏感候选不自动沉淀', '自身目标仅限虚拟或插件本地范围', '主动搭话不会执行现实动作'],
+      boundaries: ['长期记忆可查看、修正和淡忘', '敏感候选不自动沉淀', '自身目标仅限虚拟或插件本地范围', '主动分享不会执行现实动作'],
     }
   }
 
@@ -1030,7 +1115,7 @@ export function apply(ctx) {
           const ts = Number(url.searchParams.get('ts'))
           const at = Number.isFinite(ts) && ts > 0 ? new Date(ts) : new Date()
           const cfg = readConfig()
-          const r = generate(cfg, at, { replay: true })
+          const r = generate(cfg, at, { replay: true, moments: false })
           const zoned = zonedNow(at, String(cfg.时区 || 'Asia/Shanghai'))
           const today = zonedNow(new Date(), String(cfg.时区 || 'Asia/Shanghai')).ymd
           return reply(res, 200, {
@@ -1186,6 +1271,7 @@ export function apply(ctx) {
       cleanupContinuity(Math.max(365, cfg.历史保留天数))
       cleanupEvents(cfg.历史保留天数)
       cleanupPhotos(readImageConfig())
+      cleanupMoments(Math.min(120, Math.max(30, Number(cfg.历史保留天数) || 180)))
     } catch (e) {
       try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}
     }

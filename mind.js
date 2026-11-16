@@ -394,9 +394,9 @@ export function mutateGoal(action, input = {}, config = {}, now = Date.now()) {
   item.updatedAt = now; writeMind(mind, config, now); return item
 }
 
-export function initiativeDecision({ mind, config = {}, now = Date.now(), timeZone = 'Asia/Shanghai', lastHumanAt = 0, phone = '', behavior = '', agentIdle = true, externalSpeakUp = false } = {}) {
+/** @deprecated Legacy generic-initiative gate; the life sharing scheduler no longer calls it. Kept for old tests/API compatibility. */
+export function initiativeDecision({ mind, config = {}, now = Date.now(), timeZone = 'Asia/Shanghai', lastHumanAt = 0, phone = '', behavior = '', agentIdle = true } = {}) {
   if (config?.启用 !== true) return { ok: false, reason: 'disabled' }
-  if (externalSpeakUp && config?.外部主动搭话优先 !== false) return { ok: false, reason: 'external-plugin' }
   if (!agentIdle) return { ok: false, reason: 'busy' }
   if (behavior === 'sleep' || phone === '不在手边') return { ok: false, reason: behavior === 'sleep' ? 'sleeping' : 'phone-away' }
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone, hour: '2-digit', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now))
@@ -417,6 +417,7 @@ export function initiativeDecision({ mind, config = {}, now = Date.now(), timeZo
   return { ok: true, reason: mind?.initiative?.lastReason || '有件相关的小事想主动说', topic, chance: clamp(chance, 0, 0.8), date, count }
 }
 
+/** @deprecated Legacy ledger for the old generic initiative; sharing uses sharing.js. */
 export function markInitiative(mind, decision, config = {}, now = Date.now()) {
   const next = normalizeMind(copy(mind), config, now)
   next.initiative.lastAt = now; next.initiative.lastDate = decision.date
@@ -429,7 +430,6 @@ export function externalPluginStatus() {
   return {
     memory: existsSync(join(root(), 'fish-memory-config.json')) || existsSync(join(root(), 'fish-memory')),
     mood: existsSync(join(root(), 'feiyu-mood', 'config.json')),
-    speakUp: existsSync(join(root(), 'speak-up-config.json')) || existsSync(join(root(), 'her-words-config.json')),
     bili: existsSync(join(root(), 'bili-subagent')) || existsSync(join(root(), 'bili-subagent-config.json')),
   }
 }

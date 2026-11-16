@@ -156,3 +156,13 @@ test('explicit model semantics override text heuristics', () => {
   assert.equal(timeline[0].locationId, 'outdoor')
   assert.equal(timeline[0].behavior, 'idle')
 })
+
+
+test('travel out of bed is not rendered in pyjamas', () => {
+  const timeline = addWorldToTimeline([
+    { start: 0, end: 8 * 60000, what: '睡着了', phone: '在床头', outfit: '睡衣', locationId: 'dorm', source: 'plan' },
+    { start: 8 * 60000, end: 10 * 60000, what: '上课', phone: '静音', outfit: '藏青卫衣', locationId: 'classroom', source: 'plan' },
+  ], defaultWorldConfig)
+  const travel = timeline.find((x) => x.source === 'travel')
+  assert.equal(travel.outfit, '藏青卫衣')
+})

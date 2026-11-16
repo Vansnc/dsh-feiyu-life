@@ -109,7 +109,7 @@ test('personality context stays bounded and marks subjective boundaries', () => 
   assert.ok((context.match(/关于咖啡店/g) || []).length <= 3)
 })
 
-test('initiative decision enforces quiet hours, sleep, cooldown, limits and topics', () => {
+test('initiative decision enforces quiet hours, sleep, cooldown, limits and topics', () => isolated(() => {
   const mind = defaultMind(cfg, 1000)
   mind.initiative.lastTopic = '问问作品集做到哪了'; mind.initiative.lastReason = '有点惦记'; mind.initiative.cueAt = 1000
   const base = { mind, config: { 启用: true, 安静开始: 0, 安静结束: 8, 冷却分钟: 240, 每日上限: 2, 未互动分钟: 180, 基础概率: 0.2 }, timeZone: 'Asia/Shanghai', lastHumanAt: 1000, agentIdle: true }
@@ -121,7 +121,7 @@ test('initiative decision enforces quiet hours, sleep, cooldown, limits and topi
   assert.match(ok.topic, /作品集/)
   const marked = markInitiative(mind, ok, cfg, noon)
   assert.equal(initiativeDecision({ ...base, mind: marked, now: noon + 60000, behavior: 'idle', phone: '在手' }).reason, 'cooldown')
-})
+}))
 
 test('cognition normalization bounds every autonomous surface', () => {
   const value = normalizeCognition({

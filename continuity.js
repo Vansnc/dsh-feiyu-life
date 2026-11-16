@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
+import { readJsonBounded } from './storage.js'
 
 export const CONTINUITY_VERSION = 2
 export const ENTITY_LIMITS = { threads: 5, tasks: 30, commitments: 20, people: 20 }
@@ -129,9 +130,11 @@ export function normalizeContinuity(raw, now = Date.now()) {
 }
 
 export function readContinuity(now = Date.now()) {
-  try { return normalizeContinuity(JSON.parse(readFileSync(continuityPath(), 'utf8')), now) } catch {
-    try { return normalizeContinuity(JSON.parse(readFileSync(continuityPath() + '.bak', 'utf8')), now) } catch { return defaultContinuity(now) }
+  for (const path of [continuityPath(), continuityPath() + '.bak']) {
+    const read = readJsonBounded(path, { maxBytes: 2 * 1024 * 1024 })
+    if (read.ok) return normalizeContinuity(read.value, now)
   }
+  return defaultContinuity(now)
 }
 
 export function writeContinuity(value) {
@@ -303,7 +306,15 @@ export function continuityContext(state = readContinuity(), memories = readMemor
   const yesterday = remembered || '还没有可回想的昨日生活'
   const people = activePeople(state).filter((x) => x.lastInteractionAt).sort((a, b) => b.lastInteractionAt - a.lastInteractionAt).slice(0, 3)
     .map((x) => `${x.name}${x.relation ? `（${x.relation}）` : ''}`).join('、') || '还没有清楚的人际近况'
-  return `身体感觉：${view.needs.join('，')}。\n挂在心上的事：${concerns}。\n最近记得：${yesterday}。\n人际近况：${people}。`
+  // The life line derives energy/sleep from the real timeline; prefer it over
+  // the slow accumulated baseline so two parts of the prompt cannot disagree.
+  const body = [
+    options.vitality?.asleep ? '睡着了' : (options.vitality?.label || view.needs[0]),
+    view.needs[1],
+    view.needs[2],
+    options.vitality?.sleepDebtLabel || view.needs[3],
+  ]
+  return `身体感觉：${body.join('，')}。\n挂在心上的事：${concerns}。\n最近记得：${yesterday}。\n人际近况：${people}。`
 }
 
 function effectId(date, seg, suffix) {

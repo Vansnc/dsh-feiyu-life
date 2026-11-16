@@ -23,8 +23,9 @@ window.__ModuleLoader__.load({
     const API = '/dsh-feiyu-life'
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
+    const wardrobeLabels = [['sleep', '睡觉'], ['bath', '洗澡'], ['class', '上课'], ['home', '在家'], ['out', '出门'], ['eat', '吃饭']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['persona', '人格'], ['inner', '内在'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
+    const tabs = [['now', '此刻'], ['share', '分享'], ['persona', '人格'], ['inner', '内在'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -984,6 +985,31 @@ window.__ModuleLoader__.load({
         }))
 
       const routineRows = config[tableName] || []
+      const wardrobe = config.衣柜 || {}
+      const parseWardrobe = (value) => [...new Set(String(value || '').split(/[\n、,，]+/).map((x) => x.trim()).filter(Boolean))].slice(0, 12)
+      const wardrobeSection = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-h': '' }, '角色设定与衣柜'),
+        h('div', { 'data-fl-note': '' }, '角色设定只给每日剧本用，不会写进人格，也不会覆盖对话侧的人格设定；留空时剧本只写生活事实。保存后，已发生的时间线保持不动，尚未发生的片段按新设置增量调整。'),
+        h('label', { 'data-fl-row': '' },
+          h('span', { 'data-fl-note': '' }, '角色设定（最多 500 字）'),
+          h('textarea', {
+            'data-fl-input': '', rows: 3, maxLength: 500,
+            value: config.角色设定 || '',
+            placeholder: '可选：例如她是谁、在做什么；留空则不添加人格文案',
+            onChange: (e) => patch(['角色设定'], e.target.value),
+            style: { width: '100%', resize: 'vertical', fontFamily: 'inherit' },
+          })),
+        h('div', { 'data-fl-h': '' }, '衣柜'),
+        h('div', { 'data-fl-note': '' }, '按场景分组的衣服名称，每类最多 12 件、每件最多 12 字；用换行或顿号分隔。清空某一类并保存会恢复该类默认值。'),
+        ...wardrobeLabels.map(([key, label]) => h('label', { key, 'data-fl-row': '' },
+          h('span', { 'data-fl-note': '' }, label),
+          h('textarea', {
+            'data-fl-input': '', rows: 2,
+            value: (Array.isArray(wardrobe[key]) ? wardrobe[key] : []).join('\n'),
+            placeholder: '留空使用默认',
+            onChange: (e) => patch(['衣柜', key], parseWardrobe(e.target.value)),
+            style: { width: '100%', resize: 'vertical', fontFamily: 'inherit' },
+          }))))
       const dayPage = h('div', { 'data-fl-sec': '' },
         h('div', { 'data-fl-note': '' }, '一天切成几段。注意有一段要含「睡着」——早上几点起是从那段结尾算的。'),
         h('div', { 'data-fl-tabs': '' }, routineTables.map(([k, t]) => h('button', {
@@ -1005,6 +1031,7 @@ window.__ModuleLoader__.load({
             ]
           },
         }),
+        wardrobeSection,
         h('div', { 'data-fl-h': '' }, '能睡到中午的日子'),
         h('div', { 'data-fl-row': '' }, [1, 2, 3, 4, 5, 6, 7].map((d) => h('label', { key: d, 'data-fl-row': '' },
           h('input', {
@@ -1178,8 +1205,24 @@ window.__ModuleLoader__.load({
           item.memoryCandidates?.length ? h('div', { 'data-fl-cont-meta': '' }, `记忆候选（已交由人格策略）：${item.memoryCandidates.map((x) => x.summary).join('；')}`) : null))) : h('div', { 'data-fl-empty': '' }, '还没有反思或生活结算记录'),
         h('div', { 'data-fl-warn': '' }, '边界：事件账本不保存对话原文；候选必须经过人格页的置信度、重要度和敏感信息策略，才可能形成可淡忘的长期记忆。'))
 
+      const sharingCfg = config.主动分享 || {}
+      const sharePage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '只分享已经发生、能追溯到生活线的事：小事进入下一阶段、刚完成的出行/吃饭/上课、身体变化，或之前提过的事情有了后续。未来计划不会触发；没有合适候选时保持安静。'),
+        h('div', { 'data-fl-row': '' },
+          h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: sharingCfg.启用 !== false, onChange: (e) => patch(['主动分享', '启用'], e.target.checked) }), '启用主动分享'),
+          h('span', { 'data-fl-note': '' }, '每日上限'), h(Field, { value: sharingCfg.每日上限 ?? 2, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '每日上限'], Number(v) || 0) }),
+          h('span', { 'data-fl-note': '' }, '全局冷却分钟'), h(Field, { value: sharingCfg.全局冷却分钟 ?? 1440, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '全局冷却分钟'], Number(v) || 1440) })),
+        h('div', { 'data-fl-row': '' },
+          h('span', { 'data-fl-note': '' }, '同类冷却分钟'), h(Field, { value: sharingCfg.同类冷却分钟 ?? 480, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '同类冷却分钟'], Number(v) || 480) }),
+          h('span', { 'data-fl-note': '' }, '安静开始'), h(Field, { value: sharingCfg.安静开始 ?? 0, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '安静开始'], Number(v) || 0) }),
+          h('span', { 'data-fl-note': '' }, '安静结束'), h(Field, { value: sharingCfg.安静结束 ?? 8, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '安静结束'], Number(v) || 8) })),
+        h('div', { 'data-fl-row': '' },
+          h('span', { 'data-fl-note': '' }, '最低分'), h(Field, { value: sharingCfg.最低分 ?? 84, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '最低分'], Number(v) || 0) }),
+          h('span', { 'data-fl-note': '' }, '刚聊过多少分钟内不分享'), h(Field, { value: sharingCfg.近期对话分钟 ?? 20, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '近期对话分钟'], Number(v) || 20) }),
+          h('button', { 'data-fl-btn': '', disabled: busy || sharingCfg.启用 === false, onClick: triggerInitiative }, '现在检查一次')),
+        h('div', { 'data-fl-note': '' }, '默认低打扰：一天最多两次，其中一次可以留给同一件小事的后续；全局冷却 24 小时、同类冷却 8 小时。睡觉、洗澡、上课、手机不在手边、安静时段、刚聊过、会话忙、没有达到最低分或今天已经分享过时都会保持安静。'))
       const mindState = mind && mind.mind
-      const integrationText = mind ? Object.entries(mind.integrations || {}).filter(([, on]) => on).map(([key]) => ({ memory: 'dsh-fish-memory', mood: 'dsh-feiyu-mood', speakUp: 'dsh-speak-up', bili: 'dsh-bili-subagent' }[key] || key)).join('、') : ''
+      const integrationText = mind ? Object.entries(mind.integrations || {}).filter(([, on]) => on).map(([key]) => ({ memory: 'dsh-fish-memory', mood: 'dsh-feiyu-mood', bili: 'dsh-bili-subagent' }[key] || key)).join('、') : ''
       const personaPage = h('div', { 'data-fl-sec': '' },
         h('div', { 'data-fl-note': '' }, '人格不是一段固定提示词：每轮认知会沉淀可遗忘记忆、偏好、关系感受、自我证据和虚拟目标；召回按当前话题选择，旧记忆不能压过新消息。'),
         h('div', { 'data-fl-stats': '' },
@@ -1201,7 +1244,7 @@ window.__ModuleLoader__.load({
           h('span', { 'data-fl-note': '' }, '重要度门槛'), h(Field, { value: config.人格?.记忆重要度阈值 ?? 0.68, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '记忆重要度阈值'], Number(v)) }),
           h('span', { 'data-fl-note': '' }, '置信度门槛'), h(Field, { value: config.人格?.记忆置信度阈值 ?? 0.72, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '记忆置信度阈值'], Number(v)) }),
           h('select', { 'data-fl-input': '', value: config.人格?.外部插件兼容 || '内建优先', onChange: (e) => patch(['人格', '外部插件兼容'], e.target.value) }, h('option', { value: '内建优先' }, '内建人格优先'), h('option', { value: '外部优先' }, '外部插件优先'))),
-        integrationText ? h('div', { 'data-fl-warn': '' }, `检测到：${integrationText}。选择“外部优先”可抑制重叠的内建心情、记忆或主动搭话；B站子代理只作为事件来源，不被替代。`) : null,
+        integrationText ? h('div', { 'data-fl-warn': '' }, `检测到：${integrationText}。选择“外部优先”可抑制重叠的内建心情或记忆；B站子代理只作为事件来源，不被替代。`) : null,
         h('div', { 'data-fl-h': '' }, '明确添加记忆'),
         h('div', { 'data-fl-row': '' }, h('input', { 'data-fl-input': '', style: { flex: 1 }, value: memoryDraft, placeholder: '一条可独立理解的事实或经历', onChange: (e) => setMemoryDraft(e.target.value) }), h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy || !memoryDraft.trim(), onClick: async () => { if (await mindAction('/mind/memory', { action: 'create', summary: memoryDraft, kind: 'fact', subject: 'world', pinned: true, importance: 1 })) setMemoryDraft('') } }, '记住')),
         mindState?.memories?.length ? h('div', { 'data-fl-cont-grid': '' }, mindState.memories.slice().reverse().slice(0, 30).map((item) => h('div', { key: item.id, 'data-fl-cont-card': '' }, h('strong', null, item.summary), h('div', { 'data-fl-cont-meta': '' }, `${item.kind} · 重要度 ${Math.round(item.importance * 100)}% · ${item.status} · 来源 ${item.source}`), h('div', { 'data-fl-row': '' }, item.status === 'active' ? h('button', { 'data-fl-del': '', onClick: () => mindAction('/mind/memory', { action: 'forget', id: item.id }) }, '淡忘') : h('button', { 'data-fl-btn': '', onClick: () => mindAction('/mind/memory', { action: 'restore', id: item.id }) }, '恢复'), h('button', { 'data-fl-del': '', onClick: () => window.confirm('永久删除后不会保留在恢复备份中，确定吗？') && mindAction('/mind/memory', { action: 'delete', id: item.id }) }, '永久删除'))))) : h('div', { 'data-fl-empty': '' }, '还没有长期记忆'),
@@ -1211,9 +1254,8 @@ window.__ModuleLoader__.load({
         h('div', { 'data-fl-h': '' }, '自身目标'),
         h('div', { 'data-fl-row': '' }, h('input', { 'data-fl-input': '', value: goalDraft.title, placeholder: '虚拟或插件本地目标', onChange: (e) => setGoalDraft({ ...goalDraft, title: e.target.value }) }), h('input', { 'data-fl-input': '', value: goalDraft.nextStep, placeholder: '下一步', onChange: (e) => setGoalDraft({ ...goalDraft, nextStep: e.target.value }) }), h('select', { 'data-fl-input': '', value: goalDraft.scope, onChange: (e) => setGoalDraft({ ...goalDraft, scope: e.target.value }) }, h('option', { value: 'virtual' }, '虚拟意图'), h('option', { value: 'local' }, '插件本地成果')), h('button', { 'data-fl-btn': '', disabled: busy || !goalDraft.title.trim(), onClick: async () => { if (await mindAction('/mind/goal', { action: 'create', ...goalDraft })) setGoalDraft({ title: '', reason: '', nextStep: '', scope: 'virtual' }) } }, '添加')),
         mindState?.goals?.length ? h('div', { 'data-fl-cont-grid': '' }, mindState.goals.map((x) => h('div', { key: x.id, 'data-fl-cont-card': '' }, h('strong', null, x.title), h('div', { 'data-fl-cont-meta': '' }, `${x.status} · ${Math.round(x.progress)}% · ${x.scope}${x.nextStep ? ` · 下一步 ${x.nextStep}` : ''}`), h('div', { 'data-fl-row': '' }, x.status === 'active' ? h('button', { 'data-fl-btn': '', onClick: () => mindAction('/mind/goal', { action: 'complete', id: x.id }) }, '完成') : null, h('button', { 'data-fl-del': '', onClick: () => window.confirm('永久删除这个目标？') && mindAction('/mind/goal', { action: 'delete', id: x.id }) }, '永久删除'))))) : h('div', { 'data-fl-empty': '' }, '还没有自身目标'),
-        h('div', { 'data-fl-h': '' }, '主动性'),
-        h('div', { 'data-fl-row': '' }, h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.人格?.主动?.启用 === true, onChange: (e) => patch(['人格', '主动', '启用'], e.target.checked) }), '允许原生主动搭话'), h('span', { 'data-fl-note': '' }, '未互动分钟'), h(Field, { value: config.人格?.主动?.未互动分钟 || 180, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '主动', '未互动分钟'], Number(v) || 180) }), h('span', { 'data-fl-note': '' }, '冷却分钟'), h(Field, { value: config.人格?.主动?.冷却分钟 || 240, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '主动', '冷却分钟'], Number(v) || 240) }), h('span', { 'data-fl-note': '' }, '每日上限'), h(Field, { value: config.人格?.主动?.每日上限 ?? 2, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '主动', '每日上限'], Number(v) || 0) }), h('button', { 'data-fl-btn': '', disabled: busy || config.人格?.主动?.启用 !== true, onClick: triggerInitiative }, '现在检查一次')),
-        h('div', { 'data-fl-note': '' }, `安静时段 ${config.人格?.主动?.安静开始 ?? 0}:00–${config.人格?.主动?.安静结束 ?? 8}:00；睡觉、手机不在手边、会话正忙、冷却中或没有真实话题时不会开口。`),
+        h('div', { 'data-fl-h': '' }, '主动分享'),
+        h('div', { 'data-fl-note': '' }, '主动分享已统一到「分享」页签：只从已经发生的小事、完成的活动、身体变化和可追溯的后续里挑，旧的泛主动不再单独调度。'),
         h('div', { 'data-fl-warn': '' }, '边界：不会自主联系第三方、消费、发帖、操作任意文件或声称现实任务已完成；敏感候选不会自动沉淀。淡忘可恢复，永久删除会同步清理人格恢复备份。'))
 
       const planMeta = (meta && meta.plan) || {}
@@ -1244,6 +1286,7 @@ window.__ModuleLoader__.load({
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
         tab === 'now' ? nowPage : null,
+        tab === 'share' ? sharePage : null,
         tab === 'persona' ? personaPage : null,
         tab === 'inner' ? innerPage : null,
         tab === 'continuity' ? continuityPage : null,

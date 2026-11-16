@@ -245,7 +245,9 @@ export function addWorldToTimeline(timeline, worldConfig = defaultWorldConfig) {
       end: current.end,
       what: `从${world.地点.find((x) => x.id === current.locationId)?.name || '这里'}去${world.地点.find((x) => x.id === next.locationId)?.name || '下一站'}`,
       phone: '不在手边',
-      outfit: current.outfit || next.outfit || '',
+      // Do not walk to class in pyjamas: if the previous segment was sleep or
+      // a bath, the travel segment already belongs to the destination's day.
+      outfit: /睡|洗澡|洗漱/.test(String(current.what || '')) ? (next.outfit || '') : (current.outfit || next.outfit || ''),
       source: 'travel',
       behavior: 'walk',
       locationId: current.locationId,
