@@ -31,7 +31,7 @@ const phoneChoices = ['在手', '静音', '在床头', '不在手边']
 const routineNames = ['日常', '晚起', '假期', '备考']
 const datePattern = /^\d{4}-\d{2}-\d{2}$/
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/
-export const LIFE_CONFIG_VERSION = 9
+export const LIFE_CONFIG_VERSION = 10
 
 export const defaultConfig = {
   配置版本: LIFE_CONFIG_VERSION,
@@ -52,6 +52,21 @@ export const defaultConfig = {
     反思超时秒: 45,
     反思Provider: '',
     反思模型: '',
+  },
+  人格: {
+    启用: true,
+    自我叙事: '我是大肥鱼，一个有自己生活节奏、会在意关系也会保留边界的人。',
+    核心特质: ['嘴硬心软', '有点懒', '重感情'],
+    核心价值: ['真诚', '尊重边界', '说到做到'],
+    记忆启用: true,
+    自动沉淀: true,
+    记忆重要度阈值: 0.68,
+    记忆置信度阈值: 0.72,
+    记忆上限: 500,
+    召回条数: 6,
+    召回字数: 800,
+    外部插件兼容: '内建优先',
+    主动: { 启用: false, 检查间隔分钟: 15, 安静开始: 0, 安静结束: 8, 冷却分钟: 240, 每日上限: 2, 未互动分钟: 180, 基础概率: 0.15, 外部主动搭话优先: true },
   },
   经期: { 起始: '2026-11-05', 周期: 29, 天数: 5 },
   校历: {
@@ -210,6 +225,33 @@ export function normalizeConfig(input, issues = []) {
     反思超时秒: Math.round(clamp(inner.反思超时秒, 10, 120, defaultConfig.内在.反思超时秒)),
     反思Provider: String(inner.反思Provider || '').trim().slice(0, 100),
     反思模型: String(inner.反思模型 || '').trim().slice(0, 160),
+  }
+  const persona = raw.人格 && typeof raw.人格 === 'object' ? raw.人格 : defaultConfig.人格
+  const proactive = persona.主动 && typeof persona.主动 === 'object' ? persona.主动 : defaultConfig.人格.主动
+  cfg.人格 = {
+    启用: persona.启用 !== false,
+    自我叙事: String(persona.自我叙事 || defaultConfig.人格.自我叙事).trim().slice(0, 500),
+    核心特质: [...new Set((Array.isArray(persona.核心特质) ? persona.核心特质 : defaultConfig.人格.核心特质).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean))].slice(0, 12),
+    核心价值: [...new Set((Array.isArray(persona.核心价值) ? persona.核心价值 : defaultConfig.人格.核心价值).map((x) => String(x || '').trim().slice(0, 40)).filter(Boolean))].slice(0, 12),
+    记忆启用: persona.记忆启用 !== false,
+    自动沉淀: persona.自动沉淀 !== false,
+    记忆重要度阈值: clamp(persona.记忆重要度阈值, 0.3, 1, defaultConfig.人格.记忆重要度阈值),
+    记忆置信度阈值: clamp(persona.记忆置信度阈值, 0.3, 1, defaultConfig.人格.记忆置信度阈值),
+    记忆上限: Math.round(clamp(persona.记忆上限, 50, 2000, defaultConfig.人格.记忆上限)),
+    召回条数: Math.round(clamp(persona.召回条数, 1, 12, defaultConfig.人格.召回条数)),
+    召回字数: Math.round(clamp(persona.召回字数, 200, 1600, defaultConfig.人格.召回字数)),
+    外部插件兼容: ['内建优先', '外部优先'].includes(persona.外部插件兼容) ? persona.外部插件兼容 : defaultConfig.人格.外部插件兼容,
+    主动: {
+      启用: proactive.启用 === true,
+      检查间隔分钟: Math.round(clamp(proactive.检查间隔分钟, 5, 120, defaultConfig.人格.主动.检查间隔分钟)),
+      安静开始: Math.round(clamp(proactive.安静开始, 0, 23, defaultConfig.人格.主动.安静开始)),
+      安静结束: Math.round(clamp(proactive.安静结束, 0, 23, defaultConfig.人格.主动.安静结束)),
+      冷却分钟: Math.round(clamp(proactive.冷却分钟, 30, 1440, defaultConfig.人格.主动.冷却分钟)),
+      每日上限: Math.round(clamp(proactive.每日上限, 0, 10, defaultConfig.人格.主动.每日上限)),
+      未互动分钟: Math.round(clamp(proactive.未互动分钟, 30, 10080, defaultConfig.人格.主动.未互动分钟)),
+      基础概率: clamp(proactive.基础概率, 0, 1, defaultConfig.人格.主动.基础概率),
+      外部主动搭话优先: proactive.外部主动搭话优先 !== false,
+    },
   }
   cfg.地图 = normalizeWorldConfig(raw.地图 || defaultConfig.地图)
 

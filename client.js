@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
     const phoneOptions = ['在手', '静音', '在床头', '不在手边']
     const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
     const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-    const tabs = [['now', '此刻'], ['inner', '内在'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
+    const tabs = [['now', '此刻'], ['persona', '人格'], ['inner', '内在'], ['continuity', '连续性'], ['replay', '回放'], ['map', '地图'], ['year', '年度'], ['week', '课表'], ['day', '作息'], ['body', '身体'], ['photo', '照片'], ['data', '数据']]
 
     const CSS = `
 [data-fl-wrap]{--fl-accent:#167f78;--fl-accent-soft:rgba(22,127,120,.12);--fl-warm:#d97732;--fl-line:rgba(127,127,127,.18);display:flex;flex-direction:column;gap:16px;padding:6px 2px 28px;color-scheme:light dark;font-size:13px;max-width:1080px;}
@@ -435,6 +435,10 @@ window.__ModuleLoader__.load({
       const [inference, setInference] = useState(null)
       const [continuity, setContinuity] = useState(null)
       const [affect, setAffect] = useState(null)
+      const [mind, setMind] = useState(null)
+      const [memoryDraft, setMemoryDraft] = useState('')
+      const [preferenceDraft, setPreferenceDraft] = useState({ owner: 'self', key: '', value: '' })
+      const [goalDraft, setGoalDraft] = useState({ title: '', reason: '', nextStep: '', scope: 'virtual' })
       const [continuityDraft, setContinuityDraft] = useState({ kind: 'tasks', title: '', detail: '', origin: '', dueLocal: '', with: '', personId: '', nextStep: '', placeId: '', artifactType: 'none' })
       const [personDraft, setPersonDraft] = useState({ name: '', relation: '', notes: '', origin: '', closeness: 50 })
       const dirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
@@ -577,6 +581,7 @@ window.__ModuleLoader__.load({
         if (tab === 'replay' && !replay) loadReplay('', true)
         if (tab === 'continuity' && !continuity) loadContinuity()
         if (tab === 'inner' && !affect) loadAffect()
+        if (tab === 'persona' && !mind) loadMind()
       }, [tab])
 
       const loadAffect = async () => {
@@ -589,6 +594,28 @@ window.__ModuleLoader__.load({
         setBusy(true)
         try { setAffect(await postJson(API + '/affect/reset', {})); setMessage('内在状态已回到基线') }
         catch (e) { setMessage('重置失败：' + e.message) }
+        setBusy(false)
+      }
+
+      const loadMind = async () => {
+        try { setMind(await getJson(API + '/mind')) }
+        catch (e) { setMessage('人格读取失败：' + e.message) }
+      }
+
+      const mindAction = async (path, body) => {
+        setBusy(true)
+        try { setMind(await postJson(API + path, body)); setMessage('人格状态已更新'); setBusy(false); return true }
+        catch (e) { setMessage('人格更新失败：' + e.message); setBusy(false); return false }
+      }
+
+      const triggerInitiative = async () => {
+        setBusy(true); setMessage('正在检查此刻是否适合主动开口…')
+        try {
+          const data = await postJson(API + '/mind/initiative', {})
+          setMind(data)
+          setMessage(data.initiativeResult?.sent ? '已经在根会话主动开口' : `这次保持安静：${data.initiativeResult?.reason || '没有合适话题'}`)
+        }
+        catch (e) { setMessage('主动意图执行失败：' + e.message) }
         setBusy(false)
       }
 
@@ -1148,8 +1175,46 @@ window.__ModuleLoader__.load({
         affect && affect.events?.length ? h('div', { 'data-fl-cont-grid': '' }, affect.events.map((item) => h('div', { key: item.id, 'data-fl-cont-card': '', 'data-fl-event': '', 'data-status': item.status },
           h('strong', null, new Date(item.at).toLocaleString(), h('span', { 'data-fl-event-type': '' }, item.type === 'life.settled' ? '生活结算' : item.type === 'turn.reflection' ? '回合反思' : '状态操作')),
           h('div', { 'data-fl-cont-meta': '' }, `${item.reason || '无原因'} · ${item.status}${item.model ? ` · ${item.model}` : ''}`),
-          item.memoryCandidates?.length ? h('div', { 'data-fl-cont-meta': '' }, `记忆候选（未写入）：${item.memoryCandidates.map((x) => x.summary).join('；')}`) : null))) : h('div', { 'data-fl-empty': '' }, '还没有反思或生活结算记录'),
-        h('div', { 'data-fl-warn': '' }, '边界：候选记忆与关系只用于审计，本版不会自动写入长期记忆或创建人物；事件账本不保存对话原文。'))
+          item.memoryCandidates?.length ? h('div', { 'data-fl-cont-meta': '' }, `记忆候选（已交由人格策略）：${item.memoryCandidates.map((x) => x.summary).join('；')}`) : null))) : h('div', { 'data-fl-empty': '' }, '还没有反思或生活结算记录'),
+        h('div', { 'data-fl-warn': '' }, '边界：事件账本不保存对话原文；候选必须经过人格页的置信度、重要度和敏感信息策略，才可能形成可淡忘的长期记忆。'))
+
+      const mindState = mind && mind.mind
+      const integrationText = mind ? Object.entries(mind.integrations || {}).filter(([, on]) => on).map(([key]) => ({ memory: 'dsh-fish-memory', mood: 'dsh-feiyu-mood', speakUp: 'dsh-speak-up', bili: 'dsh-bili-subagent' }[key] || key)).join('、') : ''
+      const personaPage = h('div', { 'data-fl-sec': '' },
+        h('div', { 'data-fl-note': '' }, '人格不是一段固定提示词：每轮认知会沉淀可遗忘记忆、偏好、关系感受、自我证据和虚拟目标；召回按当前话题选择，旧记忆不能压过新消息。'),
+        h('div', { 'data-fl-stats': '' },
+          [['长期记忆', mind?.counts?.memories], ['稳定偏好', mind?.counts?.preferences], ['自身目标', mind?.counts?.goals], ['关系模型', mind?.counts?.relationships]].map(([k, v]) => h('div', { key: k, 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, k), h('div', { 'data-fl-stat-v': '' }, v ?? '—')))),
+        h('div', { 'data-fl-h': '' }, '自我叙事与价值'),
+        h('textarea', { 'data-fl-input': '', rows: 3, style: { width: '100%', boxSizing: 'border-box' }, value: config.人格?.自我叙事 || '', onChange: (e) => patch(['人格', '自我叙事'], e.target.value) }),
+        h('div', { 'data-fl-row': '' },
+          h('input', { 'data-fl-input': '', style: { flex: 1 }, value: (config.人格?.核心特质 || []).join('、'), placeholder: '核心特质，用顿号分隔', onChange: (e) => patch(['人格', '核心特质'], e.target.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean)) }),
+          h('input', { 'data-fl-input': '', style: { flex: 1 }, value: (config.人格?.核心价值 || []).join('、'), placeholder: '核心价值，用顿号分隔', onChange: (e) => patch(['人格', '核心价值'], e.target.value.split(/[、,，]/).map((x) => x.trim()).filter(Boolean)) })),
+        mindState?.identity ? h('div', { 'data-fl-cont-card': '' }, h('strong', null, '当前形成的自我认识'), h('div', { 'data-fl-cont-meta': '' }, mindState.identity.narrative), h('div', { 'data-fl-cont-meta': '' }, `特质：${(mindState.identity.traits || []).join('、')}｜价值：${(mindState.identity.values || []).join('、')}`)) : null,
+        h('div', { 'data-fl-h': '' }, '记忆策略'),
+        h('div', { 'data-fl-row': '' },
+          h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.人格?.启用 !== false, onChange: (e) => patch(['人格', '启用'], e.target.checked) }), '启用完整人格'),
+          h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.人格?.记忆启用 !== false, onChange: (e) => patch(['人格', '记忆启用'], e.target.checked) }), '启用长期记忆'),
+          h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.人格?.自动沉淀 !== false, onChange: (e) => patch(['人格', '自动沉淀'], e.target.checked) }), '自动沉淀高质量候选'),
+          h('span', { 'data-fl-note': '' }, '召回条数'), h(Field, { value: config.人格?.召回条数 || 6, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '召回条数'], Number(v) || 6) }),
+          h('span', { 'data-fl-note': '' }, '字数上限'), h(Field, { value: config.人格?.召回字数 || 800, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '召回字数'], Number(v) || 800) })),
+        h('div', { 'data-fl-row': '' },
+          h('span', { 'data-fl-note': '' }, '重要度门槛'), h(Field, { value: config.人格?.记忆重要度阈值 ?? 0.68, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '记忆重要度阈值'], Number(v)) }),
+          h('span', { 'data-fl-note': '' }, '置信度门槛'), h(Field, { value: config.人格?.记忆置信度阈值 ?? 0.72, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '记忆置信度阈值'], Number(v)) }),
+          h('select', { 'data-fl-input': '', value: config.人格?.外部插件兼容 || '内建优先', onChange: (e) => patch(['人格', '外部插件兼容'], e.target.value) }, h('option', { value: '内建优先' }, '内建人格优先'), h('option', { value: '外部优先' }, '外部插件优先'))),
+        integrationText ? h('div', { 'data-fl-warn': '' }, `检测到：${integrationText}。选择“外部优先”可抑制重叠的内建心情、记忆或主动搭话；B站子代理只作为事件来源，不被替代。`) : null,
+        h('div', { 'data-fl-h': '' }, '明确添加记忆'),
+        h('div', { 'data-fl-row': '' }, h('input', { 'data-fl-input': '', style: { flex: 1 }, value: memoryDraft, placeholder: '一条可独立理解的事实或经历', onChange: (e) => setMemoryDraft(e.target.value) }), h('button', { 'data-fl-btn': '', 'data-fl-main': '', disabled: busy || !memoryDraft.trim(), onClick: async () => { if (await mindAction('/mind/memory', { action: 'create', summary: memoryDraft, kind: 'fact', subject: 'world', pinned: true, importance: 1 })) setMemoryDraft('') } }, '记住')),
+        mindState?.memories?.length ? h('div', { 'data-fl-cont-grid': '' }, mindState.memories.slice().reverse().slice(0, 30).map((item) => h('div', { key: item.id, 'data-fl-cont-card': '' }, h('strong', null, item.summary), h('div', { 'data-fl-cont-meta': '' }, `${item.kind} · 重要度 ${Math.round(item.importance * 100)}% · ${item.status} · 来源 ${item.source}`), h('div', { 'data-fl-row': '' }, item.status === 'active' ? h('button', { 'data-fl-del': '', onClick: () => mindAction('/mind/memory', { action: 'forget', id: item.id }) }, '淡忘') : h('button', { 'data-fl-btn': '', onClick: () => mindAction('/mind/memory', { action: 'restore', id: item.id }) }, '恢复'), h('button', { 'data-fl-del': '', onClick: () => window.confirm('永久删除后不会保留在恢复备份中，确定吗？') && mindAction('/mind/memory', { action: 'delete', id: item.id }) }, '永久删除'))))) : h('div', { 'data-fl-empty': '' }, '还没有长期记忆'),
+        h('div', { 'data-fl-h': '' }, '偏好与关系'),
+        h('div', { 'data-fl-row': '' }, h('select', { 'data-fl-input': '', value: preferenceDraft.owner, onChange: (e) => setPreferenceDraft({ ...preferenceDraft, owner: e.target.value }) }, h('option', { value: 'self' }, '角色偏好'), h('option', { value: 'user' }, '用户偏好')), h('input', { 'data-fl-input': '', value: preferenceDraft.key, placeholder: '方面，如饮料', onChange: (e) => setPreferenceDraft({ ...preferenceDraft, key: e.target.value }) }), h('input', { 'data-fl-input': '', value: preferenceDraft.value, placeholder: '内容，如偏爱少糖', onChange: (e) => setPreferenceDraft({ ...preferenceDraft, value: e.target.value }) }), h('button', { 'data-fl-btn': '', disabled: busy, onClick: async () => { if (await mindAction('/mind/preference', { action: 'create', ...preferenceDraft })) setPreferenceDraft({ owner: 'self', key: '', value: '' }) } }, '添加')),
+        h('div', { 'data-fl-cont-grid': '' }, [...(mindState?.preferences || []).filter((x) => x.status === 'active').map((x) => ({ id: x.id, title: `${x.owner === 'self' ? '她' : '用户'}的${x.key}`, detail: x.value, type: 'preference' })), ...(mindState?.relationships || []).map((x) => ({ id: x.id, title: x.name, detail: `${x.summary || '普通相处'}｜温暖 ${Math.round(x.warmth)} · 信任 ${Math.round(x.trust)} · 紧张 ${Math.round(x.tension)}`, type: 'relationship' }))].map((x) => h('div', { key: `${x.type}-${x.id}`, 'data-fl-cont-card': '' }, h('strong', null, x.title), h('div', { 'data-fl-cont-meta': '' }, x.detail), x.type === 'preference' ? h('button', { 'data-fl-del': '', onClick: () => window.confirm('永久删除这条偏好？') && mindAction('/mind/preference', { action: 'delete', id: x.id }) }, '永久删除') : null))),
+        h('div', { 'data-fl-h': '' }, '自身目标'),
+        h('div', { 'data-fl-row': '' }, h('input', { 'data-fl-input': '', value: goalDraft.title, placeholder: '虚拟或插件本地目标', onChange: (e) => setGoalDraft({ ...goalDraft, title: e.target.value }) }), h('input', { 'data-fl-input': '', value: goalDraft.nextStep, placeholder: '下一步', onChange: (e) => setGoalDraft({ ...goalDraft, nextStep: e.target.value }) }), h('select', { 'data-fl-input': '', value: goalDraft.scope, onChange: (e) => setGoalDraft({ ...goalDraft, scope: e.target.value }) }, h('option', { value: 'virtual' }, '虚拟意图'), h('option', { value: 'local' }, '插件本地成果')), h('button', { 'data-fl-btn': '', disabled: busy || !goalDraft.title.trim(), onClick: async () => { if (await mindAction('/mind/goal', { action: 'create', ...goalDraft })) setGoalDraft({ title: '', reason: '', nextStep: '', scope: 'virtual' }) } }, '添加')),
+        mindState?.goals?.length ? h('div', { 'data-fl-cont-grid': '' }, mindState.goals.map((x) => h('div', { key: x.id, 'data-fl-cont-card': '' }, h('strong', null, x.title), h('div', { 'data-fl-cont-meta': '' }, `${x.status} · ${Math.round(x.progress)}% · ${x.scope}${x.nextStep ? ` · 下一步 ${x.nextStep}` : ''}`), h('div', { 'data-fl-row': '' }, x.status === 'active' ? h('button', { 'data-fl-btn': '', onClick: () => mindAction('/mind/goal', { action: 'complete', id: x.id }) }, '完成') : null, h('button', { 'data-fl-del': '', onClick: () => window.confirm('永久删除这个目标？') && mindAction('/mind/goal', { action: 'delete', id: x.id }) }, '永久删除'))))) : h('div', { 'data-fl-empty': '' }, '还没有自身目标'),
+        h('div', { 'data-fl-h': '' }, '主动性'),
+        h('div', { 'data-fl-row': '' }, h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: config.人格?.主动?.启用 === true, onChange: (e) => patch(['人格', '主动', '启用'], e.target.checked) }), '允许原生主动搭话'), h('span', { 'data-fl-note': '' }, '未互动分钟'), h(Field, { value: config.人格?.主动?.未互动分钟 || 180, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '主动', '未互动分钟'], Number(v) || 180) }), h('span', { 'data-fl-note': '' }, '冷却分钟'), h(Field, { value: config.人格?.主动?.冷却分钟 || 240, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '主动', '冷却分钟'], Number(v) || 240) }), h('span', { 'data-fl-note': '' }, '每日上限'), h(Field, { value: config.人格?.主动?.每日上限 ?? 2, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['人格', '主动', '每日上限'], Number(v) || 0) }), h('button', { 'data-fl-btn': '', disabled: busy || config.人格?.主动?.启用 !== true, onClick: triggerInitiative }, '现在检查一次')),
+        h('div', { 'data-fl-note': '' }, `安静时段 ${config.人格?.主动?.安静开始 ?? 0}:00–${config.人格?.主动?.安静结束 ?? 8}:00；睡觉、手机不在手边、会话正忙、冷却中或没有真实话题时不会开口。`),
+        h('div', { 'data-fl-warn': '' }, '边界：不会自主联系第三方、消费、发帖、操作任意文件或声称现实任务已完成；敏感候选不会自动沉淀。淡忘可恢复，永久删除会同步清理人格恢复备份。'))
 
       const planMeta = (meta && meta.plan) || {}
       const detour = meta && meta.deviation && (meta.deviation.flat ? '躺平' : meta.deviation.outing ? '临时出门' : meta.deviation.skipAfternoon ? '翘下午课' : '')
@@ -1179,6 +1244,7 @@ window.__ModuleLoader__.load({
           key: k, 'data-fl-tab': '', 'data-fl-on': tab === k ? '' : undefined, onClick: () => setTab(k),
         }, t))),
         tab === 'now' ? nowPage : null,
+        tab === 'persona' ? personaPage : null,
         tab === 'inner' ? innerPage : null,
         tab === 'continuity' ? continuityPage : null,
         tab === 'replay' ? replayPage : null,

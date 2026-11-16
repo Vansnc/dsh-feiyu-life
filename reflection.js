@@ -10,6 +10,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pickModel } from './gen.js'
 import { withStreamTimeout } from './runtime.js'
+import { normalizeCognition } from './mind.js'
 
 export const AFFECT_VERSION = 1
 const root = () => process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -21,6 +22,14 @@ const clamp = (n, a, b, fallback = 0) => {
 }
 const text = (value, max = 160) => String(value || '').trim().slice(0, max)
 const copy = (value) => JSON.parse(JSON.stringify(value))
+const SECRET_PATTERN = /密码|口令|验证码|私钥|助记词|api[ _-]?key|access[ _-]?token|secret|身份证|银行卡|信用卡/i
+const safeCandidate = (item, fields) => {
+  if (!item || typeof item !== 'object') return item
+  const copyItem = copy(item)
+  if (!SECRET_PATTERN.test(JSON.stringify(copyItem))) return copyItem
+  for (const field of fields) if (field in copyItem) copyItem[field] = '[敏感内容已拦截]'
+  return copyItem
+}
 
 function atomicJson(path, value) {
   mkdirSync(dirname(path), { recursive: true })
@@ -109,6 +118,7 @@ export function normalizeReflection(raw) {
   const reason = text(affect.reason, 160)
   if (!reason) return null
   const dims = affect.dimensions && typeof affect.dimensions === 'object' ? affect.dimensions : {}
+  const cognition = normalizeCognition(raw)
   return {
     affect: {
       valenceDelta: clamp(affect.valenceDelta, -12, 12),
@@ -120,15 +130,7 @@ export function normalizeReflection(raw) {
       reason,
       confidence: clamp(affect.confidence, 0, 1, 0.5),
     },
-    memoryCandidates: (Array.isArray(raw.memoryCandidates) ? raw.memoryCandidates : []).flatMap((item) => {
-      const summary = text(item?.summary, 120)
-      return summary ? [{ summary, importance: clamp(item?.importance, 0, 1, 0.5), confidence: clamp(item?.confidence, 0, 1, 0.5) }] : []
-    }).slice(0, 3),
-    relationshipCandidates: (Array.isArray(raw.relationshipCandidates) ? raw.relationshipCandidates : []).flatMap((item) => {
-      const person = text(item?.person, 40)
-      const reason = text(item?.reason, 100)
-      return person && reason ? [{ person, tone: ['warm', 'tense'].includes(item?.tone) ? item.tone : 'neutral', reason }] : []
-    }).slice(0, 3),
+    ...cognition,
   }
 }
 
@@ -200,8 +202,12 @@ export function appendEvent(event, { timeZone = 'Asia/Shanghai', maxEvents = 300
     status: ['applied', 'failed', 'settled'].includes(event?.status) ? event.status : 'applied',
     reason: text(event?.reason, 180), model: text(event?.model, 100),
     affect: event?.affect ? copy(event.affect) : undefined,
-    memoryCandidates: (Array.isArray(event?.memoryCandidates) ? event.memoryCandidates : []).slice(0, 3),
-    relationshipCandidates: (Array.isArray(event?.relationshipCandidates) ? event.relationshipCandidates : []).slice(0, 3),
+    memoryCandidates: (Array.isArray(event?.memoryCandidates) ? event.memoryCandidates : []).slice(0, 3).map((item) => item?.sensitivity === 'normal' ? item : { ...item, summary: '[隐私候选已拦截]' }),
+    relationshipCandidates: (Array.isArray(event?.relationshipCandidates) ? event.relationshipCandidates : []).slice(0, 3).map((x) => safeCandidate(x, ['person', 'reason'])),
+    preferenceCandidates: (Array.isArray(event?.preferenceCandidates) ? event.preferenceCandidates : []).slice(0, 4).map((x) => safeCandidate(x, ['key', 'value', 'evidence'])),
+    goalCandidates: (Array.isArray(event?.goalCandidates) ? event.goalCandidates : []).slice(0, 2).map((x) => safeCandidate(x, ['title', 'reason', 'nextStep'])),
+    identityEvidence: (Array.isArray(event?.identityEvidence) ? event.identityEvidence : []).slice(0, 3).map((x) => safeCandidate(x, ['trait', 'reason'])),
+    initiative: event?.initiative && typeof event.initiative === 'object' ? safeCandidate(event.initiative, ['reason', 'topic']) : undefined,
     usage: event?.usage && typeof event.usage === 'object' ? copy(event.usage) : undefined,
     meta: event?.meta && typeof event.meta === 'object' ? copy(event.meta) : undefined,
   }
@@ -239,7 +245,7 @@ export function shouldReflect(mode, userText, replyText, kind = '') {
   const user = text(userText, 2000)
   const reply = text(replyText, 2000)
   if (!user || !reply) return false
-  if (/runtime-context|time-context|system|tool-result/.test(kind)) return false
+  if (/runtime-context|time-context|system|tool-result|feiyu-life-initiative|speak-up/.test(kind)) return false
   if (mode === '每轮') return true
   return user.length >= 8 || /[？！!?]|难过|开心|喜欢|讨厌|害怕|焦虑|生气|谢谢|对不起|想你|爱你|承诺|记住|以后|明天|昨天|今天/.test(user)
 }
@@ -248,13 +254,14 @@ export function buildReflectionPrompt({ userText, replyText, source = 'human' })
   return [
     '请复盘刚结束的一轮对话。你不是在回复用户，而是在更新角色的内在状态。',
     '只根据本轮文本判断，不补写事实；计划、假设和玩笑不算已经发生。',
-    'memoryCandidates 与 relationshipCandidates 只是候选，当前版本不会自动写入长期记忆或人物档案。',
+    '所有候选都只是证据：必须忠于本轮文字，敏感信息标 sensitive，没明确表达的用户偏好和目标不得标 explicit。',
+    '目标只允许 scope=virtual 或 local；现实行动、联系他人、消费、任意文件操作都不能成为自主目标。',
     `来源：${text(source, 40) || 'human'}`,
-    `用户输入：${text(userText, 1200)}`,
-    `角色回复：${text(replyText, 1200)}`,
+    `用户输入：${text(userText, 700)}`,
+    `角色回复：${text(replyText, 700)}`,
     '',
     '只输出 JSON：',
-    '{"affect":{"valenceDelta":-12到12,"arousalDelta":-12到12,"dimensions":{"joy":0到20,"calm":0到20,"worry":0到20,"sadness":0到20},"reason":"一句可审计的变化原因","confidence":0到1},"memoryCandidates":[{"summary":"候选摘要","importance":0到1,"confidence":0到1}],"relationshipCandidates":[{"person":"对方称呼","tone":"warm|neutral|tense","reason":"原因"}]}',
+    '{"affect":{"valenceDelta":-12到12,"arousalDelta":-12到12,"dimensions":{"joy":0到20,"calm":0到20,"worry":0到20,"sadness":0到20},"reason":"一句可审计的变化原因","confidence":0到1},"memoryCandidates":[{"summary":"可独立理解的候选","kind":"episode|fact|preference|promise|relationship","subject":"user|self|relationship|world","importance":0到1,"confidence":0到1,"sensitivity":"normal|private|sensitive","explicit":false,"ttlDays":365}],"preferenceCandidates":[{"owner":"self|user","key":"偏好方面","value":"偏好内容","confidence":0到1,"evidence":"证据","explicit":false}],"goalCandidates":[{"title":"目标","reason":"原因","nextStep":"下一步","scope":"virtual|local","confidence":0到1,"explicit":false}],"identityEvidence":[{"trait":"特质","polarity":"for|against","reason":"证据","confidence":0到1}],"relationshipCandidates":[{"person":"对方称呼","tone":"warm|neutral|tense","reason":"原因"}],"initiative":{"desire":0到1,"reason":"想主动说的原因","topic":"以后可自然提起的话题"}}',
   ].join('\n')
 }
 

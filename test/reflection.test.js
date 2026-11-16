@@ -22,7 +22,7 @@ test('reflection output is bounded and candidate-only', () => {
   assert.equal(value.affect.arousalDelta, -12)
   assert.equal(value.affect.dimensions.joy, 20)
   assert.equal(value.affect.confidence, 1)
-  assert.equal(value.memoryCandidates.length, 3)
+  assert.equal(value.memoryCandidates.length, 4)
   assert.equal(value.relationshipCandidates[0].tone, 'warm')
   assert.equal(normalizeReflection({ affect: {} }), null)
 })
@@ -66,6 +66,22 @@ test('daily event ledger deduplicates, bounds usage and never stores transcript'
   } finally { if (old === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = old }
 })
 
+test('event ledger redacts secrets from every cognition candidate surface', () => {
+  const old = process.env.DSH_HOME
+  process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'feiyu-redact-'))
+  try {
+    const at = Date.parse('2026-11-16T05:00:00Z')
+    appendEvent({ id: 'secret', at, type: 'turn.reflection', status: 'applied',
+      preferenceCandidates: [{ key: 'API key', value: 'sk-should-never-remain', evidence: '用户发来的 secret' }],
+      goalCandidates: [{ title: '保存 access token sk-should-never-remain', reason: 'secret' }],
+      initiative: { topic: '聊 API key sk-should-never-remain', reason: 'secret' },
+    }, { timeZone: 'Asia/Shanghai' })
+    const raw = JSON.stringify(readEvents({ date: '2026-11-16' }))
+    assert.doesNotMatch(raw, /sk-should-never-remain/)
+    assert.match(raw, /敏感内容已拦截/)
+  } finally { if (old === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = old }
+})
+
 test('life settlements share the ledger without duplicate writes', () => {
   const old = process.env.DSH_HOME
   process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'feiyu-life-event-'))
@@ -84,8 +100,10 @@ test('reflection modes and prompt enforce a single bounded candidate pass', () =
   assert.equal(shouldReflect('重要回合', '嗯', '知道了', 'human'), false)
   assert.equal(shouldReflect('重要回合', '以后记得这件事', '好，我记住了', 'human'), true)
   assert.equal(shouldReflect('每轮', '内部时间', '收到', 'runtime-context'), false)
+  assert.equal(shouldReflect('每轮', '自己浮现的话题', '主动说一句', 'feiyu-life-initiative'), false)
   const prompt = buildReflectionPrompt({ userText: 'x'.repeat(3000), replyText: 'y'.repeat(3000) })
   assert.ok(prompt.length < 3000)
-  assert.match(prompt, /不会自动写入长期记忆/)
+  assert.match(prompt, /敏感信息标 sensitive/)
+  assert.match(prompt, /现实行动、联系他人、消费/)
   assert.equal(eventId(['a', 'b']), eventId(['a', 'b']))
 })

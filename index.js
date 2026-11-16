@@ -42,6 +42,10 @@ import {
   resetAffect, shouldReflect, sourceKind,
 } from './reflection.js'
 import {
+  applyCognition, externalPluginStatus, initiativeDecision, markInitiative, mindContext,
+  mutateGoal, mutateMemory, mutatePreference, readMind, writeMind,
+} from './mind.js'
+import {
   activeEntities, activePeople, cleanupContinuity, continuityContext, continuityRevision,
   continuitySummary, continuityView, mutateEntity, mutatePerson, planSyncInfo, readContinuity, readMemories,
   relationshipSummary, settleTimeline,
@@ -105,6 +109,9 @@ const clockOf = (minute) => {
 export function apply(ctx) {
   const mounted = new Map()
   let reflectionInFlight = 0
+  const lastHumanAt = new Map()
+  const initiativeCheckedAt = new Map()
+  const initiativeRunning = new Set()
 
   const sessions = () => {
     try {
@@ -126,6 +133,7 @@ export function apply(ctx) {
 
   const mount = (agent) => {
     const cwd = String((agent && agent.session && agent.session.cwd) || '')
+    if (!lastHumanAt.has(agent.id)) lastHumanAt.set(agent.id, Date.now())
     const offs = []
     offs.push(agent.ctx.systemPrompt.context({
       name: 'feiyu-life',
@@ -135,10 +143,14 @@ export function apply(ctx) {
           const cfg = readConfig()
           if (!inWorkspace(cfg, cwd)) return ''
           const life = generate(cfg).text
-          const inner = cfg.内在?.启用 === false ? '' : affectContext(readAffect(cfg.内在), cfg.内在)
-          if (cfg.连续性?.启用 === false) return [life, inner].filter(Boolean).join('\n')
+          const external = externalPluginStatus()
+          const externalFirst = cfg.人格?.外部插件兼容 === '外部优先'
+          const inner = cfg.内在?.启用 === false || (externalFirst && external.mood) ? '' : affectContext(readAffect(cfg.内在), cfg.内在)
+          const personalityCfg = externalFirst && external.memory ? { ...cfg.人格, 记忆启用: false } : cfg.人格
+          const personality = cfg.人格?.启用 === false ? '' : mindContext(readMind(cfg.人格), pendingInbox?.text || '', personalityCfg)
+          if (cfg.连续性?.启用 === false) return [life, inner, personality].filter(Boolean).join('\n')
           const state = readContinuity()
-          return `${life}\n${inner ? inner + '\n' : ''}（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`
+          return `${life}\n${inner ? inner + '\n' : ''}${personality ? personality + '\n' : ''}（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`
         } catch { return '' }
       },
     }))
@@ -179,6 +191,7 @@ export function apply(ctx) {
         const kind = sourceKind(payload)
         if (!value || /runtime-context|time-context|system|tool-result/.test(kind)) return
         pendingInbox = { text: value, kind: kind || 'human', token: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}` }
+        if (!/feiyu-life-initiative|speak-up|bili-duty-scan/.test(kind)) lastHumanAt.set(agent.id, Date.now())
       })
       if (typeof off === 'function') offs.push(off)
     } catch {}
@@ -195,7 +208,7 @@ export function apply(ctx) {
         reflectionChain = reflectionChain.then(async () => {
           const cfg = readConfig()
           const inner = cfg.内在 || {}
-          if (inner.启用 === false || !inWorkspace(cfg, cwd)) return
+          if ((inner.启用 === false && cfg.人格?.启用 === false) || !inWorkspace(cfg, cwd)) return
           const replyText = payloadReply || snapshot.reply
           if (!shouldReflect(inner.反思模式, inbox.text, replyText, inbox.kind)) return
           const usage = reflectionUsage(inner, Date.now(), cfg.时区)
@@ -207,13 +220,20 @@ export function apply(ctx) {
               userText: inbox.text, replyText, source: inbox.kind,
               config: inner, timeoutSeconds: inner.反思超时秒,
             })
-            applyReflection(id, result.reflection, inner)
+            const external = externalPluginStatus()
+            const externalFirst = cfg.人格?.外部插件兼容 === '外部优先'
+            if (inner.启用 !== false && !(externalFirst && external.mood)) applyReflection(id, result.reflection, inner)
+            const cognition = cfg.人格?.启用 === false
+              ? { applied: false, changes: [] }
+              : applyCognition(id, result.reflection, externalFirst && external.memory ? { ...cfg.人格, 记忆启用: false } : cfg.人格)
             appendEvent({
               id, at: Date.now(), type: 'turn.reflection', source: inbox.kind, status: 'applied',
               reason: result.reflection.affect.reason, model: result.model,
               affect: result.reflection.affect, memoryCandidates: result.reflection.memoryCandidates,
-              relationshipCandidates: result.reflection.relationshipCandidates, usage: result.usage,
-              meta: { inputChars: inbox.text.length, replyChars: replyText.length },
+              relationshipCandidates: result.reflection.relationshipCandidates,
+              preferenceCandidates: result.reflection.preferenceCandidates, goalCandidates: result.reflection.goalCandidates,
+              identityEvidence: result.reflection.identityEvidence, initiative: result.reflection.initiative, usage: result.usage,
+              meta: { inputChars: inbox.text.length, replyChars: replyText.length, cognitiveChanges: cognition.changes },
             }, { timeZone: cfg.时区 })
           } catch (e) {
             appendEvent({
@@ -226,6 +246,34 @@ export function apply(ctx) {
       })
       if (typeof off === 'function') offs.push(off)
     } catch {}
+    for (const [toolName, description, handler] of [
+      ['mind_remember', '明确记住、修正或忘记一条长期记忆；只操作插件自己的记忆库。', (args, cfg) => mutateMemory(args.action, { ...args, source: 'tool', origin: '对话中明确要求' }, cfg.人格)],
+      ['mind_preference', '明确记录或忘记角色/用户偏好；不会从含糊表达强行推断。', (args, cfg) => mutatePreference(args.action, { ...args, source: 'tool' }, cfg.人格)],
+      ['mind_goal', '管理角色自己的虚拟或插件本地目标；不能执行外部现实动作。', (args, cfg) => mutateGoal(args.action, { ...args, source: 'tool', origin: '对话中明确提出' }, cfg.人格)],
+    ]) {
+      try {
+        const off = agent.ctx.tools.register({
+          name: toolName, description,
+          parameters: {
+            type: 'object', properties: {
+              action: { type: 'string', enum: ['create', 'update', 'forget', 'restore', 'delete', 'complete', 'pause', 'resume', 'cancel'] },
+              id: { type: 'string' }, summary: { type: 'string' }, kind: { type: 'string', enum: ['episode', 'fact', 'preference', 'promise', 'relationship'] },
+              subject: { type: 'string', enum: ['user', 'self', 'relationship', 'world'] }, sensitivity: { type: 'string', enum: ['normal', 'private', 'sensitive'] }, pinned: { type: 'boolean' }, importance: { type: 'number' },
+              owner: { type: 'string', enum: ['self', 'user'] }, key: { type: 'string' }, value: { type: 'string' },
+              title: { type: 'string' }, reason: { type: 'string' }, nextStep: { type: 'string' }, scope: { type: 'string', enum: ['virtual', 'local'] }, progress: { type: 'number' },
+            }, required: ['action'], additionalProperties: false,
+          },
+          output: { schema: { type: 'object', additionalProperties: true }, render: (_a, v) => [{ type: 'text', text: String(v?.say || '') }] },
+          async execute(args = {}) {
+            try {
+              const value = handler(args, readConfig())
+              return { ok: true, value, say: args.action === 'forget' ? '已经淡忘这条了' : '人格记忆已更新' }
+            } catch (e) { return { ok: false, say: String(e?.message || e) } }
+          },
+        })
+        if (typeof off === 'function') offs.push(off)
+      } catch {}
+    }
     // She can change today's plan on purpose; that writes an adjustment segment.
     try {
       const off = agent.ctx.tools.register({
@@ -434,7 +482,52 @@ export function apply(ctx) {
     }
   }
 
+  const runInitiative = async (forcedAgent = null, force = false) => {
+    const cfg = readConfig()
+    const persona = cfg.人格 || {}
+    const proactive = persona.主动 || {}
+    const now = Date.now()
+    const candidates = forcedAgent ? [forcedAgent] : sessions()
+    const results = []
+    for (const agent of candidates) {
+      if (!agent || initiativeRunning.has(agent.id)) { if (agent) results.push({ sessionId: agent.id, sent: false, reason: 'busy' }); continue }
+      const cwd = String(agent?.session?.cwd || '')
+      if (!inWorkspace(cfg, cwd)) { results.push({ sessionId: agent.id, sent: false, reason: 'outside-workspace' }); continue }
+      const checked = initiativeCheckedAt.get(agent.id) || 0
+      if (!force && now - checked < Math.max(5, Number(proactive.检查间隔分钟) || 15) * 60000) { results.push({ sessionId: agent.id, sent: false, reason: 'check-interval' }); continue }
+      initiativeCheckedAt.set(agent.id, now)
+      const external = externalPluginStatus()
+      const life = generate(cfg, new Date(now))
+      const decision = initiativeDecision({
+        mind: readMind(persona, now), config: proactive, now, timeZone: cfg.时区,
+        lastHumanAt: lastHumanAt.get(agent.id) || now,
+        phone: life.current?.phone || '', behavior: life.world?.behavior || life.current?.behavior || '',
+        agentIdle: agent.status === undefined || agent.status === 'idle',
+        externalSpeakUp: persona.外部插件兼容 === '外部优先' && external.speakUp,
+      })
+      if (!decision.ok) { results.push({ sessionId: agent.id, sent: false, reason: decision.reason }); continue }
+      if (!force && Math.random() >= decision.chance) { results.push({ sessionId: agent.id, sent: false, reason: 'probability' }); continue }
+      initiativeRunning.add(agent.id)
+      try {
+        const message = {
+          role: 'user', id: eventId(['initiative-message', agent.id, now]),
+          content: [{ type: 'text', text: `<feiyu-initiative>\n这是你自己在此刻浮现、并决定主动说出的念头，不是对方发来的话。\n缘由：${decision.reason}\n可以自然聊起：${decision.topic}\n只说你真想说的一两句；不要解释标签、后台、概率或“主动搭话”。如果此刻不适合说，也可以保持安静。\n</feiyu-initiative>` }],
+          source: { kind: 'feiyu-life-initiative' },
+        }
+        await agent.followup(message)
+        markInitiative(readMind(persona, now), decision, persona, now)
+        appendEvent({ id: eventId(['initiative.sent', agent.id, now]), at: now, type: 'initiative.sent', source: 'native-personality', status: 'applied', reason: decision.reason, meta: { topic: decision.topic, chance: decision.chance, forced: force } }, { timeZone: cfg.时区 })
+        results.push({ sessionId: agent.id, sent: true, reason: decision.reason, topic: decision.topic })
+      } catch (e) {
+        results.push({ sessionId: agent.id, sent: false, reason: 'followup-failed', error: String(e?.message || e).slice(0, 180) })
+        appendEvent({ id: eventId(['initiative.failed', agent.id, now]), at: now, type: 'initiative.failed', source: 'native-personality', status: 'failed', reason: String(e?.message || e).slice(0, 180) }, { timeZone: cfg.时区 })
+      } finally { initiativeRunning.delete(agent.id) }
+    }
+    return results
+  }
+
   ctx.effect(() => ctx.interval(tick, 30000))
+  try { ctx.effect(() => ctx.interval(() => { runInitiative().catch(() => {}) }, 5 * 60 * 1000)) } catch {}
   ctx.effect(() => () => {
     for (const off of mounted.values()) { try { off() } catch {} }
     mounted.clear()
@@ -588,7 +681,23 @@ export function apply(ctx) {
       events: readEvents({ timeZone: cfg.时区, now: at, limit: 60 }).slice().reverse(),
       usage: reflectionUsage(cfg.内在, at, cfg.时区),
       privacy: '本地只保存反思结论、原因、候选摘要与用量，不保存对话原文。',
-      boundaries: ['候选记忆不会自动写入长期记忆', '候选关系不会自动创建人物', '反思失败不影响正常回复'],
+      boundaries: ['候选需经过人格沉淀策略', '敏感候选不自动沉淀', '反思失败不影响正常回复'],
+    }
+  }
+
+  const mindPayload = (now = new Date()) => {
+    const cfg = readConfig()
+    const at = now instanceof Date ? now.getTime() : Number(now) || Date.now()
+    const mind = readMind(cfg.人格, at)
+    return {
+      ok: true, mind, integrations: externalPluginStatus(),
+      counts: {
+        memories: mind.memories.filter((x) => x.status === 'active').length,
+        preferences: mind.preferences.filter((x) => x.status === 'active').length,
+        goals: mind.goals.filter((x) => x.status === 'active').length,
+        relationships: mind.relationships.length,
+      },
+      boundaries: ['长期记忆可查看、修正和淡忘', '敏感候选不自动沉淀', '自身目标仅限虚拟或插件本地范围', '主动搭话不会执行现实动作'],
     }
   }
 
@@ -601,6 +710,52 @@ export function apply(ctx) {
         try { return reply(res, 200, statePayload(new Date())) } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: state')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/mind',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        return reply(res, 200, mindPayload())
+      }),
+    }), 'feiyu-life: personality mind')
+  } catch {}
+
+  for (const [path, kind, mutate] of [
+    ['/mind/memory', 'memory', mutateMemory], ['/mind/preference', 'preference', mutatePreference], ['/mind/goal', 'goal', mutateGoal],
+  ]) {
+    try {
+      ctx.effect(() => ctx.webServer.register({
+        kind: 'exact', path: ROUTE_PREFIX + path,
+        handler: onlyOwner(async (req, res) => {
+          if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+          let body
+          try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
+          try {
+            const cfg = readConfig()
+            mutate(String(body?.action || ''), { ...body, source: 'settings', origin: '人格设置页明确操作' }, cfg.人格)
+            return reply(res, 200, mindPayload())
+          } catch (e) { return reply(res, 400, { ok: false, error: `${kind}: ${String(e?.message || e)}` }) }
+        }),
+      }), `feiyu-life: ${kind} mutation`)
+    } catch {}
+  }
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/mind/initiative',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        let body = {}
+        try { body = await readBody(req) } catch {}
+        const list = sessions()
+        const target = list.find((x) => String(x.id) === String(body?.sessionId || '')) || list[0]
+        if (!target) return reply(res, 409, { ok: false, error: 'no live root session' })
+        const results = await runInitiative(target, true)
+        return reply(res, 200, { ...mindPayload(), initiativeResult: results[0] || { sessionId: target.id, sent: false, reason: 'not-run' } })
+      }),
+    }), 'feiyu-life: manual initiative')
   } catch {}
 
   try {
@@ -899,7 +1054,8 @@ export function apply(ctx) {
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
         try {
-          const backup = createSettingsBackup(readConfig(), readImageConfig())
+          const cfg = readConfig()
+          const backup = createSettingsBackup(cfg, readImageConfig(), readMind(cfg.人格))
           const data = Buffer.from(JSON.stringify(backup, null, 2), 'utf8')
           const day = backup.exportedAt.slice(0, 10)
           res.writeHead(200, {
@@ -928,12 +1084,14 @@ export function apply(ctx) {
         } catch (e) { return reply(res, 400, { ok: false, error: String((e && e.message) || e) }) }
         const previousLife = readConfig()
         const previousCamera = readImageConfig()
+        const previousMind = readMind(previousLife.人格)
         try {
           replaceConfig(restored.life)
           replaceImageConfig(restored.camera)
+          if (restored.mind) writeMind(restored.mind, restored.life.人格)
           return reply(res, 200, { ok: true, summary: restored.summary, issues: restored.issues })
         } catch (e) {
-          try { replaceConfig(previousLife); replaceImageConfig(previousCamera) } catch {}
+          try { replaceConfig(previousLife); replaceImageConfig(previousCamera); writeMind(previousMind, previousLife.人格) } catch {}
           return reply(res, 500, { ok: false, error: '恢复写入失败，已回滚原设置：' + String((e && e.message) || e) })
         }
       }),

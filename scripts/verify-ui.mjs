@@ -177,10 +177,22 @@ try {
     privacy: '本地只保存反思结论、原因、候选摘要与用量，不保存对话原文。',
     events: [{ id: 'r1', at: Date.now(), type: 'turn.reflection', source: 'human', status: 'applied', reason: '用户认真听她讲完了', model: 'test/model', memoryCandidates: [{ summary: '用户愿意听她聊作品集' }] }],
   }
-  await page.evaluate(({ life, continuity, affect }) => {
+  const mindState = {
+    ok: true,
+    counts: { memories: 2, preferences: 1, goals: 1, relationships: 1 },
+    integrations: { memory: false, mood: false, speakUp: false, bili: true },
+    mind: {
+      identity: { narrative: '我是大肥鱼，也在慢慢形成自己的看法。', traits: ['嘴硬心软', '重感情'], values: ['真诚', '尊重边界'] },
+      memories: [{ id: 'm1', summary: '月见喜欢在咖啡店安静写东西', kind: 'preference', importance: 0.9, status: 'active', source: 'reflection' }],
+      preferences: [{ id: 'p1', owner: 'self', key: '散步', value: '喜欢傍晚慢慢走', status: 'active' }],
+      goals: [{ id: 'g1', title: '整理本周生活片段', status: 'active', progress: 20, scope: 'local', nextStep: '挑三段真实时间线' }],
+      relationships: [{ id: 'r1', name: '月见', summary: '愿意认真听她讲完', warmth: 62, trust: 58, tension: 2 }],
+    },
+  }
+  await page.evaluate(({ life, continuity, affect, mind }) => {
     window.fetch = async (url) => ({
       ok: true,
-      async json() { return String(url).includes('/continuity') ? continuity : String(url).includes('/affect') ? affect : life },
+      async json() { return String(url).includes('/continuity') ? continuity : String(url).includes('/affect') ? affect : String(url).includes('/mind') ? mind : life },
     })
     const plugin = window.__photoDefinition.factory((name) => {
       if (name === 'react') return window.React
@@ -188,7 +200,7 @@ try {
     })
     const style = document.createElement('style'); style.textContent = plugin.__test.CSS; document.head.appendChild(style)
     window.ReactDOM.createRoot(document.getElementById('root')).render(window.React.createElement(plugin.__test.Panel))
-  }, { life: lifeState, continuity: continuityState, affect: affectState })
+  }, { life: lifeState, continuity: continuityState, affect: affectState, mind: mindState })
   await page.getByText('连续性', { exact: true }).click()
   await page.getByText('视觉作品集').waitFor()
   assert.equal(await page.getByText('取快递', { exact: true }).count(), 1, 'one-off pickup is rendered as a short task')
@@ -201,8 +213,15 @@ try {
   await page.getByText('统一事件账本', { exact: true }).waitFor()
   assert.equal(await page.getByText('心情不错', { exact: false }).count(), 1, 'native affect label is visible')
   assert.equal(await page.getByText('用户认真听她讲完了', { exact: false }).count() >= 1, true, 'auditable affect reason is visible')
-  assert.equal(await page.getByText('记忆候选（未写入）', { exact: false }).count(), 1, 'candidate boundary is explicit')
+  assert.equal(await page.getByText('记忆候选（已交由人格策略）', { exact: false }).count(), 1, 'candidate policy boundary is explicit')
   await page.screenshot({ path: join(outputDir, 'inner-settings.png'), fullPage: true })
+  await page.getByText('人格', { exact: true }).click()
+  await page.getByText('明确添加记忆', { exact: true }).waitFor()
+  assert.equal(await page.getByText('月见喜欢在咖啡店安静写东西', { exact: true }).count(), 1, 'durable memory is inspectable')
+  assert.equal(await page.getByText('整理本周生活片段', { exact: true }).count(), 1, 'self goal is inspectable')
+  assert.equal(await page.getByText('主动性', { exact: true }).count(), 1, 'initiative controls are visible')
+  assert.equal(await page.getByText('dsh-bili-subagent', { exact: false }).count(), 1, 'external integration status is visible')
+  await page.screenshot({ path: join(outputDir, 'personality-settings.png'), fullPage: true })
 } finally {
   await browser.close()
 }
