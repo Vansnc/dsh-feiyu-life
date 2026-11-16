@@ -1,13 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
   applyCognition, defaultMind, initiativeDecision, markInitiative, mindContext,
-  mutateGoal, mutateMemory, mutatePreference, normalizeCognition, readMind,
-  retrieveMemories,
+  mutateGoal, mutateMemory, mutatePreference, normalizeCognition, normalizeMind, readMind,
+  retrieveMemories, mindPath,
 } from '../mind.js'
 
 const cfg = {
@@ -153,3 +153,49 @@ test('sensitive text cannot enter any autonomous personality surface', () => {
   assert.equal(value.relationshipCandidates.length, 0)
   assert.equal(value.initiative, null)
 })
+
+
+test('user aliases collapse to one relationship row instead of competing people', () => {
+  const mind = defaultMind(cfg, 1000)
+  mind.relationships = [
+    { name: '用户', warmth: 60, trust: 55, tension: 2, summary: '旧感受', interactionCount: 2, createdAt: 800, updatedAt: 900 },
+    { name: '他', warmth: 70, trust: 60, tension: 1, summary: '最新感受', interactionCount: 3, createdAt: 950, updatedAt: 1100 },
+  ]
+  const clean = normalizeMind(mind, cfg, 1200)
+  assert.equal(clean.relationships.length, 1)
+  assert.equal(clean.relationships[0].name, '用户')
+  assert.equal(clean.relationships[0].summary, '最新感受')
+  assert.equal(clean.relationships[0].interactionCount, 3)
+  const context = mindContext(clean, '', cfg, 1200)
+  assert.equal((context.match(/用户：/g) || []).length, 1)
+  assert.equal((context.match(/他：/g) || []).length, 0)
+})
+
+test('new relationship evidence cannot recreate an alias row', () => isolated(() => {
+  const first = applyCognition('alias-1', {
+    relationshipCandidates: [{ person: '他', tone: 'warm', reason: '他夸我好看', confidence: 0.9 }],
+  }, cfg, 1000)
+  assert.equal(first.mind.relationships.length, 1)
+  assert.equal(first.mind.relationships[0].name, '用户')
+  const second = applyCognition('alias-2', {
+    relationshipCandidates: [{ person: '用户', tone: 'neutral', reason: '普通聊了几句', confidence: 0.9 }],
+  }, cfg, 2000)
+  assert.equal(second.mind.relationships.length, 1)
+  assert.equal(second.mind.relationships[0].name, '用户')
+  assert.equal(second.mind.relationships[0].interactionCount, 2)
+}))
+
+test('reading an old mind file migrates duplicate aliases on disk', () => isolated(() => {
+  const raw = defaultMind(cfg, 1000)
+  raw.relationships = [
+    { name: '用户', summary: '旧', warmth: 50, trust: 50, tension: 0, interactionCount: 1, createdAt: 1, updatedAt: 1 },
+    { name: '他', summary: '新', warmth: 60, trust: 55, tension: 0, interactionCount: 2, createdAt: 2, updatedAt: 2 },
+  ]
+  writeFileSync(mindPath(), JSON.stringify(raw))
+  const loaded = readMind(cfg, 3000)
+  assert.equal(loaded.relationships.length, 1)
+  assert.equal(loaded.relationships[0].name, '用户')
+  const disk = JSON.parse(readFileSync(mindPath(), 'utf8'))
+  assert.equal(disk.relationships.length, 1)
+  assert.equal(disk.relationships[0].name, '用户')
+}))

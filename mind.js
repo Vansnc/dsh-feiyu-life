@@ -97,8 +97,19 @@ function normGoal(item, now) {
   }
 }
 
+/**
+ * The user is addressed in many ways by the reflection model. Keep one
+ * canonical relationship row instead of letting "用户", "你", "对方" and "他"
+ * become four competing people. Other named people are untouched.
+ */
+export function canonicalRelationshipName(value) {
+  const name = text(value, 60)
+  if (!name) return ''
+  return /^(?:用户|用户本人|你|对方|他|他本人)$/.test(name) ? '用户' : name
+}
+
 function normRelationship(item, now) {
-  const name = text(item?.name || item?.person, 60)
+  const name = canonicalRelationshipName(item?.name || item?.person)
   if (!name) return null
   return {
     id: text(item?.id, 80) || `rel-${hash(name)}`, name,
@@ -106,6 +117,32 @@ function normRelationship(item, now) {
     summary: text(item?.summary || item?.reason, 180), interactionCount: Math.max(0, Math.round(Number(item?.interactionCount) || 0)),
     source: text(item?.source, 80) || 'reflection', createdAt: Number(item?.createdAt) || now, updatedAt: Number(item?.updatedAt) || now,
   }
+}
+
+/** Merge aliases that already landed in older files; newest row wins. */
+function mergeRelationships(list) {
+  const out = []
+  const index = new Map()
+  for (const rel of list) {
+    const key = normalized(rel.name)
+    if (!index.has(key)) {
+      index.set(key, out.length)
+      out.push(rel)
+      continue
+    }
+    const at = index.get(key)
+    const previous = out[at]
+    const latest = rel.updatedAt >= previous.updatedAt ? rel : previous
+    const older = latest === rel ? previous : rel
+    out[at] = {
+      ...latest,
+      createdAt: Math.min(previous.createdAt || latest.createdAt, rel.createdAt || latest.createdAt),
+      interactionCount: Math.max(previous.interactionCount || 0, rel.interactionCount || 0),
+      summary: latest.summary || older.summary,
+      updatedAt: Math.max(previous.updatedAt || 0, rel.updatedAt || 0),
+    }
+  }
+  return out
 }
 
 export function normalizeMind(raw, config = {}, now = Date.now()) {
@@ -123,7 +160,7 @@ export function normalizeMind(raw, config = {}, now = Date.now()) {
     memories: (Array.isArray(raw.memories) ? raw.memories : []).map((x) => normMemory(x, now)).filter(Boolean).slice(-2000),
     preferences: (Array.isArray(raw.preferences) ? raw.preferences : []).map((x) => normPreference(x, now)).filter(Boolean).slice(-300),
     goals: (Array.isArray(raw.goals) ? raw.goals : []).map((x) => normGoal(x, now)).filter(Boolean).slice(-100),
-    relationships: (Array.isArray(raw.relationships) ? raw.relationships : []).map((x) => normRelationship(x, now)).filter(Boolean).slice(-100),
+    relationships: mergeRelationships((Array.isArray(raw.relationships) ? raw.relationships : []).map((x) => normRelationship(x, now)).filter(Boolean)).slice(-100),
     identityEvidence: (Array.isArray(raw.identityEvidence) ? raw.identityEvidence : []).flatMap((x) => {
       const trait = text(x?.trait, 40); const reason = text(x?.reason, 140)
       return trait && reason ? [{ trait, polarity: x?.polarity === 'against' ? 'against' : 'for', reason, confidence: clamp(x?.confidence, 0, 1), eventId: text(x?.eventId, 100), at: Number(x?.at) || now }] : []
@@ -144,9 +181,20 @@ export function normalizeMind(raw, config = {}, now = Date.now()) {
 }
 
 export function readMind(config = {}, now = Date.now()) {
-  try { return normalizeMind(JSON.parse(readFileSync(mindPath(), 'utf8')), config, now) } catch {
-    try { return normalizeMind(JSON.parse(readFileSync(mindPath() + '.bak', 'utf8')), config, now) } catch { return defaultMind(config, now) }
+  for (const path of [mindPath(), mindPath() + '.bak']) {
+    try {
+      const raw = JSON.parse(readFileSync(path, 'utf8'))
+      const clean = normalizeMind(raw, config, now)
+      const rawRelationships = Array.isArray(raw?.relationships) ? raw.relationships : []
+      const needsAliasMigration = rawRelationships.length !== clean.relationships.length
+        || rawRelationships.some((x) => canonicalRelationshipName(x?.name || x?.person) !== text(x?.name || x?.person, 60))
+      if (needsAliasMigration) {
+        try { writeMind(clean, config, now) } catch {}
+      }
+      return clean
+    } catch {}
   }
+  return defaultMind(config, now)
 }
 
 export function writeMind(value, config = {}, now = Date.now()) {
@@ -193,7 +241,7 @@ export function normalizeCognition(raw) {
     return trait && reason && !containsSensitive({ trait, reason }) ? [{ trait, polarity: x?.polarity === 'against' ? 'against' : 'for', reason, confidence: clamp(x?.confidence, 0, 1, 0.5) }] : []
   }).slice(0, 3)
   const relationshipCandidates = (Array.isArray(raw.relationshipCandidates) ? raw.relationshipCandidates : []).flatMap((x) => {
-    const person = text(x?.person, 60); const reason = text(x?.reason, 140)
+    const person = canonicalRelationshipName(text(x?.person, 60)); const reason = text(x?.reason, 140)
     return person && reason && !containsSensitive({ person, reason }) ? [{ person, tone: ['warm', 'tense'].includes(x?.tone) ? x.tone : 'neutral', reason, confidence: clamp(x?.confidence, 0, 1, 0.7) }] : []
   }).slice(0, 3)
   const cue = raw.initiative && typeof raw.initiative === 'object' ? raw.initiative : null
@@ -254,14 +302,15 @@ export function applyCognition(eventId, cognition, config = {}, now = Date.now()
   }
   for (const item of c.relationshipCandidates) {
     if (item.confidence < 0.6) continue
-    let relation = mind.relationships.find((x) => normalized(x.name) === normalized(item.person))
-    if (!relation) { relation = normRelationship({ name: item.person }, now); mind.relationships.push(relation) }
+    const personName = canonicalRelationshipName(item.person)
+    let relation = mind.relationships.find((x) => normalized(x.name) === normalized(personName))
+    if (!relation) { relation = normRelationship({ name: personName }, now); mind.relationships.push(relation) }
     relation.interactionCount += 1
     relation.warmth = clamp(relation.warmth + (item.tone === 'warm' ? 1 : item.tone === 'tense' ? -1 : 0), 0, 100, relation.warmth)
     relation.trust = clamp(relation.trust + (item.tone === 'warm' ? 0.5 : item.tone === 'tense' ? -0.5 : 0), 0, 100, relation.trust)
     relation.tension = clamp(relation.tension + (item.tone === 'tense' ? 2 : item.tone === 'warm' ? -1 : -0.25), 0, 100, relation.tension)
     relation.summary = item.reason; relation.updatedAt = now
-    changes.push(`关系感受：${item.person}（${item.tone}）`)
+    changes.push(`关系感受：${personName}（${item.tone}）`)
   }
   for (const item of c.identityEvidence) if (item.confidence >= 0.72) mind.identityEvidence.push({ ...item, eventId: id, at: now })
   // A trait changes only after three independent pieces of aligned evidence.
