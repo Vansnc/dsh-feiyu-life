@@ -47,14 +47,34 @@ const propsByPlace = {
 // shot library by kind
 const shots = {
   selfie: [
-    '手机前置摄像头自拍，脸占画面大半，略微仰拍，画面里没有手',
-    '手机前置自拍，靠近镜头，画面边缘有轻微广角变形，背景虚化',
-    '手机前置自拍，侧躺着把脸凑近镜头，镜头略高',
+    '手机前置自拍，正常手持距离，胸像构图，带一点肩部和少量环境，脸约占画面 40%',
+    '手机前置自拍，半身近景，人物位于画面中央偏一侧，保留当前环境信息，脸不要贴满画面',
+    '手机前置自拍，肩部以上构图，镜头稍高于眼睛，画面自然舒展，不要极端广角变形',
   ],
-  scene: ['平视近景，主体占画面三分之二', '略微俯视，环境占一半', '低角度仰拍，光线从背后过来'],
+  scene: [
+    '平视近景，主体清楚，环境辅助说明场景',
+    '略微俯视，主体明确，背景不过度抢镜',
+    '中景构图，画面协调，保留地点信息与生活感',
+  ],
 }
 
 const defaultStyle = '日系精细插画，赛璐璐分色加柔和厚涂阴影，清晰线稿，非 Q 版'
+
+/** 表情由当前行为推断，避免固定摆拍 */
+function autoExpression(elements) {
+  const s = `${elements?.hint || ''} ${elements?.state?.what || ''}`
+  if (/睡|困|躺|刚醒|深夜/.test(s)) return '表情自然放松，带一点困意，眼神柔和有高光，嘴角带一点浅笑，不要僵硬瞪镜头'
+  if (/吃饭|外卖|奶茶|零食/.test(s)) return '表情自然轻松，嘴角带一点随意的笑意，眼神有光，不要刻意摆拍'
+  if (/图书馆|自习|学习|写稿|画|剪片|修图/.test(s)) return '表情安静专注，眼神清亮有高光，嘴角微收，不要呆滞'
+  return '表情自然灵动，眼睛有高光、嘴角带一点浅笑，不要僵硬摆拍'
+}
+
+/** 穿着由生活状态注入；没有就用自然日常兜底 */
+function autoOutfit(elements) {
+  const explicit = String(elements?.outfit || '').trim()
+  if (explicit) return explicit
+  return '符合当前时间、地点和活动的自然日常穿着，不要擅自换成礼服、女仆装、制服或 cosplay'
+}
 
 function rand(seedStr) {
   let h = 2166136261
@@ -121,22 +141,22 @@ export function liveState(now = new Date()) {
 export function buildElements(cfg, args, state = liveState()) {
   const type = String(args.type || 'selfie')
   const hint = String(args.hint || args.prompt || '').trim()
-  const outfit = String(args.outfit || (type === 'selfie' ? state.outfit : '') || '').trim()
+  const explicitOutfit = String(args.outfit || '').trim()
+  const outfit = explicitOutfit || (type === 'selfie' ? state.outfit : '')
   const location = String(args.location || '').trim() || state.location || locationHint(hint || state.what)
   const expression = String(args.expression || '').trim() || cfg.表情 || '自然的表情'
-  return { type, hint, outfit, location, expression, state, clock: state.clock, light: state.light }
+  return { type, hint, outfit, explicitOutfit, location, expression, state, clock: state.clock, light: state.light }
 }
 
 /** Template expansion: a decent description without calling any model. */
-export function templatePrompt(cfg, elements) {
-  const { type, hint, outfit, location, expression, clock, light } = elements
-  const r = rand(elements.hint + elements.location + elements.expression)
+export function templatePrompt(cfg, elements, useRef = false) {
+  const { type, hint, location, clock, light } = elements
+  const expression = autoExpression(elements)
+  const outfit = autoOutfit(elements)
+  const r = rand(`${hint}|${location}|${clock}`)
   const shotPool = shots[type] || shots.selfie
   const generatedShot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
-  const shot = type === 'selfie' && String(cfg.镜头 || '').trim()
-    ? String(cfg.镜头).trim() : generatedShot
   const visualStyle = String(cfg.风格 || defaultStyle).trim()
-  const requestedDetails = String(cfg.细节 || '').trim()
   const pool = propsByPlace[location]
     || (/路上|门口|地铁|公交|街上/.test(location) ? propsByPlace['路上'] : propsByPlace['宿舍书桌'])
   const props = []
@@ -146,55 +166,65 @@ export function templatePrompt(cfg, elements) {
   }
   const parts = []
   if (type === 'selfie') {
-    parts.push(`时间 ${clock}，${light}`)
+    parts.push(`这是她在 ${clock} 拍的一张自拍，${light}`)
     parts.push(`地点：${location}`)
-    if (outfit) parts.push(`穿着：${outfit}`)
-    parts.push(`动作：${hint || '正在自拍'}`)
+    parts.push(`当前动作：${hint || elements?.state?.what || '在进行日常活动'}（这个动作要实际画出来，比如刷手机就画出手和手机，不要省略）`)
+    parts.push(`穿着：${outfit}`)
     parts.push(`表情：${expression}`)
-    parts.push(`镜头：${shot}`)
-    parts.push(`背景：${props.join('、')}`)
-    parts.push(`主体细节：${requestedDetails || '眼睛虹膜层次、成束发丝高光、耳鳍半透明质感、衣料褶皱与皮肤通透感'}`)
-    parts.push('细节优先级：脸、眼睛、发丝和衣料清楚，背景只作衬托')
+    parts.push(`构图：${generatedShot}`)
+    parts.push(`背景中自然带出：${props.join('、')}`)
+    parts.push('画面要求：人物与环境关系自然，整体协调，主体清楚，不要怼脸，不要僵硬摆拍')
+    parts.push('人物要求：人物外貌完全以参考图为准，不要改脸；不要照搬参考图里的贝雷帽和蝴蝶结头饰，头发自然露出来')
   } else {
     parts.push(`时间 ${clock}，${light}`)
     parts.push(`地点：${location}`)
-    parts.push(`画面：${hint || '她此刻看到的东西'}`)
-    parts.push(`构图：${shot}`)
+    parts.push(`画面主体：${hint || '她此刻看到的场景'}`)
+    parts.push(`构图：${generatedShot}`)
     parts.push(`环境细节：${props.join('、')}`)
-    parts.push('质感：清晰的分色、柔和的环境光、空气里的细小颗粒')
+    parts.push('画面要求：构图清楚、主体明确、整体协调')
   }
   parts.push(`画风：${visualStyle}`)
-  parts.push('不要画面里有任何文字、水印、签名')
+  parts.push('不要出现任何文字、水印、签名')
   return parts.join('；')
 }
 
 /** Model expansion: let the DSH model write the full description. */
-export async function modelPrompt(ctx, agent, cfg, elements) {
+export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
   const target = cfg.提示词加工模型 && cfg.提示词加工模型.provider && cfg.提示词加工模型.model
     ? cfg.提示词加工模型
     : pickModel(agent, cfg)
   if (!target || !ctx?.llm?.stream) { log('prompt expand skipped: ' + (target ? 'no ctx.llm.stream' : 'no model')); return null }
-  const system = '你是图像提示词工程师。把用户给的一句生活片段，扩写成一段给文生图模型用的中文画面描述。只输出描述本身，不要解释、不要分点、不要引号。'
+  const system = '你是图像提示词工程师。请根据“当前生活状态”生成一段给文生图模型使用的中文画面描述。人物长相以参考图为唯一准则，不要自行改脸，不要新增参考图里没有的帽子或头饰。只输出描述本身，不要解释、不要分点、不要引号。'
+  const head = useRef && elements.type !== 'scene'
+    ? [
+      '人物长相以参考图为唯一准则，不要自行改脸，不要新增参考图里没有的帽子或头饰。',
+      `服装：${autoOutfit(elements)}`,
+      `表情：${autoExpression(elements)}`,
+    ]
+    : [
+      `角色设定（长相固定，不要改）：${cfg.外观 || ''}`,
+      `服装：${elements.outfit || cfg.服装 || ''}`,
+      `表情：${elements.expression || '自然的表情'}`,
+    ]
   const user = [
-    `角色设定（长相固定，不要改）：${cfg.外观 || ''}`,
-    `服装：${elements.outfit || cfg.服装 || ''}`,
-    `时间：${elements.clock}（${elements.light}）`,
-    `地点：${elements.location}`,
-    `类型：${elements.type === 'selfie' ? '她本人在自拍，脸在画面里' : '只拍场景或物品，不出现她本人'}`,
-    `她给的片段：${elements.hint || '（没有，按上面几点自由发挥）'}`,
-    `表情：${elements.expression}`,
-    `镜头：${elements.type === 'selfie' ? (cfg.镜头 || '手机前置自拍近景') : '根据主体安排清楚的环境构图'}`,
-    `细节重点：${cfg.细节 || '眼睛虹膜、成束发丝、衣料褶皱、材质与光影层次'}`,
-    `指定画风：${cfg.风格 || defaultStyle}`,
+    ...head,
     '',
     '要求：',
-    '1. 写成一段 150–220 字的中文描述，按「光线 → 地点与背景 → 她的动作/物体状态 → 镜头与构图 → 表情 → 材质细节 → 画风」的顺序，总长度不要超过 240 字；',
-    '2. 具体到能画：写出 2–4 件环境里的东西（台灯、画册、奶茶、快递盒这类），写出光线方向；',
-    '3. 自拍要写手机前置视角、脸占画面比例；不要写「手臂伸向镜头」这类手部前景——手最容易画崩；非自拍要写构图和主体位置；',
-    '4. 主体细节优先于背景杂物：脸部轮廓、虹膜与睫毛、成束发丝、衣料褶皱必须清楚；不要只写“高细节”这种空话；',
-    `5. 画风严格使用：${cfg.风格 || defaultStyle}；`,
-    '6. 结尾加一句：画面里不要出现任何文字、水印、签名；',
-    '7. 不要写「参考图」「保持角色」这类词——那是另一层的事。',
+    '1. 自拍要避免过近，默认采用自然的胸像或半身自拍，保留少量环境；',
+    '2. 必须保留用户片段里的动作细节（比如「刷手机」就要画出手拿手机在刷，「照镜子」就要画镜子），不能省略或改成别的动作；',
+    '3. 表情必须有眼神高光和一点浅笑或好奇，不能呆滞、不能面无表情；',
+    '4. 不要照搬参考图里的贝雷帽和蝴蝶结头饰，头发自然露出来；',
+    '5. 具体到能画：写出 2–4 件环境里的东西（台灯、画册、奶茶、快递盒这类），写出光线方向；',
+    '6. 不要写「手臂伸向镜头」这类手部前景——手最容易画崩；',
+    '7. 人物与背景要协调，画风统一；',
+    `8. 画风严格使用：${defaultStyle}；`,
+    '9. 结尾补一句：画面里不要出现任何文字、水印、签名；',
+    '10. 不要写「参考图」「保持角色」这类词。',
+    '',
+    `时间：${elements.clock}（${elements.light}）`,
+    `地点：${elements.location}`,
+    `类型：${elements.type === 'selfie' ? '自拍，人物本人出镜，脸在画面里' : '场景照，不出现她本人'}`,
+    `当前状态：${elements.hint || elements.state?.what || '日常生活片段'}`,
   ].join('\n')
   // Reasoning budget eats the whole allowance on some models; expansion needs none.
   let result
@@ -221,7 +251,10 @@ export async function modelPrompt(ctx, agent, cfg, elements) {
 /** One streaming call: collect text, finish reason, usage. */
 async function collectStream(ctx, target, system, user, agent, opts = {}) {
   const content = []
-  if (opts.image) content.push({ type: 'image', attachment: opts.image })
+  const images = []
+  if (Array.isArray(opts.images)) images.push(...opts.images.filter(Boolean))
+  if (opts.image) images.push(opts.image)
+  for (const image of images) content.push({ type: 'image', attachment: image })
   content.push({ type: 'text', text: user })
   const req = {
     provider: target.provider,
@@ -261,7 +294,7 @@ function pickModel(agent, cfg) {
 }
 
 /** Post-shot check: character drift / wrong style / broken drawing / text watermark. */
-export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = true) {
+export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = true, referencePaths = []) {
   if (!ctx?.llm?.stream || !ctx?.attachments?.saveImages) { log('check skipped: no llm or attachments'); return null }
   let tempImage = ''
   let toCheck = imagePath
@@ -281,47 +314,51 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
   } catch (e) { log('check image read failed: ' + String((e && e.message) || e).slice(0, 140)); return null }
   finally { if (tempImage) { try { unlinkSync(tempImage) } catch {} } }
   if (!imageRef) { log('check skipped: no attachment ref'); return null }
+  const refRefs = []
+  for (const p of referencePaths.slice(0, 3)) {
+    try {
+      const buf = readFileSync(p)
+      const mediaType = /\.jpe?g$/i.test(p) ? 'image/jpeg' : 'image/png'
+      const refs = await ctx.attachments.saveImages([{ data: buf, mediaType, name: 'feiyu-ref' }])
+      if (refs && refs[0]) refRefs.push(refs[0])
+    } catch {}
+  }
 
   const target = pickModel(agent, cfg)
   const selfie = elements.type !== 'scene'
   const system = '你是严格的插画质检员。只输出一个 JSON 对象，不要解释、不要代码块、不要多余的字。'
   const user = [
-    '看这张图，判断它是不是一张能用的成图。',
+    '前面若干张是人物参考图，最后一张是本次生成结果。',
+    '请直接对照参考图检查生成结果，不要只依据文字设定。',
     '',
-    `角色设定（本该长这样）：${cfg.外观 || ''}`,
-    `这张的要求：`,
-    `- 类型：${selfie ? '她本人在自拍，脸应该占画面大半' : '只拍场景或物品，不该出现她本人'}`,
-    `- 时间光线：${elements.clock || '未知'}（${elements.light || ''}）`,
-    `- 地点：${elements.location || '未知'}`,
-    `- 穿着：${elements.outfit || '没指定，随意'}`,
-    `- 表情：${elements.expression || '自然'}`,
-    `- 画风：${cfg.风格 || defaultStyle}`,
-    `- 镜头：${selfie ? (cfg.镜头 || '手机前置自拍近景') : '主体清晰的环境构图'}`,
-    `- 细节重点：${cfg.细节 || '眼睛、发丝、衣料与材质层次清楚'}`,
+    '必须检查：',
+    '1. 生成图的脸型、五官比例、发型轮廓、发色、瞳色、发饰是否像参考图；',
+    '2. 成图里出现参考图那顶贝雷帽或蝴蝶结头饰的，判不合格（那套造型不保留）；',
+    '3. 自拍构图是否自然：至少看到肩部或上半身，不要只剩半张脸，不要过度怼脸；',
+    '4. 表情是否自然灵动：眼神有高光、嘴角带浅笑或好奇，不能呆滞木然；',
+    '5. 人物与背景是否协调，画面是否统一；',
+    '6. 是否存在画崩、多手多指、五官错位、肢体畸形；',
+    '7. 是否出现文字、水印、签名、边框；',
+    '8. 当前状态里的动作有没有画出来（比如刷手机要看到手机和手）；',
     '',
-    '逐项看：',
-    '1. 角色特征对不对：深蓝长卷发、发尾变浅蓝、头顶鲸鱼尾呆毛、两侧鲸鱼鳍耳、蓝瞳、鲸鱼尾；',
-    '2. 画风对不对；',
-    '3. 有没有画崩：多手多指、五官错位、肢体畸形、脸糊成一团；',
-    '4. 画面里有没有文字、水印、签名、边框；',
-    '5. 场景和时间光线对不对；',
-    `6. ${selfie ? '有没有自拍视角：手机前置、脸占画面大半' : '构图有没有拍到主体，主体清不清楚'}`,
-    '7. 画面里有没有伸向镜头的手、手指特写、粘在一起的手指——有就算画崩',
-    '8. 主体是否清晰：脸、眼睛、发丝和衣料有没有糊成大片色块，关键材质有没有基本层次',
+    `当前时间与光线：${elements.clock || '未知'}（${elements.light || ''}）`,
+    `当前地点：${elements.location || '未知'}`,
+    `当前状态：${elements.hint || elements.state?.what || '未知'}`,
+    `当前穿着：${autoOutfit(elements)}`,
     '',
-    '判定：背景杂物少一两样没关系；角色长相跑偏、画风错、画崩（含手）、有文字水印，或主体关键细节明显发糊，出现任何一样都必须判不合格。',
+    '判定标准：只要出现“脸明显不像参考图、照搬参考图的贝雷帽/头饰、表情呆滞、过度怼脸、画崩、有字水印”中的任意一项，就判不合格。',
     '',
-    '只输出：{"合格":true 或 false,"问题":["最多 3 条，写你在图上实际看到了什么，不要空话"],"改法":"一句话，告诉生图模型下一张要怎么改"}',
+    '只输出 JSON：{"合格":true 或 false,"问题":["最多 4 条"],"改法":"一句话说明下一张该怎么修"}',
   ].join('\n')
 
   let result
   try {
     const timeoutMs = Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000
-    result = await collectStream(ctx, target, system, user, agent, { maxTokens: 4000, reasoningEffort: 'low', image: imageRef, timeoutMs })
+    result = await collectStream(ctx, target, system, user, agent, { maxTokens: 4000, reasoningEffort: 'low', images: [...refRefs, imageRef], timeoutMs })
   } catch (e) {
     log('check call failed: ' + String((e && e.message) || e).slice(0, 160))
     if (e && e.code === 'ETIMEDOUT') return null
-    try { result = await collectStream(ctx, target, system, user, agent, { maxTokens: 5000, image: imageRef, timeoutMs: Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000 }) } catch { return null }
+    try { result = await collectStream(ctx, target, system, user, agent, { maxTokens: 5000, images: [...refRefs, imageRef], timeoutMs: Math.max(10, Math.min(300, Number(cfg.模型超时秒) || 60)) * 1000 }) } catch { return null }
   }
   const text = String(result?.out || '').trim()
   const block = text.match(/\{[\s\S]*\}/)
@@ -340,11 +377,12 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
 export async function generatePrompt(ctx, agent, cfg, args) {
   const state = liveState()
   const elements = buildElements(cfg, args, state)
+  const useRef = elements.type !== 'scene' && cfg.用参考图 !== false
   const mode = String(cfg.提示词加工 || '模型')
   if (mode !== '关') {
-    const text = await modelPrompt(ctx, agent, cfg, elements)
-    if (text) return { prompt: text, elements, usedModel: true }
+    const text = await modelPrompt(ctx, agent, cfg, elements, useRef)
+    if (text) return { prompt: text, elements, usedModel: true, useRef }
   }
-  return { prompt: templatePrompt(cfg, elements), elements, usedModel: false }
+  return { prompt: templatePrompt(cfg, elements, useRef), elements, usedModel: false, useRef }
 }
 

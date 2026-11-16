@@ -81,8 +81,8 @@ test('camera requests use detailed 2K lossless output without oversized prompts'
   assert.equal(body.output_format, 'png')
   assert.deepEqual(body.optimize_prompt_options, { mode: 'standard' })
   const prompt = composeImagePrompt('细节很多；'.repeat(100), true)
-  assert.ok(prompt.length <= 300)
-  assert.match(prompt, /保持参考图/)
+  assert.ok(prompt.length <= 520)
+  assert.match(prompt, /参考图/)
   assert.match(prompt, /不要出现任何文字、水印、签名$/)
 })
 

@@ -39,7 +39,7 @@ const log = (m) => {
   } catch {}
 }
 
-export const IMAGE_CONFIG_VERSION = 3
+export const IMAGE_CONFIG_VERSION = 4
 const LEGACY_DEFAULT_DETAILS = '发丝高光、耳鳍的半透明质感、脖颈阴影、衣服褶皱、背景里的生活杂物（画册、马克笔、奶茶、台灯）'
 
 const DEFAULT_CONFIG = {
@@ -49,12 +49,12 @@ const DEFAULT_CONFIG = {
   备用模型: 'doubao-seedream-5-0-flash-260915',
   用参考图: true,
   参考图: '',
-  外观: '鲸鱼娘：深蓝色及腰长卷发，发尾渐变成浅蓝；头顶一撮鲸鱼尾形状的呆毛；白色蕾丝女仆头饰，头饰右侧一个小蓝蝴蝶结；两侧各有一只鲸鱼鳍形状的耳，耳内侧白色；蓝色大眼，皮肤白皙，圆脸，21 岁成年女性的比例',
-  服装: '深蓝色长袖女仆连衣裙，胸前白色荷叶边衬衣，白色大围裙，裙摆金色藤蔓刺绣，袖口白色荷叶边；身后一条深蓝色鲸鱼尾巴，尾鳍浅蓝；白色连裤袜，深蓝色玛丽珍鞋',
-  风格: '日系精细插画，赛璐璐分色加柔和厚涂阴影，清晰线稿，非 Q 版',
-  镜头: '手机前置自拍近景，脸占画面大半，平视或微微仰起下巴看镜头，画面里不出现手',
-  表情: '嘴角带一点得意的笑，眼睛看进镜头',
-  细节: '虹膜纹理与多层高光、清楚的睫毛、成束发丝及发尾渐变、耳鳍半透明质感、蕾丝纤维、衣料纹理与自然褶皱',
+  外观: '',
+  服装: '',
+  风格: '',
+  镜头: '',
+  表情: '',
+  细节: '',
   画幅: '竖幅',
   清晰度: '2K',
   提示词加工: '模型',
@@ -163,6 +163,15 @@ export function migrateImageConfig(raw) {
   if (version < 3) {
     if (next.清晰度 === undefined) next.清晰度 = DEFAULT_CONFIG.清晰度
     if (next.细节 === LEGACY_DEFAULT_DETAILS) next.细节 = DEFAULT_CONFIG.细节
+  }
+  if (version < 4) {
+    // 参考图驱动相机：旧提示词字段全部退场，长相交给参考图、服装由生活状态注入
+    next.外观 = ''
+    next.服装 = ''
+    next.风格 = ''
+    next.镜头 = ''
+    next.表情 = ''
+    next.细节 = ''
   }
   next.配置版本 = IMAGE_CONFIG_VERSION
   return { value: next, changed: version !== IMAGE_CONFIG_VERSION || '种子' in source || '后端' in source }
@@ -426,7 +435,7 @@ export function buildImageRequest(cfg, prompt) {
 
 const NO_TEXT_PROMPT = '画面里不要出现任何文字、水印、签名'
 
-function boundedPrompt(value, max = 300) {
+function boundedPrompt(value, max = 520) {
   const text = String(value || '').replace(/\s+/g, ' ').trim()
   if (text.length <= max) return text
   const withoutTail = text.replace(/[；。]?画面里不要出现任何文字、水印、签名[；。]?$/u, '')
@@ -436,19 +445,19 @@ function boundedPrompt(value, max = 300) {
 
 export function composeImagePrompt(expanded, useRef = true) {
   const identity = useRef
-    ? '保持参考图中角色的脸型、发色渐变、鲸鱼鳍耳、呆毛、瞳色和鲸鱼尾一致；'
+    ? '人物外貌完全以参考图为准；保持相同的脸型、五官比例、发型轮廓、发色渐变、瞳色、耳朵和尾巴等关键特征；不要改脸；不要照搬参考图里的贝雷帽和蝴蝶结头饰（那套造型不要保留，头发自然露出来）；服装按描述换；'
     : ''
-  return boundedPrompt(identity + String(expanded || ''), 300)
+  return boundedPrompt(identity + String(expanded || ''), 520)
 }
 
 function composeRetakePrompt(base, check) {
   const correction = [
-    ...(check?.problems || []).slice(0, 2),
+    ...(check?.problems || []).slice(0, 3),
     check?.fix || '',
   ].filter(Boolean).join('；')
-  if (!correction) return boundedPrompt(base, 300)
-  const suffix = `；修正：${boundedPrompt(correction, 82)}`
-  return boundedPrompt(base, 300 - suffix.length) + suffix
+  if (!correction) return boundedPrompt(base, 520)
+  const suffix = `；修正要求：${boundedPrompt(correction, 160)}`
+  return boundedPrompt(base, 520 - suffix.length) + suffix
 }
 
 async function arkGenerate(cfg, prompt, opts = {}) {
@@ -507,12 +516,13 @@ async function shootAndCheck(ctx, cfg, { prompt, useRef, elements }) {
   let last = null
   let check = null
   let current = ''
+  const referencePaths = useRef ? referenceImageFiles(cfg).slice(0, 3) : []
   for (let i = 0; i < attempts; i++) {
-    current = i === 0 ? boundedPrompt(prompt, 300) : composeRetakePrompt(prompt, check)
+    current = i === 0 ? boundedPrompt(prompt, 520) : composeRetakePrompt(prompt, check)
     const r = await generateImage(cfg, current, { useRef })
     last = r
     if (cfg.出图自检 === false) { notes.push('自检关着，没看'); break }
-    check = await checkImage(ctx, findSession(ctx), cfg, r.path, elements, useRef)
+    check = await checkImage(ctx, findSession(ctx), cfg, r.path, elements, useRef, referencePaths)
     if (!check) { notes.push('自检没跑成，这张没验'); break }
     if (check.pass) { notes.push(i === 0 ? '自检过了' : `第 ${i + 1} 张过了`); break }
     notes.push(`第 ${i + 1} 张不合格：${check.problems.join('；') || '（没说出具体问题）'}`)
@@ -667,7 +677,7 @@ function registerRoutes(ctx) {
           outfit: body.outfit || '',
           expression: body.expression || '',
         })
-        const useRef = String(body.type || 'selfie') !== 'scene' && cfg.用参考图
+        const useRef = expanded.useRef
         const prompt = composeImagePrompt(expanded.prompt, useRef)
         const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
         return reply(res, 200, {
@@ -745,7 +755,7 @@ export function registerImage(ctx) {
         hint: { type: 'string', description: '画面里还想要什么（姿势、表情、手里的东西、场景细节）。不填就按此刻的状态拍' },
         type: { type: 'string', enum: ['selfie', 'scene'], description: 'selfie=她本人自拍；scene=拍任何别的东西（风景、物品、吃的、猫、街景、人也可以）' },
         location: { type: 'string', description: '可选：这一张在哪（不填从生活线推断）' },
-        outfit: { type: 'string', description: '可选：这一张想让她穿什么（睡衣、卫衣、浴巾…）。不填就沿用参考图里的女仆装' },
+        outfit: { type: 'string', description: '可选：这一张想让她穿什么（睡衣、卫衣、浴巾…）。不填就用生活线此刻的穿着' },
         expression: { type: 'string', description: '可选：表情（偷笑、害羞、困、委屈、得意）。不填用默认的笑' },
       },
       additionalProperties: false,
@@ -772,7 +782,7 @@ export function registerImage(ctx) {
       lastShotAt = Date.now()
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, args)
-        const useRef = String(args.type || 'selfie') !== 'scene' && cfg.用参考图
+        const useRef = expanded.useRef
         const prompt = composeImagePrompt(expanded.prompt, useRef)
         const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
         const flawed = r.check && r.check.pass === false

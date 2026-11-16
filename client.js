@@ -1582,14 +1582,8 @@ window.__ModuleLoader__.load({
 
             h('div', { 'data-fi-sec': '', 'data-fi-wide': '' },
               h('div', { 'data-fi-h': '' }, '角色形象与画面'),
-              h('div', { 'data-fi-sub': '' }, '这些内容组成每张角色自拍的稳定基础提示词。'),
-              h(Label, { label: '固定外观' }, h('textarea', { value: config.外观 || '', onChange: edit('外观') })),
-              h(Label, { label: '默认服装' }, h('textarea', { value: config.服装 || '', onChange: edit('服装') })),
-              h('div', { 'data-fi-settings': '' },
-                h(Label, { label: '画风' }, h('textarea', { value: config.风格 || '', onChange: edit('风格') })),
-                h(Label, { label: '自拍镜头' }, h('textarea', { value: config.镜头 || '', onChange: edit('镜头') }))),
-              h(Label, { label: '默认表情' }, h('input', { value: config.表情 || '', onChange: edit('表情') })),
-              h(Label, { label: '画面细节' }, h('textarea', { value: config.细节 || '', onChange: edit('细节') })),
+              h('div', { 'data-fi-sub': '' }, '角色长相由参考图决定；场景、服装、时间、光线、动作由「鱼的生活」当前状态自动注入，通常不需要填写任何提示词。'),
+              h(Label, { label: '画风' }, h('textarea', { value: config.风格 || '', onChange: edit('风格'), placeholder: '日系精细插画，赛璐璐分色加柔和厚涂阴影，清晰线稿，非 Q 版' })),
               h(Label, { label: '画幅' }, h('select', { value: config.画幅 || '竖幅', onChange: edit('画幅') },
                 h('option', { value: '竖幅' }, '竖幅 3:4'), h('option', { value: '方形' }, '方形 1:1'), h('option', { value: '横幅' }, '横幅 4:3'))),
               h('div', { 'data-fi-note': '' }, config.清晰度 === '1.5K'
