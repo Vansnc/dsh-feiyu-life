@@ -146,7 +146,12 @@ try {
   await page.getByText('再显示 8 张').click()
   assert.equal(await page.locator('[data-fi-photo]').count(), 16, 'gallery loads more photos in batches')
   assert.equal(await page.getByText('基础与模型').count(), 1)
-  assert.equal(await page.getByText('角色形象与画面').count(), 1)
+  assert.equal(await page.getByText('动态画面').count(), 1)
+  assert.equal(await page.getByText('人物参考图文件 / 目录（唯一人物输入，最多 10 张）').count(), 1)
+  assert.equal(await page.getByText('画面描述').count(), 0, 'manual scene prompt is not exposed')
+  assert.equal(await page.getByText('穿着（可空）').count(), 0, 'manual outfit prompt is not exposed')
+  assert.equal(await page.getByText('表情（可空）').count(), 0, 'manual expression prompt is not exposed')
+  assert.equal(await page.getByText('提示词加工').count(), 0, 'prompt processing mode is internal')
   await page.screenshot({ path: join(outputDir, 'photo-settings.png'), fullPage: true })
 
   // Mount the complete settings panel and verify continuity + relationship state.

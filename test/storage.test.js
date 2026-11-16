@@ -66,12 +66,16 @@ test('expired plan and adjustment files are cleaned by retention policy', () => 
 })
 
 test('image configuration has an explicit version and bounded timeouts', () => {
-  const cfg = normalizeImageConfig({ 配置版本: 0, 模型超时秒: 2, 生图超时秒: 9999, 照片保留天数: 0 })
+  const cfg = normalizeImageConfig({ 配置版本: 4, 模型超时秒: 2, 生图超时秒: 9999, 照片保留天数: 0, 用参考图: false, 风格: '固定画风', 表情: '固定笑脸', 提示词加工: '模板' })
   assert.equal(cfg.配置版本, IMAGE_CONFIG_VERSION)
   assert.equal(cfg.模型超时秒, 10)
   assert.equal(cfg.生图超时秒, 600)
   assert.equal(cfg.照片保留天数, 90)
   assert.equal(cfg.清晰度, '2K')
+  assert.equal(cfg.用参考图, true)
+  assert.equal(Object.hasOwn(cfg, '风格'), false)
+  assert.equal(Object.hasOwn(cfg, '表情'), false)
+  assert.equal(Object.hasOwn(cfg, '提示词加工'), false)
 })
 
 test('camera requests use detailed 2K lossless output without oversized prompts', () => {
@@ -81,8 +85,9 @@ test('camera requests use detailed 2K lossless output without oversized prompts'
   assert.equal(body.output_format, 'png')
   assert.deepEqual(body.optimize_prompt_options, { mode: 'standard' })
   const prompt = composeImagePrompt('细节很多；'.repeat(100), true)
-  assert.ok(prompt.length <= 520)
+  assert.ok(prompt.length <= 900)
   assert.match(prompt, /参考图/)
+  assert.match(prompt, /发型扎法.*可按当前生活自然变化/)
   assert.match(prompt, /不要出现任何文字、水印、签名$/)
 })
 

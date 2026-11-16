@@ -1364,7 +1364,7 @@ window.__ModuleLoader__.load({
         const [savedConfig, setSavedConfig] = useState(null)
         const [message, setMessage] = useState('')
         const [busy, setBusy] = useState(false)
-        const [draft, setDraft] = useState({ hint: '在宿舍书桌前托腮看镜头', outfit: '', expression: '', type: 'selfie' })
+        const [draft, setDraft] = useState({ type: 'selfie' })
         const [result, setResult] = useState(null)
         const [models, setModels] = useState([])
         const [modelNote, setModelNote] = useState('')
@@ -1513,12 +1513,10 @@ window.__ModuleLoader__.load({
             h('div', { 'data-fi-h': '' }, '快速试拍'),
             h('div', { 'data-fi-sub': '' }, '不进入对话，直接验证当前已保存的角色和生图设置。'),
             h('div', { 'data-fi-row': '' },
-              h(Label, { label: '画面描述' }, h('input', { value: draft.hint, onChange: (e) => setDraft({ ...draft, hint: e.target.value }), style: { width: 360 } })),
-              h(Label, { label: '穿着（可空）' }, h('input', { value: draft.outfit, onChange: (e) => setDraft({ ...draft, outfit: e.target.value }), placeholder: '睡衣 / 卫衣 / 浴巾' })),
-              h(Label, { label: '表情（可空）' }, h('input', { value: draft.expression || '', onChange: (e) => setDraft({ ...draft, expression: e.target.value }), placeholder: '偷笑 / 困 / 委屈' })),
               h(Label, { label: '类型' }, h('select', { value: draft.type, onChange: (e) => setDraft({ ...draft, type: e.target.value }) },
                 h('option', { value: 'selfie' }, '角色自拍'), h('option', { value: 'scene' }, '只拍场景'))),
               h('button', { 'data-fi-btn': '', 'data-primary': '', disabled: busy || config.总开关 === false, onClick: shoot }, '拍一张')),
+            h('div', { 'data-fi-note': '' }, '无需填写提示词：人物身份来自参考图；地点、动作、服装和时间来自此刻生活状态；发型、表情、镜头、光线与场景细节由扩写模块为这一张动态设计。'),
             dirty ? h('div', { 'data-fi-note': '' }, '当前有未保存设置；试拍仍使用上一次保存的配置。') : null,
             result && result.url ? h('div', { 'data-fi-row': '', style: { alignItems: 'flex-start' } },
               h('img', { 'data-fi-preview': '', src: result.url, alt: '试拍结果', onClick: () => setLightbox({ ...result, label: '刚刚的试拍' }) }),
@@ -1558,8 +1556,7 @@ window.__ModuleLoader__.load({
                 ...models.map((id) => h('option', { key: id, value: id }, id)), h('option', { key: '__custom', value: '__custom' }, '手动填写…')),
                 h('button', { 'data-fi-btn': '', onClick: () => loadModels(true) }, '刷新列表'), manual ? h('button', { 'data-fi-btn': '', onClick: () => setManual(false) }, '返回列表') : null)),
               h(Label, { label: '备用模型' }, h('input', { value: config.备用模型 || '', onChange: edit('备用模型'), style: { width: '100%' } })),
-              h('label', { 'data-fi-row': '' }, h('input', { type: 'checkbox', checked: Boolean(config.用参考图), onChange: editCheck('用参考图') }), h('span', null, '自拍时附带角色参考库')),
-              h(Label, { label: '参考图文件 / 目录（可多行，最多 10 张）' }, h('textarea', { value: config.参考图 || '', onChange: edit('参考图'), placeholder: '~/.dsh/feiyu-life-image/角色设定\n也可以逐行填写正面、侧面、背面图片', style: { width: '100%' } })),
+              h(Label, { label: '人物参考图文件 / 目录（唯一人物输入，最多 10 张）' }, h('textarea', { value: config.参考图 || '', onChange: edit('参考图'), placeholder: '~/.dsh/feiyu-life-image/角色设定\n也可以逐行填写正面、侧面、背面图片', style: { width: '100%' } })),
               h('div', { 'data-fi-note': '' }, status.hasRef
                 ? `已识别：${(status.refNames || []).join('、')}`
                 : '留空会自动扫描默认角色设定目录；支持 PNG、JPEG、WebP。'),
@@ -1570,7 +1567,7 @@ window.__ModuleLoader__.load({
               h('div', { 'data-fi-sub': '' }, '默认使用 Seedream 标准质量模式；2K 更清楚，1.5K 更省时。'),
               h(Label, { label: '输出清晰度' }, h('select', { value: config.清晰度 || '2K', onChange: edit('清晰度') },
                 h('option', { value: '2K' }, '2K · 细节优先'), h('option', { value: '1.5K' }, '1.5K · 速度优先'))),
-              h(Label, { label: '提示词加工' }, h('select', { value: config.提示词加工 || '模型', onChange: edit('提示词加工') }, h('option', { value: '模型' }, '模型扩写'), h('option', { value: '模板' }, '本地模板'))),
+              h('div', { 'data-fi-note': '' }, '提示词始终由插件注入并优先使用模型扩写；模型不可用时自动使用动态本地兜底。'),
               h('label', { 'data-fi-row': '' }, h('input', { type: 'checkbox', checked: config.出图自检 !== false, onChange: editCheck('出图自检') }), h('span', null, '出图后检查角色、肢体和水印')),
               h('div', { 'data-fi-row': '' },
                 h(Label, { label: '最多重拍' }, h('input', { type: 'number', value: config.自检重拍 ?? 1, min: 0, max: 2, onChange: editNum('自检重拍') })),
@@ -1581,9 +1578,8 @@ window.__ModuleLoader__.load({
                 h('input', { value: config.兜底模型 || '', onChange: edit('兜底模型'), placeholder: 'deepseek-flash' })))),
 
             h('div', { 'data-fi-sec': '', 'data-fi-wide': '' },
-              h('div', { 'data-fi-h': '' }, '角色形象与画面'),
-              h('div', { 'data-fi-sub': '' }, '角色长相由参考图决定；场景、服装、时间、光线、动作由「鱼的生活」当前状态自动注入，通常不需要填写任何提示词。'),
-              h(Label, { label: '画风' }, h('textarea', { value: config.风格 || '', onChange: edit('风格'), placeholder: '日系精细插画，赛璐璐分色加柔和厚涂阴影，清晰线稿，非 Q 版' })),
+              h('div', { 'data-fi-h': '' }, '动态画面'),
+              h('div', { 'data-fi-sub': '' }, '只固定人物身份，不固定发型、表情、镜头或道具。每张照片都会结合这一刻的生活重新扩写，细节来自当次动作与环境。'),
               h(Label, { label: '画幅' }, h('select', { value: config.画幅 || '竖幅', onChange: edit('画幅') },
                 h('option', { value: '竖幅' }, '竖幅 3:4'), h('option', { value: '方形' }, '方形 1:1'), h('option', { value: '横幅' }, '横幅 4:3'))),
               h('div', { 'data-fi-note': '' }, config.清晰度 === '1.5K'

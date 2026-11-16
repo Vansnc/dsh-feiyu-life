@@ -1,13 +1,12 @@
 // dsh-feiyu-life · camera prompt rewriting
 //
-// The model gives one sentence ("刚睡醒，头发乱"). What actually goes to the
-// image model should not be that sentence itself. This layer splits it into
-// elements and expands it into a full visual description:
-//   character -> outfit -> time -> place -> action -> expression -> shot ->
-//   light -> props -> texture -> style -> negative
+// The caller only chooses selfie or scene. This layer reads the current life,
+// then designs a fresh visual prompt for this shot:
+//   stable identity -> mutable appearance -> current outfit/time/place/action
+//   -> expression -> shot -> light -> scene-derived detail -> negative
 //
 // Prefers the DSH model for expansion (better context); falls back to the
-// template here when the model is unavailable or disabled.
+// dynamic template here when the model is unavailable.
 //
 // "Current state" comes from the life state machine (`generate`), the same
 // source as the injected context — the camera does not read the plan file on
@@ -58,15 +57,19 @@ const shots = {
   ],
 }
 
-const defaultStyle = '日系精细插画，赛璐璐分色加柔和厚涂阴影，清晰线稿，非 Q 版'
+const renderingGoal = '高完成度自然动漫插画，人物与环境使用统一的光色和透视，保留真实生活瞬间，不画成角色设定图或僵硬摆拍'
 
 /** 表情由当前行为推断，避免固定摆拍 */
-function autoExpression(elements) {
+function autoExpression(elements, r = Math.random) {
   const s = `${elements?.hint || ''} ${elements?.state?.what || ''}`
-  if (/睡|困|躺|刚醒|深夜/.test(s)) return '表情自然放松，带一点困意，眼神柔和有高光，嘴角带一点浅笑，不要僵硬瞪镜头'
-  if (/吃饭|外卖|奶茶|零食/.test(s)) return '表情自然轻松，嘴角带一点随意的笑意，眼神有光，不要刻意摆拍'
-  if (/图书馆|自习|学习|写稿|画|剪片|修图/.test(s)) return '表情安静专注，眼神清亮有高光，嘴角微收，不要呆滞'
-  return '表情自然灵动，眼睛有高光、嘴角带一点浅笑，不要僵硬摆拍'
+  const choices = /睡|困|躺|刚醒|深夜/.test(s)
+    ? ['刚醒时略迷糊的放松神情', '困倦但舒服地眯起眼睛', '安静放空、眼神柔和']
+    : /吃饭|外卖|奶茶|零食/.test(s)
+      ? ['正准备尝一口时自然期待的神情', '被味道取悦的轻松神情', '专注看着手里食物的生活化表情']
+      : /图书馆|自习|学习|写稿|画|剪片|修图/.test(s)
+        ? ['被打断一秒后抬眼看镜头的专注神情', '低头工作时安静认真的侧脸', '想到新点子时很轻的得意和放松']
+        : ['刚注意到镜头时自然的好奇', '放松但不刻意微笑的神情', '看向画外事物时鲜活的瞬间表情']
+  return `${choices[Math.floor(r() * choices.length) % choices.length]}，眼神、眼睑、眉毛和嘴角共同表达情绪，不强制微笑，不僵硬瞪镜头`
 }
 
 /** 穿着由生活状态注入；没有就用自然日常兜底 */
@@ -85,6 +88,34 @@ function rand(seedStr) {
     let t = Math.imul(a ^ (a >>> 15), 1 | a)
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** Per-shot mutable appearance and composition. Stable identity comes from refs. */
+function dynamicDirectives(elements) {
+  const r = rand(elements.variationSeed)
+  const s = `${elements?.state?.what || ''} ${elements?.location || ''}`
+  const shotPool = shots[elements.type] || shots.selfie
+  const shot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
+  const hairPool = /洗澡|洗漱|刚洗/.test(s)
+    ? ['头发刚吹到半干，发尾有自然湿润感', '头发松散披着，少量潮湿发丝贴近脸侧']
+    : /睡|床|刚醒|深夜/.test(s)
+      ? ['头发自然散着并有少量睡乱的碎发', '长发松松铺在肩背，发尾有生活化的轻微凌乱']
+      : /走|路上|街|商场|咖啡/.test(s)
+        ? ['长发随步伐和空气轻微摆动', '低马尾或半扎发，保留原本发色、长度和质感', '长发自然披散，一侧别到耳后']
+        : /学习|上课|写|画|剪|修图|图书馆/.test(s)
+          ? ['为了做事方便随手扎成低马尾', '半扎发，脸侧留有自然碎发', '长发披散但一侧顺手别到耳后']
+          : ['自然披发', '松散低马尾', '简单半扎发', '一侧头发别到耳后']
+  const momentPool = ['动作进行到一半的抓拍', '刚注意到镜头的一瞬', '没有刻意停下手中事情的生活抓拍', '动作结束前的自然停顿']
+  const focusPool = ['材质与接触阴影', '前中后景层次', '光线在发丝和衣料上的变化', '手边物件的使用痕迹', '环境中的轻微凌乱与生活感']
+  const firstFocus = focusPool[Math.floor(r() * focusPool.length) % focusPool.length]
+  const secondFocus = focusPool[Math.floor(r() * focusPool.length) % focusPool.length]
+  return {
+    shot,
+    hair: `${hairPool[Math.floor(r() * hairPool.length) % hairPool.length]}；可以改变扎法、刘海整理方式和凌乱程度，但不改变基础发色、发质和大致长度`,
+    moment: momentPool[Math.floor(r() * momentPool.length) % momentPool.length],
+    detailFocus: [...new Set([firstFocus, secondFocus])].join('、'),
+    expression: autoExpression(elements, r),
   }
 }
 
@@ -140,23 +171,19 @@ export function liveState(now = new Date()) {
 /** Split one shoot request into elements. */
 export function buildElements(cfg, args, state = liveState()) {
   const type = String(args.type || 'selfie')
-  const hint = String(args.hint || args.prompt || '').trim()
-  const explicitOutfit = String(args.outfit || '').trim()
-  const outfit = explicitOutfit || (type === 'selfie' ? state.outfit : '')
-  const location = String(args.location || '').trim() || state.location || locationHint(hint || state.what)
-  const expression = String(args.expression || '').trim() || cfg.表情 || '自然的表情'
-  return { type, hint, outfit, explicitOutfit, location, expression, state, clock: state.clock, light: state.light }
+  const hint = String(state.what || '').trim()
+  const outfit = type === 'selfie' ? String(state.outfit || '').trim() : ''
+  const location = state.location || locationHint(state.what)
+  const variationSeed = String(args.__seed || `${Date.now()}-${Math.random()}`)
+  return { type, hint, outfit, location, state, clock: state.clock, light: state.light, variationSeed }
 }
 
 /** Template expansion: a decent description without calling any model. */
 export function templatePrompt(cfg, elements, useRef = false) {
   const { type, hint, location, clock, light } = elements
-  const expression = autoExpression(elements)
+  const dynamic = dynamicDirectives(elements)
   const outfit = autoOutfit(elements)
-  const r = rand(`${hint}|${location}|${clock}`)
-  const shotPool = shots[type] || shots.selfie
-  const generatedShot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
-  const visualStyle = String(cfg.风格 || defaultStyle).trim()
+  const r = rand(elements.variationSeed + ':props')
   const pool = propsByPlace[location]
     || (/路上|门口|地铁|公交|街上/.test(location) ? propsByPlace['路上'] : propsByPlace['宿舍书桌'])
   const props = []
@@ -170,20 +197,22 @@ export function templatePrompt(cfg, elements, useRef = false) {
     parts.push(`地点：${location}`)
     parts.push(`当前动作：${hint || elements?.state?.what || '在进行日常活动'}（这个动作要实际画出来，比如刷手机就画出手和手机，不要省略）`)
     parts.push(`穿着：${outfit}`)
-    parts.push(`表情：${expression}`)
-    parts.push(`构图：${generatedShot}`)
+    parts.push(`此刻发型：${dynamic.hair}`)
+    parts.push(`表情：${dynamic.expression}`)
+    parts.push(`构图：${dynamic.shot}，${dynamic.moment}`)
     parts.push(`背景中自然带出：${props.join('、')}`)
     parts.push('画面要求：人物与环境关系自然，整体协调，主体清楚，不要怼脸，不要僵硬摆拍')
-    parts.push('人物要求：人物外貌完全以参考图为准，不要改脸；不要照搬参考图里的贝雷帽和蝴蝶结头饰，头发自然露出来')
+    parts.push('人物要求：以参考图保持同一个人的脸、五官比例、瞳色和有辨识度的身体特征；发型是可变化状态，不把参考图服装、帽子和可拆卸发饰当成永久身份特征')
   } else {
     parts.push(`时间 ${clock}，${light}`)
     parts.push(`地点：${location}`)
     parts.push(`画面主体：${hint || '她此刻看到的场景'}`)
-    parts.push(`构图：${generatedShot}`)
+    parts.push(`构图：${dynamic.shot}，${dynamic.moment}`)
     parts.push(`环境细节：${props.join('、')}`)
     parts.push('画面要求：构图清楚、主体明确、整体协调')
   }
-  parts.push(`画风：${visualStyle}`)
+  parts.push(`本次细节重点：${dynamic.detailFocus}，细节必须来自当前人物动作与场景，不机械复用固定清单`)
+  parts.push(`视觉呈现：${renderingGoal}`)
   parts.push('不要出现任何文字、水印、签名')
   return parts.join('；')
 }
@@ -194,32 +223,34 @@ export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
     ? cfg.提示词加工模型
     : pickModel(agent, cfg)
   if (!target || !ctx?.llm?.stream) { log('prompt expand skipped: ' + (target ? 'no ctx.llm.stream' : 'no model')); return null }
-  const system = '你是图像提示词工程师。请根据“当前生活状态”生成一段给文生图模型使用的中文画面描述。人物长相以参考图为唯一准则，不要自行改脸，不要新增参考图里没有的帽子或头饰。只输出描述本身，不要解释、不要分点、不要引号。'
+  const dynamic = dynamicDirectives(elements)
+  const system = '你是生活摄影导演和图像提示词工程师。每次都根据当前真实状态重新设计一张自然、好看、细节充分的动漫生活照。参考图只负责确认是同一个人，不是要复制其中的姿势、发型、服装、帽子或可拆卸饰品。只输出本次完整画面描述，不解释、不分点、不加引号。'
   const head = useRef && elements.type !== 'scene'
     ? [
-      '人物长相以参考图为唯一准则，不要自行改脸，不要新增参考图里没有的帽子或头饰。',
+      '身份连续性：保持参考图中稳定的脸型、五官比例、瞳色、基础发色以及有辨识度的身体特征，确保仍是同一个人。',
+      `本次可变外貌：${dynamic.hair}。妆容、碎发和疲态可以随当前生活状态自然变化。`,
+      '参考图中的服装、帽子、发箍和可拆卸饰品不属于永久身份，除非当前生活状态明确需要，否则不要照搬。',
       `服装：${autoOutfit(elements)}`,
-      `表情：${autoExpression(elements)}`,
+      `表情：${dynamic.expression}`,
     ]
     : [
-      `角色设定（长相固定，不要改）：${cfg.外观 || ''}`,
-      `服装：${elements.outfit || cfg.服装 || ''}`,
-      `表情：${elements.expression || '自然的表情'}`,
+      '这是一张不出现角色本人的场景照。',
     ]
   const user = [
     ...head,
     '',
     '要求：',
-    '1. 自拍要避免过近，默认采用自然的胸像或半身自拍，保留少量环境；',
+    `1. 本次构图方向：${dynamic.shot}；采用${dynamic.moment}，避免正面证件照式摆拍；`,
     '2. 必须保留用户片段里的动作细节（比如「刷手机」就要画出手拿手机在刷，「照镜子」就要画镜子），不能省略或改成别的动作；',
-    '3. 表情必须有眼神高光和一点浅笑或好奇，不能呆滞、不能面无表情；',
-    '4. 不要照搬参考图里的贝雷帽和蝴蝶结头饰，头发自然露出来；',
-    '5. 具体到能画：写出 2–4 件环境里的东西（台灯、画册、奶茶、快递盒这类），写出光线方向；',
+    '3. 表情必须符合当前动作和精神状态，可以专注、困倦、走神、惊喜或放松，不要每次固定浅笑，也不能僵硬；',
+    '4. 发型可像真人一样随睡眠、洗漱、学习、出门而改变扎法、碎发和整齐程度，但基础发色、发质和大致长度不能突变；',
+    '5. 具体到能画：从当前地点和动作推导 3–6 个真正相关且彼此协调的环境、材质或使用痕迹，并写明主光方向；不要机械复用固定道具；',
     '6. 不要写「手臂伸向镜头」这类手部前景——手最容易画崩；',
     '7. 人物与背景要协调，画风统一；',
-    `8. 画风严格使用：${defaultStyle}；`,
+    `8. 视觉目标：${renderingGoal}；具体光色、材质和景深应为这一次场景服务，而不是套固定风格词；`,
     '9. 结尾补一句：画面里不要出现任何文字、水印、签名；',
-    '10. 不要写「参考图」「保持角色」这类词。',
+    '10. 最终描述中不要写“参考图”“保持角色”“动态变化”等工作指令，只写模型实际应画出的这一张图。',
+    `11. 本次细节关注：${dynamic.detailFocus}。这只是关注维度，具体细节必须从当前状态推导。`,
     '',
     `时间：${elements.clock}（${elements.light}）`,
     `地点：${elements.location}`,
@@ -332,21 +363,21 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
     '请直接对照参考图检查生成结果，不要只依据文字设定。',
     '',
     '必须检查：',
-    '1. 生成图的脸型、五官比例、发型轮廓、发色、瞳色、发饰是否像参考图；',
-    '2. 成图里出现参考图那顶贝雷帽或蝴蝶结头饰的，判不合格（那套造型不保留）；',
+    '1. 生成图的脸型、五官相对位置与比例、瞳色、基础发色和有辨识度的身体特征是否仍是参考图中的同一个人；',
+    '2. 发型允许随当前生活改变扎法、刘海整理、碎发、湿润和凌乱程度；不要因为发型变化误判身份漂移。但若基础发色、发质或大致长度无缘无故突变，应判不合格；',
     '3. 自拍构图是否自然：至少看到肩部或上半身，不要只剩半张脸，不要过度怼脸；',
-    '4. 表情是否自然灵动：眼神有高光、嘴角带浅笑或好奇，不能呆滞木然；',
+    '4. 表情是否符合当前状态且面部肌肉协调；允许不微笑、困倦、专注或走神，但不能僵硬木然；',
     '5. 人物与背景是否协调，画面是否统一；',
     '6. 是否存在画崩、多手多指、五官错位、肢体畸形；',
     '7. 是否出现文字、水印、签名、边框；',
-    '8. 当前状态里的动作有没有画出来（比如刷手机要看到手机和手）；',
+    '8. 当前状态里的动作有没有画出来（比如刷手机要看到手机和手）；参考图里的服装、帽子和可拆卸饰品若与当前穿着无关，不应被机械照搬；',
     '',
     `当前时间与光线：${elements.clock || '未知'}（${elements.light || ''}）`,
     `当前地点：${elements.location || '未知'}`,
     `当前状态：${elements.hint || elements.state?.what || '未知'}`,
     `当前穿着：${autoOutfit(elements)}`,
     '',
-    '判定标准：只要出现“脸明显不像参考图、照搬参考图的贝雷帽/头饰、表情呆滞、过度怼脸、画崩、有字水印”中的任意一项，就判不合格。',
+    '判定标准：只要出现“脸明显不是同一个人、身份基础特征突变、照搬与当前状态无关的参考服饰、表情或动作不自然、过度怼脸、画崩、有字水印”中的任意一项，就判不合格。不要因合理发型变化或没有微笑而判不合格。',
     '',
     '只输出 JSON：{"合格":true 或 false,"问题":["最多 4 条"],"改法":"一句话说明下一张该怎么修"}',
   ].join('\n')
@@ -378,11 +409,8 @@ export async function generatePrompt(ctx, agent, cfg, args) {
   const state = liveState()
   const elements = buildElements(cfg, args, state)
   const useRef = elements.type !== 'scene' && cfg.用参考图 !== false
-  const mode = String(cfg.提示词加工 || '模型')
-  if (mode !== '关') {
-    const text = await modelPrompt(ctx, agent, cfg, elements, useRef)
-    if (text) return { prompt: text, elements, usedModel: true, useRef }
-  }
+  const text = await modelPrompt(ctx, agent, cfg, elements, useRef)
+  if (text) return { prompt: text, elements, usedModel: true, useRef }
   return { prompt: templatePrompt(cfg, elements, useRef), elements, usedModel: false, useRef }
 }
 

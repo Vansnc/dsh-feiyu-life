@@ -20,7 +20,7 @@ test('settings backup round-trips life, camera and personality', () => {
   const restored = restoreSettingsBackup(JSON.parse(JSON.stringify(backup)))
   assert.equal(restored.life.时区, 'Asia/Shanghai')
   assert.equal(restored.camera.每日上限, 12)
-  assert.equal(restored.camera.配置版本, 4)
+  assert.equal(restored.camera.配置版本, 5)
   assert.equal(Object.hasOwn(restored.camera, '种子'), false)
   assert.equal(Object.hasOwn(restored.camera, '后端'), false)
   assert.ok(restored.summary.places >= 2)

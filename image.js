@@ -39,7 +39,7 @@ const log = (m) => {
   } catch {}
 }
 
-export const IMAGE_CONFIG_VERSION = 4
+export const IMAGE_CONFIG_VERSION = 5
 const LEGACY_DEFAULT_DETAILS = '发丝高光、耳鳍的半透明质感、脖颈阴影、衣服褶皱、背景里的生活杂物（画册、马克笔、奶茶、台灯）'
 
 const DEFAULT_CONFIG = {
@@ -49,15 +49,8 @@ const DEFAULT_CONFIG = {
   备用模型: 'doubao-seedream-5-0-flash-260915',
   用参考图: true,
   参考图: '',
-  外观: '',
-  服装: '',
-  风格: '',
-  镜头: '',
-  表情: '',
-  细节: '',
   画幅: '竖幅',
   清晰度: '2K',
-  提示词加工: '模型',
   出图自检: true,
   自检重拍: 1,
   每日上限: 8,
@@ -164,22 +157,19 @@ export function migrateImageConfig(raw) {
     if (next.清晰度 === undefined) next.清晰度 = DEFAULT_CONFIG.清晰度
     if (next.细节 === LEGACY_DEFAULT_DETAILS) next.细节 = DEFAULT_CONFIG.细节
   }
-  if (version < 4) {
-    // 参考图驱动相机：旧提示词字段全部退场，长相交给参考图、服装由生活状态注入
-    next.外观 = ''
-    next.服装 = ''
-    next.风格 = ''
-    next.镜头 = ''
-    next.表情 = ''
-    next.细节 = ''
+  if (version < 5) {
+    // Reference-only camera: no user-authored appearance or prompt template survives migration.
+    for (const key of ['外观', '服装', '风格', '镜头', '表情', '细节', '提示词加工']) delete next[key]
   }
   next.配置版本 = IMAGE_CONFIG_VERSION
-  return { value: next, changed: version !== IMAGE_CONFIG_VERSION || '种子' in source || '后端' in source }
+  return { value: next, changed: version !== IMAGE_CONFIG_VERSION || ['种子', '后端', '外观', '服装', '风格', '镜头', '表情', '细节', '提示词加工'].some((key) => key in source) }
 }
 
 export function normalizeImageConfig(raw) {
   const next = { ...DEFAULT_CONFIG, ...(raw && typeof raw === 'object' ? raw : {}) }
+  for (const key of ['外观', '服装', '风格', '镜头', '表情', '细节', '提示词加工']) delete next[key]
   next.配置版本 = IMAGE_CONFIG_VERSION
+  next.用参考图 = true
   next.每日上限 = Math.max(1, Math.min(100, Math.round(Number(next.每日上限) || DEFAULT_CONFIG.每日上限)))
   next.最短间隔秒 = Math.max(0, Math.min(86400, Math.round(Number(next.最短间隔秒) || 0)))
   next.自检重拍 = Math.max(0, Math.min(2, Math.round(Number(next.自检重拍) || 0)))
@@ -288,7 +278,7 @@ function listPhotos(cfg) {
         if (!current || rank > current.rank) byTimestamp.set(key, {
           name: f, time: st.mtimeMs, size: st.size, rank,
           context: meta?.context || null,
-          prompt: String(meta?.prompt || '').slice(0, 300),
+          prompt: String(meta?.prompt || '').slice(0, 1200),
           model: String(meta?.model || ''),
           quality: String(meta?.quality || ''),
           check: meta?.check && typeof meta.check === 'object' ? meta.check : null,
@@ -308,7 +298,7 @@ export function buildPhotoMetadata(cfg, elements, check, notes, prompt, timestam
     model: String(cfg.模型 || ''),
     quality: String(cfg.清晰度 || DEFAULT_CONFIG.清晰度),
     aspect: String(cfg.画幅 || DEFAULT_CONFIG.画幅),
-    prompt: String(prompt || '').slice(0, 300),
+    prompt: String(prompt || '').slice(0, 1200),
     context: {
       type: String(elements?.type || 'selfie'),
       clock: String(elements?.clock || ''),
@@ -435,7 +425,7 @@ export function buildImageRequest(cfg, prompt) {
 
 const NO_TEXT_PROMPT = '画面里不要出现任何文字、水印、签名'
 
-function boundedPrompt(value, max = 520) {
+function boundedPrompt(value, max = 900) {
   const text = String(value || '').replace(/\s+/g, ' ').trim()
   if (text.length <= max) return text
   const withoutTail = text.replace(/[；。]?画面里不要出现任何文字、水印、签名[；。]?$/u, '')
@@ -445,9 +435,11 @@ function boundedPrompt(value, max = 520) {
 
 export function composeImagePrompt(expanded, useRef = true) {
   const identity = useRef
-    ? '人物外貌完全以参考图为准；保持相同的脸型、五官比例、发型轮廓、发色渐变、瞳色、耳朵和尾巴等关键特征；不要改脸；不要照搬参考图里的贝雷帽和蝴蝶结头饰（那套造型不要保留，头发自然露出来）；服装按描述换；'
+    ? '以输入参考图确认人物身份：保持同一张脸、稳定的五官比例、瞳色、基础发色和有辨识度的身体特征；发型扎法、刘海整理、碎发、湿润与凌乱程度可按当前生活自然变化，不锁死发型轮廓；参考图中的姿势、服装、帽子和可拆卸饰品不自动继承；'
     : ''
-  return boundedPrompt(identity + String(expanded || ''), 520)
+  const body = identity + String(expanded || '')
+  const withTail = body.includes(NO_TEXT_PROMPT) ? body : `${body}；${NO_TEXT_PROMPT}`
+  return boundedPrompt(withTail, 900)
 }
 
 function composeRetakePrompt(base, check) {
@@ -455,9 +447,9 @@ function composeRetakePrompt(base, check) {
     ...(check?.problems || []).slice(0, 3),
     check?.fix || '',
   ].filter(Boolean).join('；')
-  if (!correction) return boundedPrompt(base, 520)
-  const suffix = `；修正要求：${boundedPrompt(correction, 160)}`
-  return boundedPrompt(base, 520 - suffix.length) + suffix
+  if (!correction) return boundedPrompt(base, 900)
+  const suffix = `；修正要求：${boundedPrompt(correction, 240)}`
+  return boundedPrompt(base, 900 - suffix.length) + suffix
 }
 
 async function arkGenerate(cfg, prompt, opts = {}) {
@@ -518,7 +510,7 @@ async function shootAndCheck(ctx, cfg, { prompt, useRef, elements }) {
   let current = ''
   const referencePaths = useRef ? referenceImageFiles(cfg).slice(0, 3) : []
   for (let i = 0; i < attempts; i++) {
-    current = i === 0 ? boundedPrompt(prompt, 520) : composeRetakePrompt(prompt, check)
+    current = i === 0 ? boundedPrompt(prompt, 900) : composeRetakePrompt(prompt, check)
     const r = await generateImage(cfg, current, { useRef })
     last = r
     if (cfg.出图自检 === false) { notes.push('自检关着，没看'); break }
@@ -673,9 +665,6 @@ function registerRoutes(ctx) {
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, {
           type: body.type || 'selfie',
-          hint: body.hint || '',
-          outfit: body.outfit || '',
-          expression: body.expression || '',
         })
         const useRef = expanded.useRef
         const prompt = composeImagePrompt(expanded.prompt, useRef)
@@ -748,15 +737,11 @@ export function registerImage(ctx) {
 
   ctx.effect(() => ctx.tools.register({
     name: 'shoot',
-    description: '拍一张图并保存成文件。selfie=她自己的自拍（自动带上此刻穿着、地点、时间）；scene=拍任何别的东西：食堂的菜、楼下的猫、桌上的画册、窗外下雨、她刚买的杯子……出图后会自动看一眼（角色长相、画风、画崩、文字水印），不合格会自动重拍一次。回复里拿到路径后用 ![描述](路径) 发出去。',
+    description: '按她此刻的真实生活状态拍一张图并保存。只需选择自拍或场景照；人物身份由参考图确定，地点、动作、穿着、发型状态、表情、镜头、光线和细节由插件动态注入与扩写。出图后自动检查身份漂移、动作、构图、肢体和水印，不合格会重拍。回复里拿到路径后用 ![描述](路径) 发出去。',
     parameters: {
       type: 'object',
       properties: {
-        hint: { type: 'string', description: '画面里还想要什么（姿势、表情、手里的东西、场景细节）。不填就按此刻的状态拍' },
-        type: { type: 'string', enum: ['selfie', 'scene'], description: 'selfie=她本人自拍；scene=拍任何别的东西（风景、物品、吃的、猫、街景、人也可以）' },
-        location: { type: 'string', description: '可选：这一张在哪（不填从生活线推断）' },
-        outfit: { type: 'string', description: '可选：这一张想让她穿什么（睡衣、卫衣、浴巾…）。不填就用生活线此刻的穿着' },
-        expression: { type: 'string', description: '可选：表情（偷笑、害羞、困、委屈、得意）。不填用默认的笑' },
+        type: { type: 'string', enum: ['selfie', 'scene'], description: 'selfie=根据此刻生活状态拍她本人；scene=拍此刻她看到的场景，不出现她本人' },
       },
       additionalProperties: false,
     },
@@ -765,13 +750,8 @@ export function registerImage(ctx) {
       render: (_a, v) => [{ type: 'text', text: String(v?.say || '') + (v?.image ? '\n图片：' + v.image : '') }],
     },
     async execute(rawArgs = {}) {
-      // 模型有时会按描述里的中文字段名传参（类型/提示/穿着…），两种都认
       const args = {
         type: rawArgs.type ?? rawArgs.类型,
-        hint: rawArgs.hint ?? rawArgs.提示,
-        location: rawArgs.location ?? rawArgs.地点,
-        outfit: rawArgs.outfit ?? rawArgs.穿着,
-        expression: rawArgs.expression ?? rawArgs.表情,
       }
       const cfg = readImageConfig()
       if (!cfg.总开关) return { ok: false, say: '相机没开' }
