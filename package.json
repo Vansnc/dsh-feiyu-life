@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "大肥鱼的生活（DSH 插件）：每日剧本、真实时间线、生活连续性与二维地图；角色会记住主线和待办，在地点间移动并显示行为动效。",
   "type": "module",
   "license": "MIT",

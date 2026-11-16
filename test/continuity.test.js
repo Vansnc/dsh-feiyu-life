@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  activeEntities, continuityPath, effectsDir, mutateEntity, projectsDir, readContinuity,
-  readMemories, settleTimeline, writeContinuity,
+  activeEntities, continuityContext, continuityPath, continuityRevision, continuityView,
+  effectsDir, mutateEntity, planSyncInfo, projectsDir, readContinuity, readMemories, settleTimeline, writeContinuity,
 } from '../continuity.js'
 import { normalizePlan } from '../gen.js'
 import { buildTimeline } from '../state.js'
@@ -40,7 +40,7 @@ test('an intact completed segment settles once and records reasons', () => sandb
   assert.equal(second.applied, 0)
   const state = readContinuity()
   assert.equal(state.tasks[0].status, 'completed')
-  assert.match(state.recentChanges.at(-1).reason, /最终真实时间线/)
+  assert.match(state.recentChanges.find((x) => x.entityId === task.id && x.source === 'timeline:2026-11-14').reason, /最终真实时间线/)
   assert.equal(readMemories()[0].date, '2026-11-14')
   assert.equal(JSON.parse(readFileSync(join(effectsDir(), '2026-11-14.json'), 'utf8')).effects.length, 2)
 }))
@@ -96,4 +96,51 @@ test('model links are allowlisted and cannot invent continuity ids', () => {
 test('active entity limits are enforced', () => sandbox(() => {
   for (let i = 0; i < 5; i++) mutateEntity('threads', 'create', { title: `主线 ${i}`, origin: '测试' })
   assert.throws(() => mutateEntity('threads', 'create', { title: '超额', origin: '测试' }), /limit/)
+}))
+
+test('due items are prioritized and described in human terms', () => sandbox(() => {
+  const now = Date.parse('2026-11-16T02:00:00Z')
+  mutateEntity('tasks', 'create', { title: '以后再买', origin: '测试', dueAt: now + 10 * 86400000 }, now)
+  mutateEntity('commitments', 'create', { title: '给妈妈打电话', origin: '测试', with: '妈妈', dueAt: now - 60000 }, now)
+  const state = readContinuity(now)
+  state.needs = { ...state.needs, energy: 25, stress: 80, socialNeed: 75, sleepDebtMinutes: 180 }
+  writeContinuity(state)
+  const view = continuityView(readContinuity(now), { now, timeZone: 'Asia/Shanghai' })
+  assert.equal(view.entities[0].title, '给妈妈打电话')
+  assert.equal(view.entities[0].due.state, 'overdue')
+  assert.ok(view.needs.includes('精力很低'))
+  const context = continuityContext(readContinuity(now), [{ summary: '昨天去图书馆改稿了' }], { now, timeZone: 'Asia/Shanghai' })
+  assert.match(context, /压力很大/)
+  assert.match(context, /昨天去图书馆改稿了/)
+}))
+
+test('continuity revision changes when plan inputs change', () => sandbox(() => {
+  const first = continuityRevision()
+  const task = mutateEntity('tasks', 'create', { title: '取快递', origin: '测试' }, 1)
+  const second = continuityRevision()
+  assert.notEqual(first, second)
+  mutateEntity('tasks', 'update', { id: task.id, dueAt: 123456 }, 2)
+  assert.notEqual(second, continuityRevision())
+}))
+
+test('pre-generated plans expose stale and synchronized revisions', () => sandbox(() => {
+  const state = readContinuity()
+  const revision = continuityRevision(state)
+  assert.equal(planSyncInfo(state, { date: '2026-11-17', source: 'llm', continuityRevision: revision }).synced, true)
+  mutateEntity('tasks', 'create', { title: '新待办', origin: '测试' }, 1)
+  const stale = planSyncInfo(readContinuity(), { date: '2026-11-17', source: 'llm', continuityRevision: revision })
+  assert.equal(stale.synced, false)
+  assert.equal(stale.source, 'llm')
+}))
+
+test('daily sleep debt is calculated once from the final day', () => sandbox(() => {
+  const hour = 3600000
+  const timeline = [
+    { start: 0, end: 6 * hour, what: '睡着了', behavior: 'sleep', source: 'plan' },
+    { start: 6 * hour, end: 24 * hour, what: '普通的一天', behavior: 'idle', source: 'plan' },
+  ]
+  settleTimeline({ date: '2026-11-16', timeline, nowMs: 25 * hour })
+  assert.equal(readContinuity().needs.sleepDebtMinutes, 120)
+  settleTimeline({ date: '2026-11-16', timeline, nowMs: 26 * hour })
+  assert.equal(readContinuity().needs.sleepDebtMinutes, 120)
 }))

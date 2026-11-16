@@ -35,8 +35,8 @@ import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } fro
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from './world.js'
 import { createSettingsBackup, restoreSettingsBackup } from './backup.js'
 import {
-  activeEntities, cleanupContinuity, continuitySummary, mutateEntity,
-  readContinuity, readMemories, settleTimeline,
+  activeEntities, cleanupContinuity, continuityContext, continuityRevision,
+  continuitySummary, continuityView, mutateEntity, planSyncInfo, readContinuity, readMemories, settleTimeline,
 } from './continuity.js'
 
 export const name = 'feiyu-life'
@@ -128,7 +128,7 @@ export function apply(ctx) {
           const life = generate(cfg).text
           if (cfg.连续性?.启用 === false) return life
           const state = readContinuity()
-          return `${life}\n（生活连续性）${continuitySummary(state)}\n只有最终真实时间线中已经结束、且未被临时调整覆盖的活动才算完成；不要把计划说成成果。`
+          return `${life}\n（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区 })}\n${continuitySummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动才算完成；不要把计划说成成果。`
         } catch { return '' }
       },
     }))
@@ -264,6 +264,8 @@ export function apply(ctx) {
       const deviation = todayDeviation(cfg, t, calendar.routine)
       const type = dayType(cfg, t, calendar)
       const agent = modelAgent()
+      const continuityState = readContinuity()
+      const revision = continuityRevision(continuityState)
       let result = null
       if (agent) {
         result = await writeDayWithModel(ctx, agent, {
@@ -276,16 +278,16 @@ export function apply(ctx) {
           calendarLabel: calendarLabel(calendar),
           body: bodyHint(cfg, t, deviation),
           recent: recentSummary(cfg, t),
-          continuity: continuitySummary(readContinuity()),
-          continuityEntities: activeEntities(readContinuity()),
+          continuity: `${continuitySummary(continuityState, { timeZone: cfg.时区 })}\n${continuityContext(continuityState, readMemories(2), { timeZone: cfg.时区 })}`,
+          continuityEntities: activeEntities(continuityState),
         })
       }
       if (result) {
-        if (!writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model })) return false
+        if (!writePlan(t.ymd, { type, title: result.title, mood: result.mood, items: result.items, source: 'llm', model: result.model, continuityRevision: revision })) return false
         try { console.log('[feiyu-life] plan written by model: ' + t.ymd) } catch {}
       } else {
         const fallback = dailyPlan(cfg, t, calendar, deviation, type)
-        if (!writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template' })) return false
+        if (!writePlan(t.ymd, { type, title: fallback.title || '', mood: '', items: fallback.items, source: 'template', continuityRevision: revision })) return false
         try { console.log('[feiyu-life] plan fell back to template: ' + t.ymd) } catch {}
       }
       return true
@@ -438,6 +440,23 @@ export function apply(ctx) {
     }
   }
 
+  const continuityPayload = (now = new Date()) => {
+    const cfg = readConfig()
+    const state = readContinuity()
+    const tz = String(cfg.时区 || 'Asia/Shanghai')
+    const tomorrow = addZonedDays(now, tz, 1)
+    const date = zonedNow(tomorrow, tz).ymd
+    let plan = null
+    try { plan = JSON.parse(readFileSync(planPath(date), 'utf8')) } catch {}
+    return {
+      ok: true, state, view: continuityView(state, { timeZone: tz }),
+      summary: continuitySummary(state, { timeZone: tz }), memories: readMemories(7),
+      planSync: { ...planSyncInfo(state, plan, date), historyCount: listPlanHistory(date).length },
+      limits: { threads: 5, tasks: 30, commitments: 20 },
+      boundaries: ['不执行外部现实动作', '不自主生图', '只写插件专属目录', '计划不等于完成'],
+    }
+  }
+
   try {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
@@ -451,11 +470,25 @@ export function apply(ctx) {
 
   try {
     ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/continuity/undo-tomorrow',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        const cfg = readConfig()
+        const now = new Date()
+        const tz = String(cfg.时区 || 'Asia/Shanghai')
+        const date = zonedNow(addZonedDays(now, tz, 1), tz).ymd
+        if (!restoreLatestPlan(date)) return reply(res, 404, { ok: false, error: 'no_tomorrow_plan_history' })
+        return reply(res, 200, { ...continuityPayload(now), changed: true })
+      }),
+    }), 'feiyu-life: undo tomorrow continuity sync')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
       kind: 'exact', path: ROUTE_PREFIX + '/continuity',
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        const state = readContinuity()
-        return reply(res, 200, { ok: true, state, summary: continuitySummary(state), memories: readMemories(7), limits: { threads: 5, tasks: 30, commitments: 20 }, boundaries: ['不执行外部现实动作', '不自主生图', '只写插件专属目录', '计划不等于完成'] })
+        return reply(res, 200, continuityPayload())
       }),
     }), 'feiyu-life: continuity')
   } catch {}
@@ -472,8 +505,7 @@ export function apply(ctx) {
           if (!['threads', 'tasks', 'commitments'].includes(kind)) return reply(res, 400, { ok: false, error: 'bad kind' })
           if (body?.action === 'create' && kind === 'threads' && !String(body?.origin || '').trim()) return reply(res, 400, { ok: false, error: 'thread origin required' })
           mutateEntity(kind, String(body?.action || ''), { ...body, source: 'settings', origin: body.origin || '连续性设置页手动创建' })
-          const state = readContinuity()
-          return reply(res, 200, { ok: true, state, summary: continuitySummary(state), memories: readMemories(7) })
+          return reply(res, 200, continuityPayload())
         } catch (e) { return reply(res, 400, { ok: false, error: String(e?.message || e) }) }
       }),
     }), 'feiyu-life: continuity entity')
@@ -484,10 +516,39 @@ export function apply(ctx) {
       kind: 'exact', path: ROUTE_PREFIX + '/continuity/settle',
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        try { return reply(res, 200, { ...reconcileContinuity(true), state: readContinuity(), memories: readMemories(7) }) }
+        try {
+          const result = reconcileContinuity(true)
+          return reply(res, 200, { ...continuityPayload(), ...result })
+        }
         catch (e) { return reply(res, 500, { ok: false, error: String(e?.message || e) }) }
       }),
     }), 'feiyu-life: continuity settle')
+  } catch {}
+
+  try {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path: ROUTE_PREFIX + '/continuity/sync-tomorrow',
+      handler: onlyOwner(async (req, res) => {
+        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
+        const cfg = readConfig()
+        const now = new Date()
+        const tz = String(cfg.时区 || 'Asia/Shanghai')
+        const tomorrow = addZonedDays(now, tz, 1)
+        const date = zonedNow(tomorrow, tz).ymd
+        const before = continuityPayload(now)
+        if (before.planSync.synced) return reply(res, 200, { ...before, changed: false })
+        const hadPlan = existsSync(planPath(date))
+        const archived = hadPlan ? archivePlan(date) : null
+        if (hadPlan && !archived) return reply(res, 500, { ok: false, error: 'could_not_archive_tomorrow_plan' })
+        deletePlan(date)
+        const ok = await ensurePlanFor(tomorrow)
+        if (!ok || !existsSync(planPath(date))) {
+          if (archived) restoreLatestPlan(date)
+          return reply(res, 500, { ok: false, error: 'tomorrow_sync_failed_previous_plan_restored' })
+        }
+        return reply(res, 200, { ...continuityPayload(now), changed: true })
+      }),
+    }), 'feiyu-life: sync tomorrow continuity')
   } catch {}
 
   try {

@@ -163,7 +163,11 @@ try {
       threads: [{ id: 't1', title: '视觉作品集', status: 'active', progress: 20, origin: '用户明确提出', nextStep: '整理封面' }],
       tasks: [{ id: 'q1', title: '取快递', status: 'open', origin: '设置页' }], commitments: [],
     },
+    view: { needs: ['有点累', '压力尚可', '社交需求平常', '有一点睡眠欠账'], entities: [
+      { id: 't1', due: { label: '', state: 'none' } }, { id: 'q1', due: { label: '今天 18:00', state: 'today' } },
+    ] },
     memories: [{ date: '2026-11-14', summary: '真实时间线已结算 3 段' }],
+    planSync: { date: '2026-11-17', synced: false, source: 'llm' },
   }
   await page.evaluate(({ life, continuity }) => {
     window.fetch = async (url) => ({
@@ -181,6 +185,7 @@ try {
   await page.getByText('视觉作品集').waitFor()
   assert.equal(await page.getByText('取快递', { exact: true }).count(), 1, 'one-off pickup is rendered as a short task')
   assert.equal(await page.getByText('计划只是意图', { exact: false }).count(), 1, 'completion boundary is visible')
+  assert.equal(await page.getByText('同步到明日剧本', { exact: true }).count(), 1, 'stale tomorrow plan can be explicitly synchronized')
   await page.screenshot({ path: join(outputDir, 'continuity-settings.png'), fullPage: true })
 } finally {
   await browser.close()

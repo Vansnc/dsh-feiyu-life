@@ -129,6 +129,61 @@ export function activeEntities(state = readContinuity()) {
     ...state.commitments.filter((x) => x.status === 'open').map((x) => ({ ...x, kind: 'commitment' }))]
 }
 
+/** Stable fingerprint of the inputs that can change a generated plan. */
+export function continuityRevision(state = readContinuity()) {
+  const rows = activeEntities(state).map((x) => ({
+    kind: x.kind, id: x.id, title: x.title, detail: x.detail, dueAt: x.dueAt,
+    placeId: x.placeId, with: x.with, nextStep: x.nextStep,
+  })).sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`))
+  return createHash('sha256').update(JSON.stringify(rows)).digest('hex').slice(0, 16)
+}
+
+export function planSyncInfo(state, plan, date = '') {
+  const revision = continuityRevision(state)
+  const planRevision = String(plan?.continuityRevision || '')
+  return {
+    date: String(date || plan?.date || ''), revision, planRevision,
+    synced: Boolean(plan && planRevision === revision), source: String(plan?.source || ''),
+  }
+}
+
+function localDay(ms, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms))
+    const get = (type) => parts.find((x) => x.type === type)?.value || ''
+    return `${get('year')}-${get('month')}-${get('day')}`
+  } catch { return new Date(ms).toISOString().slice(0, 10) }
+}
+
+function dueInfo(entity, now, timeZone) {
+  if (!entity.dueAt) return { rank: 5, label: '', state: 'none' }
+  const delta = entity.dueAt - now
+  const today = localDay(now, timeZone)
+  const dueDay = localDay(entity.dueAt, timeZone)
+  let clock = ''
+  try { clock = new Intl.DateTimeFormat('zh-CN', { timeZone, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(entity.dueAt)) } catch {}
+  if (delta < 0) return { rank: 0, label: `已逾期（${clock}）`, state: 'overdue' }
+  if (dueDay === today) return { rank: 1, label: `今天 ${clock.split(' ').at(-1) || clock}`, state: 'today' }
+  if (delta <= 3 * 86400000) return { rank: 2, label: `${clock} 前`, state: 'soon' }
+  return { rank: 3, label: `${clock} 前`, state: 'later' }
+}
+
+export function describeNeeds(needs = {}) {
+  const energy = Number(needs.energy) < 30 ? '精力很低' : Number(needs.energy) < 55 ? '有点累' : Number(needs.energy) > 82 ? '精力不错' : '精力平常'
+  const stress = Number(needs.stress) > 75 ? '压力很大' : Number(needs.stress) > 50 ? '有些紧绷' : Number(needs.stress) < 20 ? '挺放松' : '压力尚可'
+  const social = Number(needs.socialNeed) > 70 ? '很想找人说说话' : Number(needs.socialNeed) > 45 ? '有点想见人' : Number(needs.socialNeed) < 20 ? '想自己待会儿' : '社交需求平常'
+  const debt = Number(needs.sleepDebtMinutes) >= 180 ? `欠了约 ${Math.round(needs.sleepDebtMinutes / 60)} 小时睡眠` : Number(needs.sleepDebtMinutes) >= 60 ? '有一点睡眠欠账' : '睡眠欠账不明显'
+  return [energy, stress, social, debt]
+}
+
+export function continuityView(state = readContinuity(), options = {}) {
+  const now = Number(options.now) || Date.now()
+  const timeZone = String(options.timeZone || 'Asia/Shanghai')
+  const entities = activeEntities(state).map((x) => ({ ...x, due: dueInfo(x, now, timeZone) }))
+    .sort((a, b) => (a.due.rank - b.due.rank) || (a.createdAt - b.createdAt))
+  return { needs: describeNeeds(state.needs), entities }
+}
+
 export function mutateEntity(kind, action, input = {}, now = Date.now()) {
   if (!kinds.includes(kind)) throw new Error('unknown continuity entity kind')
   const allowedActions = kind === 'threads'
@@ -164,9 +219,23 @@ export function mutateEntity(kind, action, input = {}, now = Date.now()) {
   return action === 'delete' ? null : state[kind].find((x) => x.id === input.id)
 }
 
-export function continuitySummary(state = readContinuity()) {
-  const rows = activeEntities(state).slice(0, 12).map((x) => `${x.kind}:${x.id}「${x.title}」${x.kind === 'thread' && x.nextStep ? `，下一步：${x.nextStep}` : ''}`)
+export function continuitySummary(state = readContinuity(), options = {}) {
+  const rows = continuityView(state, options).entities.slice(0, 12).map((x) => {
+    const details = [x.due.label, x.with ? `和${x.with}` : '', x.placeId ? `地点 ${x.placeId}` : '', x.kind === 'thread' && x.nextStep ? `下一步：${x.nextStep}` : ''].filter(Boolean)
+    return `${x.kind}:${x.id}「${x.title}」${details.length ? `（${details.join('；')}）` : ''}`
+  })
   return rows.length ? rows.join('\n') : '没有待关联的长期主线、短期待办或约定。'
+}
+
+export function continuityContext(state = readContinuity(), memories = readMemories(2), options = {}) {
+  const view = continuityView(state, options)
+  const concerns = view.entities.slice(0, 5).map((x) => `${x.title}${x.due.label ? `：${x.due.label}` : ''}`).join('；') || '没有挂着的事情'
+  const latest = memories[0]
+  const remembered = Array.isArray(latest?.segments) && latest.segments.length
+    ? `那天${latest.segments.slice(-3).map((x) => x.what).join('，后来')}`
+    : latest?.summary
+  const yesterday = remembered || '还没有可回想的昨日生活'
+  return `身体感觉：${view.needs.join('，')}。\n挂在心上的事：${concerns}。\n最近记得：${yesterday}。`
 }
 
 function effectId(date, seg, suffix) {
@@ -176,7 +245,7 @@ function effectId(date, seg, suffix) {
 function needsDelta(seg) {
   const what = String(seg.what || '')
   const minutes = Math.max(1, Math.round((seg.end - seg.start) / 60000))
-  if (/睡/.test(what) || seg.behavior === 'sleep') return { energy: Math.min(20, minutes / 30), stress: -Math.min(12, minutes / 60), sleepDebtMinutes: -minutes }
+  if (/睡/.test(what) || seg.behavior === 'sleep') return { energy: Math.min(20, minutes / 30), stress: -Math.min(12, minutes / 60) }
   if (/吃|饭|面|早餐|午餐|晚餐/.test(what) || seg.behavior === 'eat') return { energy: 8, stress: -2, lastMealAt: seg.end }
   if (/散步|逛|运动|跑步/.test(what) || seg.behavior === 'walk') return { energy: -4, stress: -7 }
   if (/课|学习|作业|改稿|复习|写/.test(what) || seg.behavior === 'study') return { energy: -Math.min(12, minutes / 30), stress: Math.min(8, minutes / 60) }
@@ -189,6 +258,10 @@ function applyNeeds(needs, delta, at) {
   if (delta.sleepDebtMinutes !== undefined) needs.sleepDebtMinutes = clamp(needs.sleepDebtMinutes + delta.sleepDebtMinutes, 0, 1440)
   if (delta.lastMealAt) needs.lastMealAt = delta.lastMealAt
   needs.updatedAt = at
+}
+
+function dailyEffectId(date, suffix) {
+  return createHash('sha256').update(`${date}|daily|${suffix}`).digest('hex').slice(0, 32)
 }
 
 function safeProjectDir(id) { return join(projectsDir(), createHash('sha256').update(String(id)).digest('hex').slice(0, 24)) }
@@ -225,7 +298,7 @@ function writeMemory(date, settled, state, now) {
   const segments = [...byId.values()].sort((a, b) => a.start - b.start)
   const memory = {
     v: 1, date, updatedAt: now, segments,
-    summary: segments.length ? `真实时间线已结算 ${segments.length} 段：${segments.slice(-3).map((x) => x.what).join('、')}` : '尚无已结束的真实活动。',
+    summary: segments.length ? `记得${segments.slice(-3).map((x) => x.what).join('，后来')}。` : '这天还没有留下清楚的生活记忆。',
     unresolved: [...state.tasks, ...state.commitments].filter((x) => x.status === 'open').slice(0, 8).map((x) => ({ id: x.id, title: x.title })),
   }
   atomicJson(file, memory)
@@ -289,6 +362,23 @@ export function settleTimeline({ date, timeline, nowMs = Date.now(), maxArtifact
         applied.add(linkEffect); count++
         dayEffects.add(linkEffect)
       }
+    }
+    const realSegments = (timeline || []).filter((x) => x && x.end > x.start && x.source !== 'travel')
+    const dayStart = realSegments.reduce((min, x) => Math.min(min, x.start), Infinity)
+    const dayEnd = realSegments.reduce((max, x) => Math.max(max, x.end), 0)
+    const sleepBalanceId = dailyEffectId(date, 'sleep-balance')
+    // A partial/custom timeline must not be mistaken for a completed day.
+    // Twenty hours still admits DST transitions and small malformed gaps.
+    const completeDay = Number.isFinite(dayStart) && dayEnd - dayStart >= 20 * 3600000
+    if (completeDay && dayEnd <= nowMs && !applied.has(sleepBalanceId)) {
+      const slept = realSegments.filter((x) => x.behavior === 'sleep' || /睡/.test(String(x.what || '')))
+        .reduce((sum, x) => sum + Math.round((x.end - x.start) / 60000), 0)
+      const delta = clamp(480 - slept, -120, 360)
+      state.needs.sleepDebtMinutes = clamp(state.needs.sleepDebtMinutes + delta, 0, 1440)
+      state.needs.updatedAt = nowMs
+      const reason = delta > 0 ? `当天睡了 ${slept} 分钟，新增 ${delta} 分钟睡眠欠账` : delta < 0 ? `当天睡了 ${slept} 分钟，偿还 ${Math.abs(delta)} 分钟睡眠欠账` : `当天睡眠达到 8 小时目标`
+      state.recentChanges.push({ at: dayEnd, kind: 'needs', reason, source: `timeline:${date}` })
+      applied.add(sleepBalanceId); dayEffects.add(sleepBalanceId); count++
     }
     state.appliedEffects = [...applied].slice(-2000)
     state.lastSettledAt = Math.max(state.lastSettledAt, nowMs)
