@@ -57,7 +57,7 @@ const shots = {
   ],
 }
 
-const renderingGoal = '高完成度自然动漫插画，人物与环境使用统一的光色和透视，保留真实生活瞬间，不画成角色设定图或僵硬摆拍'
+const renderingGoal = '延续参考图细腻清透的日系二次元画风：轻盈干净线稿、柔和低饱和色感、平滑赛璐璐与轻厚涂融合、通透发丝渐变与克制柔和的肤色阴影；人物与环境使用统一光色和透视，保留真实生活瞬间，不画成角色设定图、写实照片、3D、Q版或僵硬摆拍'
 
 /** 表情由当前行为推断，避免固定摆拍 */
 function autoExpression(elements, r = Math.random) {
@@ -224,7 +224,7 @@ export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
     : pickModel(agent, cfg)
   if (!target || !ctx?.llm?.stream) { log('prompt expand skipped: ' + (target ? 'no ctx.llm.stream' : 'no model')); return null }
   const dynamic = dynamicDirectives(elements)
-  const system = '你是生活摄影导演和图像提示词工程师。每次都根据当前真实状态重新设计一张自然、好看、细节充分的动漫生活照。参考图只负责确认是同一个人，不是要复制其中的姿势、发型、服装、帽子或可拆卸饰品。只输出本次完整画面描述，不解释、不分点、不加引号。'
+  const system = '你是生活摄影导演和图像提示词工程师。每次都根据当前真实状态重新设计一张自然、好看、细节充分的动漫生活照。参考图既是人物身份依据，也是画风标准；不能复制其中的固定姿势、服装、帽子或可拆卸饰品。只输出本次完整画面描述，不解释、不分点、不加引号。'
   const head = useRef && elements.type !== 'scene'
     ? [
       '身份连续性：保持参考图中稳定的脸型、五官比例、瞳色、基础发色以及有辨识度的身体特征，确保仍是同一个人。',
@@ -234,7 +234,7 @@ export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
       `表情：${dynamic.expression}`,
     ]
     : [
-      '这是一张不出现角色本人的场景照。',
+      '这是一张不出现角色本人的场景照；只从参考图借鉴线稿、上色、材质和光影语言，不能把参考图人物、鲸尾或服装画进场景。',
     ]
   const user = [
     ...head,
@@ -325,7 +325,7 @@ function pickModel(agent, cfg) {
 }
 
 /** Post-shot check: character drift / wrong style / broken drawing / text watermark. */
-export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = true, referencePaths = []) {
+export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = true, referencePaths = [], useStyleRef = true) {
   if (!ctx?.llm?.stream || !ctx?.attachments?.saveImages) { log('check skipped: no llm or attachments'); return null }
   let tempImage = ''
   let toCheck = imagePath
@@ -358,16 +358,26 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
   const target = pickModel(agent, cfg)
   const selfie = elements.type !== 'scene'
   const system = '你是严格的插画质检员。只输出一个 JSON 对象，不要解释、不要代码块、不要多余的字。'
-  const user = [
-    '前面若干张是人物参考图，最后一张是本次生成结果。',
-    '请直接对照参考图检查生成结果，不要只依据文字设定。',
-    '',
-    '必须检查：',
-    '1. 生成图的脸型、五官相对位置与比例、瞳色、基础发色和有辨识度的身体特征是否仍是参考图中的同一个人；',
+  const referenceRole = selfie
+    ? '前面若干张是人物身份与画风参考图，最后一张是本次生成结果。请直接对照参考图检查人物身份和画风。'
+    : '前面若干张只作为画风参考，最后一张是本次生成结果。场景照不得出现参考图人物、鲸尾或服装，只检查画风是否延续。'
+  const identityChecks = selfie ? [
+    '1. 生成图的脸型、五官相对位置与比例、瞳色、基础发色、鲸类耳鳍和鲸尾等辨识特征是否仍是参考图中的同一个人；',
     '2. 发型允许随当前生活改变扎法、刘海整理、碎发、湿润和凌乱程度；不要因为发型变化误判身份漂移。但若基础发色、发质或大致长度无缘无故突变，应判不合格；',
     '3. 自拍构图是否自然：至少看到肩部或上半身，不要只剩半张脸，不要过度怼脸；',
     '4. 表情是否符合当前状态且面部肌肉协调；允许不微笑、困倦、专注或走神，但不能僵硬木然；',
-    '5. 人物与背景是否协调，画面是否统一；',
+  ] : [
+    '1. 场景中不得出现参考图人物、鲸尾、服装或人物残影；',
+    '2. 场景的线稿、柔和低饱和上色、赛璐璐与轻厚涂融合、材质和光影是否与参考图属于同一套插画语言；',
+    '3. 场景构图是否自然完整，主体明确，不过度空泛；',
+    '4. 光线、材质和环境细节是否符合当前时间与地点；',
+  ]
+  const user = [
+    referenceRole,
+    '',
+    '必须检查：',
+    ...identityChecks,
+    selfie ? '5. 人物与背景是否协调，画面是否统一；' : '5. 场景主体与背景是否协调，画面是否统一；',
     '6. 是否存在画崩、多手多指、五官错位、肢体畸形；',
     '7. 是否出现文字、水印、签名、边框；',
     '8. 当前状态里的动作有没有画出来（比如刷手机要看到手机和手）；参考图里的服装、帽子和可拆卸饰品若与当前穿着无关，不应被机械照搬；',
@@ -377,7 +387,9 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
     `当前状态：${elements.hint || elements.state?.what || '未知'}`,
     `当前穿着：${autoOutfit(elements)}`,
     '',
-    '判定标准：只要出现“脸明显不是同一个人、身份基础特征突变、照搬与当前状态无关的参考服饰、表情或动作不自然、过度怼脸、画崩、有字水印”中的任意一项，就判不合格。不要因合理发型变化或没有微笑而判不合格。',
+    selfie
+      ? '判定标准：只要出现“脸明显不是同一个人、身份基础特征突变、画风明显偏离参考图、照搬与当前状态无关的参考服饰、表情或动作不自然、过度怼脸、画崩、有字水印”中的任意一项，就判不合格。不要因合理发型变化或没有微笑而判不合格。'
+      : '判定标准：只要出现“参考图人物或其身体特征混入场景、画风明显偏离参考图、动作或场景不符、构图崩坏、有字水印”中的任意一项，就判不合格。',
     '',
     '只输出 JSON：{"合格":true 或 false,"问题":["最多 4 条"],"改法":"一句话说明下一张该怎么修"}',
   ].join('\n')
@@ -409,8 +421,9 @@ export async function generatePrompt(ctx, agent, cfg, args) {
   const state = liveState()
   const elements = buildElements(cfg, args, state)
   const useRef = elements.type !== 'scene' && cfg.用参考图 !== false
+  const useStyleRef = cfg.用参考图 !== false
   const text = await modelPrompt(ctx, agent, cfg, elements, useRef)
-  if (text) return { prompt: text, elements, usedModel: true, useRef }
-  return { prompt: templatePrompt(cfg, elements, useRef), elements, usedModel: false, useRef }
+  if (text) return { prompt: text, elements, usedModel: true, useRef, useStyleRef }
+  return { prompt: templatePrompt(cfg, elements, useRef), elements, usedModel: false, useRef, useStyleRef }
 }
 

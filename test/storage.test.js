@@ -88,7 +88,12 @@ test('camera requests use detailed 2K lossless output without oversized prompts'
   assert.ok(prompt.length <= 900)
   assert.match(prompt, /参考图/)
   assert.match(prompt, /发型扎法.*可按当前生活自然变化/)
+  assert.match(prompt, /画风严格延续输入参考图/)
   assert.match(prompt, /不要出现任何文字、水印、签名$/)
+
+  const scenePrompt = composeImagePrompt('窗边的咖啡杯', false, true)
+  assert.match(scenePrompt, /只借鉴输入参考图的画风，不画参考图中的人物/)
+  assert.doesNotMatch(scenePrompt, /保持同一张脸/)
 })
 
 test('downloaded images are identified by bytes instead of URL suffixes', () => {
@@ -113,6 +118,12 @@ test('character reference library accepts a directory and prioritizes canonical 
       '正面.png', '侧面.jpg', '背面.webp', '其他.png',
     ])
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('empty reference config uses the curated front and turnaround package pair', () => {
+  const names = referenceImageFiles({ 参考图: '' }).map((path) => path.split('/').pop())
+  assert.deepEqual(names, ['feiyu-front.jpg', 'feiyu-turnaround.jpg'])
+  for (const path of referenceImageFiles({ 参考图: '' })) assert.ok(statSync(path).size > 500000)
 })
 
 test('photo metadata keeps the exact life context used by the camera', () => {

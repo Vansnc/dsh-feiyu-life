@@ -16,10 +16,20 @@ test('camera template injects life state and defers appearance to the reference 
   assert.match(prompt, /以参考图保持同一个人/)
   assert.match(prompt, /不要怼脸/)
   assert.match(prompt, /发型是可变化状态/)
+  assert.match(prompt, /延续参考图细腻清透的日系二次元画风/)
   assert.match(prompt, /细节必须来自当前人物动作与场景/)
   assert.doesNotMatch(prompt, /人工提示|礼服/)
   assert.ok(!prompt.includes('虹膜纹理'))
 
   const other = templatePrompt(cfg, buildElements(cfg, { type: 'selfie', __seed: 'shot-b' }, state), true)
   assert.notEqual(other, prompt, 'two shots should receive different mutable appearance/composition details')
+})
+
+test('scene template inherits the illustration language without adding the character', () => {
+  const state = {
+    what: '拍窗边的咖啡杯', outfit: '针织衫', clock: '15:10', light: '午后柔光', location: '咖啡屋',
+  }
+  const prompt = templatePrompt({}, buildElements({}, { type: 'scene', __seed: 'scene-a' }, state), false)
+  assert.match(prompt, /细腻清透的日系二次元画风/)
+  assert.doesNotMatch(prompt, /人物要求：以参考图保持同一个人/)
 })

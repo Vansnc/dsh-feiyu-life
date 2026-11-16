@@ -1559,7 +1559,7 @@ window.__ModuleLoader__.load({
               h(Label, { label: '人物参考图文件 / 目录（唯一人物输入，最多 10 张）' }, h('textarea', { value: config.参考图 || '', onChange: edit('参考图'), placeholder: '~/.dsh/feiyu-life-image/角色设定\n也可以逐行填写正面、侧面、背面图片', style: { width: '100%' } })),
               h('div', { 'data-fi-note': '' }, status.hasRef
                 ? `已识别：${(status.refNames || []).join('、')}`
-                : '留空会自动扫描默认角色设定目录；支持 PNG、JPEG、WebP。'),
+                : '留空使用插件内置的高清正面图与三视图；填写文件或目录后会完整替换内置参考库。支持 PNG、JPEG、WebP。'),
               h('div', { 'data-fi-note': '' }, modelNote ? `模型列表：${modelNote}` : '模型列表会从方舟实时读取。')),
 
             h('div', { 'data-fi-sec': '' },
@@ -1579,7 +1579,7 @@ window.__ModuleLoader__.load({
 
             h('div', { 'data-fi-sec': '', 'data-fi-wide': '' },
               h('div', { 'data-fi-h': '' }, '动态画面'),
-              h('div', { 'data-fi-sub': '' }, '只固定人物身份，不固定发型、表情、镜头或道具。每张照片都会结合这一刻的生活重新扩写，细节来自当次动作与环境。'),
+              h('div', { 'data-fi-sub': '' }, '参考图同时固定人物身份与插画语言，但不固定发型、表情、镜头或道具。每张照片都会结合这一刻的生活重新扩写，细节来自当次动作与环境。'),
               h(Label, { label: '画幅' }, h('select', { value: config.画幅 || '竖幅', onChange: edit('画幅') },
                 h('option', { value: '竖幅' }, '竖幅 3:4'), h('option', { value: '方形' }, '方形 1:1'), h('option', { value: '横幅' }, '横幅 4:3'))),
               h('div', { 'data-fi-note': '' }, config.清晰度 === '1.5K'

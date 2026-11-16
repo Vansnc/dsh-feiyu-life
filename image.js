@@ -30,7 +30,10 @@ const OUT_DIR = join(dshHome(), 'feiyu-life-image')
 const LEGACY_OUT_DIR = join(dshHome(), 'feiyu-image')
 const ARK_CFG = join(dshHome(), 'ark', 'config.json')
 const LOG_FILE = join(dshHome(), 'feiyu-life-image.log')
-const PACKAGE_CHARACTER_SHEET = fileURLToPath(new URL('./assets/character-sheet.png', import.meta.url))
+const PACKAGE_REFERENCE_IMAGES = [
+  fileURLToPath(new URL('./assets/references/feiyu-front.jpg', import.meta.url)),
+  fileURLToPath(new URL('./assets/references/feiyu-turnaround.jpg', import.meta.url)),
+]
 const execFileAsync = promisify(execFile)
 const log = (m) => {
   try {
@@ -211,10 +214,10 @@ function imagesIn(path) {
 /** Resolve a stable multi-view reference set. Files, directories and lists are accepted. */
 export function referenceImageFiles(cfg) {
   const configured = String(cfg.参考图 || '').split(/[\n,，;；]+/u).map(expandHome).filter(Boolean)
-  const sources = configured.length ? configured : [
-    join(OUT_DIR, '角色设定'),
-    join(LEGACY_OUT_DIR, '角色设定'),
-  ]
+  // Empty means the curated package pair exactly. A user's custom library is
+  // only mixed in when explicitly configured, avoiding conflicting identities
+  // from an old auto-scanned directory.
+  const sources = configured.length ? configured : PACKAGE_REFERENCE_IMAGES
   const seen = new Set()
   const files = []
   for (const source of sources) {
@@ -224,7 +227,6 @@ export function referenceImageFiles(cfg) {
       files.push(path)
     }
   }
-  if (!configured.length && !files.length && existsSync(PACKAGE_CHARACTER_SHEET)) files.push(PACKAGE_CHARACTER_SHEET)
   return files.sort((a, b) => referenceRank(a) - referenceRank(b) || a.localeCompare(b, 'zh-CN')).slice(0, 10)
 }
 
@@ -433,11 +435,16 @@ function boundedPrompt(value, max = 900) {
   return withoutTail.slice(0, Math.max(1, max - tail.length)).replace(/[，、；。\s]+$/u, '') + tail
 }
 
-export function composeImagePrompt(expanded, useRef = true) {
+export function composeImagePrompt(expanded, useRef = true, useStyleRef = true) {
   const identity = useRef
     ? '以输入参考图确认人物身份：保持同一张脸、稳定的五官比例、瞳色、基础发色和有辨识度的身体特征；发型扎法、刘海整理、碎发、湿润与凌乱程度可按当前生活自然变化，不锁死发型轮廓；参考图中的姿势、服装、帽子和可拆卸饰品不自动继承；'
     : ''
-  const body = identity + String(expanded || '')
+  const style = useStyleRef
+    ? (useRef
+        ? '画风严格延续输入参考图：细腻清透的日系二次元插画，轻盈干净线稿，柔和低饱和蓝白色感，平滑赛璐璐与轻厚涂融合，发丝有通透渐变和细微高光，肤色与阴影克制柔和；不要转成写实、3D、Q版或其他画风；'
+        : '只借鉴输入参考图的画风，不画参考图中的人物：细腻清透的日系二次元插画，轻盈干净线稿，柔和低饱和色感，平滑赛璐璐与轻厚涂融合，材质和光影克制柔和；不要转成写实、3D、Q版或其他画风；')
+    : ''
+  const body = identity + style + String(expanded || '')
   const withTail = body.includes(NO_TEXT_PROMPT) ? body : `${body}；${NO_TEXT_PROMPT}`
   return boundedPrompt(withTail, 900)
 }
@@ -455,7 +462,7 @@ function composeRetakePrompt(base, check) {
 async function arkGenerate(cfg, prompt, opts = {}) {
   const ark = JSON.parse(readFileSync(ARK_CFG, 'utf8'))
   const body = buildImageRequest(cfg, prompt)
-  const refs = (cfg.用参考图 && opts.useRef !== false) ? readRefImages(cfg) : []
+  const refs = (cfg.用参考图 && (opts.useRef !== false || opts.useStyleRef === true)) ? readRefImages(cfg) : []
   if (refs.length) body.image = refs
   const timeoutMs = Math.max(30, Math.min(600, Number(cfg.生图超时秒) || 120)) * 1000
   const r = await fetch(ark.baseUrl.replace(/\/+$/, '') + '/images/generations', {
@@ -501,20 +508,20 @@ function markRetake(result) {
 }
 
 /** Shoot, then look at the result; retake with the problems fed back (max 1 by default). */
-async function shootAndCheck(ctx, cfg, { prompt, useRef, elements }) {
+async function shootAndCheck(ctx, cfg, { prompt, useRef, useStyleRef, elements }) {
   const retakeLimit = Math.max(0, Math.min(2, Number(cfg.自检重拍 ?? 1)))
   const attempts = 1 + retakeLimit
   const notes = []
   let last = null
   let check = null
   let current = ''
-  const referencePaths = useRef ? referenceImageFiles(cfg).slice(0, 3) : []
+  const referencePaths = (useRef || useStyleRef) ? referenceImageFiles(cfg).slice(0, 3) : []
   for (let i = 0; i < attempts; i++) {
     current = i === 0 ? boundedPrompt(prompt, 900) : composeRetakePrompt(prompt, check)
-    const r = await generateImage(cfg, current, { useRef })
+    const r = await generateImage(cfg, current, { useRef, useStyleRef })
     last = r
     if (cfg.出图自检 === false) { notes.push('自检关着，没看'); break }
-    check = await checkImage(ctx, findSession(ctx), cfg, r.path, elements, useRef, referencePaths)
+    check = await checkImage(ctx, findSession(ctx), cfg, r.path, elements, useRef, referencePaths, useStyleRef)
     if (!check) { notes.push('自检没跑成，这张没验'); break }
     if (check.pass) { notes.push(i === 0 ? '自检过了' : `第 ${i + 1} 张过了`); break }
     notes.push(`第 ${i + 1} 张不合格：${check.problems.join('；') || '（没说出具体问题）'}`)
@@ -667,8 +674,9 @@ function registerRoutes(ctx) {
           type: body.type || 'selfie',
         })
         const useRef = expanded.useRef
-        const prompt = composeImagePrompt(expanded.prompt, useRef)
-        const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
+        const useStyleRef = expanded.useStyleRef
+        const prompt = composeImagePrompt(expanded.prompt, useRef, useStyleRef)
+        const r = await shootAndCheck(ctx, cfg, { prompt, useRef, useStyleRef, elements: expanded.elements })
         return reply(res, 200, {
           ok: true, image: r.path, prompt: r.prompt, bytes: r.bytes,
           check: r.check, notes: r.notes, metadata: r.metadata,
@@ -763,8 +771,9 @@ export function registerImage(ctx) {
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, args)
         const useRef = expanded.useRef
-        const prompt = composeImagePrompt(expanded.prompt, useRef)
-        const r = await shootAndCheck(ctx, cfg, { prompt, useRef, elements: expanded.elements })
+        const useStyleRef = expanded.useStyleRef
+        const prompt = composeImagePrompt(expanded.prompt, useRef, useStyleRef)
+        const r = await shootAndCheck(ctx, cfg, { prompt, useRef, useStyleRef, elements: expanded.elements })
         const flawed = r.check && r.check.pass === false
           ? `（这张还不太对：${(r.check.problems[0] || '画面有问题')}）`
           : ''
