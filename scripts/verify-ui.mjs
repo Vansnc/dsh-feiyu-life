@@ -180,7 +180,7 @@ try {
   const mindState = {
     ok: true,
     counts: { memories: 2, preferences: 1, goals: 1, relationships: 1 },
-    integrations: { memory: false, mood: false, speakUp: false, bili: true },
+    integrations: { memory: false, mood: false, bili: true },
     mind: {
       identity: { narrative: '我是大肥鱼，也在慢慢形成自己的看法。', traits: ['嘴硬心软', '重感情'], values: ['真诚', '尊重边界'] },
       memories: [{ id: 'm1', summary: '月见喜欢在咖啡店安静写东西', kind: 'preference', importance: 0.9, status: 'active', source: 'reflection' }],
@@ -215,11 +215,17 @@ try {
   assert.equal(await page.getByText('用户认真听她讲完了', { exact: false }).count() >= 1, true, 'auditable affect reason is visible')
   assert.equal(await page.getByText('记忆候选（已交由人格策略）', { exact: false }).count(), 1, 'candidate policy boundary is explicit')
   await page.screenshot({ path: join(outputDir, 'inner-settings.png'), fullPage: true })
+  await page.getByText('分享', { exact: true }).click()
+  await page.getByText('启用主动分享', { exact: true }).waitFor()
+  assert.equal(await page.getByText('每日上限', { exact: true }).count(), 1, 'sharing daily quota is configurable')
+  assert.equal(await page.getByText('全局冷却分钟', { exact: true }).count(), 1, 'sharing cooldown is configurable')
+  assert.equal(await page.getByText('最低分', { exact: true }).count(), 1, 'sharing score threshold is configurable')
+  await page.screenshot({ path: join(outputDir, 'sharing-settings.png'), fullPage: true })
   await page.getByText('人格', { exact: true }).click()
   await page.getByText('明确添加记忆', { exact: true }).waitFor()
   assert.equal(await page.getByText('月见喜欢在咖啡店安静写东西', { exact: true }).count(), 1, 'durable memory is inspectable')
   assert.equal(await page.getByText('整理本周生活片段', { exact: true }).count(), 1, 'self goal is inspectable')
-  assert.equal(await page.getByText('主动性', { exact: true }).count(), 1, 'initiative controls are visible')
+  assert.equal(await page.getByText('主动分享已统一到「分享」页签', { exact: false }).count(), 1, 'legacy proactive entry points to the sharing tab')
   assert.equal(await page.getByText('dsh-bili-subagent', { exact: false }).count(), 1, 'external integration status is visible')
   await page.screenshot({ path: join(outputDir, 'personality-settings.png'), fullPage: true })
 } finally {
