@@ -1,5 +1,12 @@
 # 更新记录
 
+## Unreleased — architecture cleanup
+
+- 拆分 cognition/agency、persistence、life/time、media/image-prompt 到 `src/`，根入口保留兼容 facade。
+- 提取 plugin context hints 和 initiative scheduler。
+- 新增架构依赖/公共契约测试；README/docs 收敛为产品、架构、配置、操作四个入口。
+- 不改配置语义、路由、工具名、数据格式、UI 契约、主动策略；不发布、不重载。
+
 ## 2.5.2
 
 - **回复关联改为保守语义**：生产 inbox payload 只有 `{agent,message}`，没有可靠的 reply-to/parent 字段；`observeAgencyReply()` 只有在显式 `replyTo` 或文本明确指向 topic 时才改变状态。普通同会话消息不再自动标 responded/declined；“算了我问另一个问题”“不用担心”保持 awaiting；“别催了”只在紧跟单个跟进的 10 分钟窗口内作为拒绝。“只更新活跃”不再伪造回应。
