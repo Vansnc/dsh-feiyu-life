@@ -198,7 +198,7 @@ test('needs, self preferences, people and persisted events are sourced candidate
 })
 
 test('index runs the internal tick before the outbound sharing gate', () => {
-  const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/plugin/initiative.js', import.meta.url), 'utf8')
   const internal = source.indexOf('runInternalAgency(now)')
   const gate = source.indexOf('if (!sharingCfg.启用)')
   assert.ok(internal > 0)
