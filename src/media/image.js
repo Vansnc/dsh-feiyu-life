@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { generatePrompt, checkImage } from './image-prompt.js'
-import { readConfig as readLifeConfig, zonedNow } from '../../life.js'
+import { mediaTimeZone, mediaZonedNow } from './life-snapshot.js'
 import { appendRotatingLog, timeoutSignal } from '../../runtime.js'
 
 const dshHome = () => process.env.DSH_HOME ?? join(homedir(), '.dsh')
@@ -335,8 +335,8 @@ function writePhotoMetadata(result, cfg, elements, check, notes, prompt) {
 function todayUsage(cfg) {
   try {
     let tz = 'Asia/Shanghai'
-    try { tz = String(readLifeConfig().时区 || tz) } catch {}
-    const today = zonedNow(new Date(), tz).ymd
+    try { tz = mediaTimeZone() } catch {}
+    const today = mediaZonedNow(new Date(), tz).ymd
     const todayShots = new Set()
     let last = 0
     for (const dir of photoDirs(cfg)) {
@@ -345,7 +345,7 @@ function todayUsage(cfg) {
       for (const f of files) {
         if (!originalPhoto.test(f)) continue
         const st = statSync(join(dir, f))
-        if (zonedNow(new Date(st.mtimeMs), tz).ymd === today) todayShots.add(photoTimestamp(f))
+        if (mediaZonedNow(new Date(st.mtimeMs), tz).ymd === today) todayShots.add(photoTimestamp(f))
         last = Math.max(last, st.mtimeMs)
       }
     }

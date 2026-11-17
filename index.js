@@ -77,6 +77,10 @@ const XUEYUAN_MAP_FILES = new Map(['base', 'anime', 'buildings'].map((layer) => 
 import { bodyHint, calendarLabel, recentSummary, selfHint } from './src/plugin/context-hints.js'
 import { createInitiativeRunner } from './src/plugin/initiative.js'
 import { registerLifeTools } from './src/plugin/tools.js'
+import { createHttpHelpers } from './src/plugin/http.js'
+import { registerMediaRoutes } from './src/plugin/routes/media.js'
+import { registerBackupRoutes } from './src/plugin/routes/backup.js'
+import { installMaintenance } from './src/plugin/lifecycle.js'
 
 const clockOf = (minute) => {
   const v = ((Math.round(minute) % 1440) + 1440) % 1440
@@ -400,36 +404,7 @@ export function apply(ctx) {
   try { ctx.effect(() => ctx.interval(() => { try { reconcileContinuity() } catch {} }, 5 * 60 * 1000)) } catch {}
 
   // ── Settings page endpoints ──────────────────────────────────────────
-  const onlyOwner = (handler) => async (req, res) => {
-    try {
-      const rejection = ctx.connection.requestRejection(req)
-      if (rejection !== undefined) {
-        const code = Number.isInteger(rejection) && rejection >= 400 && rejection <= 599 ? rejection : 403
-        res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-        res.end(JSON.stringify({ ok: false, error: code === 401 ? 'authentication_required' : 'forbidden' }))
-        return
-      }
-    } catch {
-      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-      res.end(JSON.stringify({ ok: false, error: 'connection_guard_unavailable' }))
-      return
-    }
-    return handler(req, res)
-  }
-
-  const reply = (res, code, obj) => {
-    res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-    res.end(JSON.stringify(obj))
-  }
-
-  const readBody = async (req) => {
-    let body = ''
-    for await (const chunk of req) {
-      body += chunk
-      if (body.length > 1024 * 1024) throw new Error('request body too large')
-    }
-    try { return JSON.parse(body || '{}') } catch { return undefined }
-  }
+  const { onlyOwner, reply, readBody } = createHttpHelpers(ctx)
 
   const adjustmentPayload = (cfg, at) => {
     const tz = String(cfg.时区 || 'Asia/Shanghai')
@@ -718,88 +693,11 @@ export function apply(ctx) {
     }), 'feiyu-life: sync tomorrow continuity')
   } catch {}
 
-  try {
-    ctx.effect(() => ctx.webServer.register({
-      kind: 'exact',
-      path: ROUTE_PREFIX + '/logo',
-      handler: onlyOwner(async (req, res) => {
-        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        try {
-          const data = readFileSync(PLUGIN_LOGO_FILE)
-          res.writeHead(200, {
-            'content-type': 'image/png',
-            'content-length': data.length,
-            'cache-control': 'public, max-age=86400, immutable',
-          })
-          res.end(data)
-        } catch { return reply(res, 404, { ok: false, error: 'logo_not_found' }) }
-      }),
-    }), 'feiyu-life: logo')
-  } catch {}
-
-  for (const [behavior, file] of AVATAR_ACTION_FILES) {
-    try {
-      ctx.effect(() => ctx.webServer.register({
-        kind: 'exact',
-        path: `${ROUTE_PREFIX}/avatar/${behavior}`,
-        handler: onlyOwner(async (req, res) => {
-          if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
-          try {
-            const data = readFileSync(file)
-            res.writeHead(200, {
-              'content-type': 'image/png',
-              'content-length': data.length,
-              'cache-control': 'no-store',
-            })
-            res.end(data)
-          } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_action_not_found' }) }
-        }),
-      }), `feiyu-life: avatar ${behavior}`)
-    } catch {}
-  }
-
-  try {
-    ctx.effect(() => ctx.webServer.register({
-      kind: 'exact',
-      path: ROUTE_PREFIX + '/avatar',
-      handler: onlyOwner(async (req, res) => {
-        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        try {
-          const url = new URL(req.url || '/', 'http://x')
-          const file = AVATAR_ACTION_FILES.get(String(url.searchParams.get('action') || '')) || AVATAR_FILE
-          const data = readFileSync(file)
-          res.writeHead(200, {
-            'content-type': 'image/png',
-            'content-length': data.length,
-            'cache-control': 'no-store',
-          })
-          res.end(data)
-        } catch (e) { return reply(res, 404, { ok: false, error: 'avatar_not_found' }) }
-      }),
-    }), 'feiyu-life: avatar')
-  } catch {}
-
-  try {
-    ctx.effect(() => ctx.webServer.register({
-      kind: 'exact',
-      path: ROUTE_PREFIX + '/map/xueyuan',
-      handler: onlyOwner(async (req, res) => {
-        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        try {
-          const url = new URL(req.url || '/', 'http://x')
-          const file = XUEYUAN_MAP_FILES.get(String(url.searchParams.get('layer') || 'base'))
-          if (!file) return reply(res, 404, { ok: false, error: 'map_layer_not_found' })
-          const data = readFileSync(file)
-          res.writeHead(200, {
-            'content-type': 'image/svg+xml; charset=utf-8',
-            'content-length': data.length,
-            'cache-control': 'no-store',
-          })
-          res.end(data)
-        } catch (e) { return reply(res, 404, { ok: false, error: 'map_layer_not_found' }) }
-      }),
-    }), 'feiyu-life: xueyuan map')
-  } catch {}
+  registerMediaRoutes({
+    ctx, prefix: ROUTE_PREFIX, onlyOwner, reply,
+    logoFile: PLUGIN_LOGO_FILE, avatarFile: AVATAR_FILE,
+    avatarActionFiles: AVATAR_ACTION_FILES, mapFiles: XUEYUAN_MAP_FILES,
+  })
 
   try {
     ctx.effect(() => ctx.webServer.register({
@@ -885,56 +783,11 @@ export function apply(ctx) {
     }), 'feiyu-life: replay')
   } catch {}
 
-  try {
-    ctx.effect(() => ctx.webServer.register({
-      kind: 'exact',
-      path: ROUTE_PREFIX + '/settings-backup',
-      handler: onlyOwner(async (req, res) => {
-        if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        try {
-          const cfg = readConfig()
-          const backup = createSettingsBackup(cfg, readImageConfig(), readMind(cfg.人格))
-          const data = Buffer.from(JSON.stringify(backup, null, 2), 'utf8')
-          const day = backup.exportedAt.slice(0, 10)
-          res.writeHead(200, {
-            'content-type': 'application/json; charset=utf-8',
-            'content-length': data.length,
-            'content-disposition': `attachment; filename="dsh-feiyu-life-settings-${day}.json"`,
-            'cache-control': 'no-store',
-          })
-          res.end(data)
-        } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
-      }),
-    }), 'feiyu-life: settings backup')
-  } catch {}
-
-  try {
-    ctx.effect(() => ctx.webServer.register({
-      kind: 'exact',
-      path: ROUTE_PREFIX + '/settings-restore',
-      handler: onlyOwner(async (req, res) => {
-        if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        let body
-        try { body = await readBody(req) } catch (e) { return reply(res, 413, { ok: false, error: String(e.message || e) }) }
-        let restored
-        try {
-          restored = restoreSettingsBackup(body && body.backup)
-        } catch (e) { return reply(res, 400, { ok: false, error: String((e && e.message) || e) }) }
-        const previousLife = readConfig()
-        const previousCamera = readImageConfig()
-        const previousMind = readMind(previousLife.人格)
-        try {
-          replaceConfig(restored.life)
-          replaceImageConfig(restored.camera)
-          if (restored.mind) writeMind(restored.mind, restored.life.人格)
-          return reply(res, 200, { ok: true, summary: restored.summary, issues: restored.issues })
-        } catch (e) {
-          try { replaceConfig(previousLife); replaceImageConfig(previousCamera); writeMind(previousMind, previousLife.人格) } catch {}
-          return reply(res, 500, { ok: false, error: '恢复写入失败，已回滚原设置：' + String((e && e.message) || e) })
-        }
-      }),
-    }), 'feiyu-life: settings restore')
-  } catch {}
+  registerBackupRoutes({
+    ctx, prefix: ROUTE_PREFIX, onlyOwner, reply, readBody,
+    readConfig, readImageConfig, readMind, createSettingsBackup,
+    restoreSettingsBackup, replaceConfig, replaceImageConfig, writeMind,
+  })
 
   try {
     ctx.effect(() => ctx.webServer.register({
@@ -1016,24 +869,8 @@ export function apply(ctx) {
     try { ctx.logger?.warn?.('feiyu-life: 相机没挂上 ' + String((e && e.message) || e)) } catch {}
   }
 
-  const maintain = () => {
-    try {
-      const cfg = readConfig()
-      cleanupPlans(cfg.历史保留天数)
-      cleanupFacts(cfg.历史保留天数)
-      cleanupContinuity(Math.max(365, cfg.历史保留天数))
-      cleanupEvents(cfg.历史保留天数)
-      cleanupPhotos(readImageConfig())
-      cleanupMoments(Math.min(120, Math.max(30, Number(cfg.历史保留天数) || 180)))
-    } catch (e) {
-      try { ctx.logger?.warn?.('feiyu-life: 自动清理失败 ' + String((e && e.message) || e)) } catch {}
-    }
-  }
-  try {
-    ctx.effect(() => {
-      const timer = setTimeout(maintain, 15000)
-      return () => clearTimeout(timer)
-    })
-  } catch {}
-  try { ctx.effect(() => ctx.interval(maintain, 24 * 60 * 60 * 1000)) } catch {}
+  installMaintenance(ctx, {
+    readConfig, readImageConfig, cleanupPlans, cleanupFacts, cleanupContinuity,
+    cleanupEvents, cleanupPhotos, cleanupMoments,
+  })
 }

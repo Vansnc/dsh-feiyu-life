@@ -29,7 +29,7 @@ ui      -> HTTP API only (not server state rules)
 
 - `src/cognition/*`、`src/life/*` 不得 import `src/plugin/*` 或根 `index.js/client.js`。
 - `src/persistence/*` 不 import 业务模块。
-- `src/media/*` 可以通过 `life.js` facade 读取快照，但不能反向拥有生活状态；`image.js` 与 `image-prompt.js` 均已移入 `src/media`，根文件只做 facade。
+- `src/media/*` 通过 `src/media/life-snapshot.js` 的窄只读快照接口读取生活状态，不直接 import 整份 `life.js`；`image.js` 与 `image-prompt.js` 均已移入 `src/media`，根文件只做 facade。
 - 禁止新的循环依赖；`test/architecture.test.js` 会遍历实际 import 图。
 
 ## 状态所有权
@@ -65,6 +65,6 @@ ui      -> HTTP API only (not server state rules)
 ## 已知偏差
 
 - `life.js` 仍保留配置 schema/迁移和 generation/context；已抽出 time/calendar。完全拆 config/generator 需要单独迁移窗口。
-- `src/plugin/tools.js` 已承载 DSH 工具注册；HTTP 路由/生命周期仍在根 `index.js`，下一轮继续收敛。
+- `src/plugin/tools.js` 承载 DSH 工具注册；`src/plugin/routes/media.js`、`routes/backup.js` 承载媒体/备份路由；`src/plugin/lifecycle.js` 承载维护定时器。剩余 config/continuity/mind/replay 路由仍在根 `index.js`，下一轮继续收敛。
 - `client.js` 受 DSH 的 `window.__ModuleLoader__` 无构建加载约束，暂不做物理多文件拆分；视觉和 data 属性由现有 UI 测试锁住。
 - continuity/mind/reflection 仍通过根 `storage.js` facade 使用持久化；没有一次性重写全部持久化，避免行为风险。
