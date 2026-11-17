@@ -1,5 +1,11 @@
 # 更新记录
 
+## 2.5.3
+
+- 发布架构整理后的版本：cognition/agency、persistence、life time/context、media snapshot、plugin routes/lifecycle/tools 拆入 `src/`，根入口保持兼容 facade。
+- 新增 life config/context 契约测试、media 只读边界测试、架构依赖/公共导出测试。
+- 不改变配置语义、状态格式、HTTP 路由、DSH 工具名、主动分享策略或 UI 契约。
+
 ## Unreleased — phase 4 life contracts
 
 - 新增 `src/life/context.js`：只读、有界的 life context snapshot，过滤敏感文本，不暴露未知字段。

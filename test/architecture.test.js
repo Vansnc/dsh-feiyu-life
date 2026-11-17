@@ -25,7 +25,7 @@ function graph(entries) {
 test('root facades and package exports stay stable', () => {
   const pkg = JSON.parse(read('package.json'))
   assert.equal(pkg.name, 'dsh-feiyu-life')
-  assert.equal(pkg.version, '2.5.2')
+  assert.equal(pkg.version, '2.5.3')
   assert.ok(pkg.files.includes('src/'))
   for (const file of ['index.js', 'client.js', 'life.js', 'agency.js', 'agency-runner.js', 'storage.js', 'image-prompt.js', 'sharing.js']) {
     assert.equal(existsSync(resolve(ROOT, file)), true, file)
