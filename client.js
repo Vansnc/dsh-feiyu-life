@@ -752,7 +752,8 @@ window.__ModuleLoader__.load({
           h('input', { 'data-fl-input': '', type: 'datetime-local', value: previewAt, onChange: (e) => setPreviewAt(e.target.value) }),
           h('button', { 'data-fl-btn': '', onClick: previewOther }, '预览这个时间'),
           h('button', { 'data-fl-btn': '', onClick: async () => { setPreviewAt(''); await load(true); setMessage('回到此刻') } }, '回到此刻')),
-        h('div', { 'data-fl-note': '' }, '时序图里红线是此刻；灰色的段是按计划走，橙色的段是你用 life_adjust 改过的。'))
+        h('div', { 'data-fl-note': '' }, '时序图里红线是此刻；灰色的段是按计划走，橙色的段是你用 life_adjust 改过的。'),
+        meta && meta.agency ? h('div', { 'data-fl-note': '' }, `心里在推进：${meta.agency.title}${meta.agency.nextStep ? `，下一步 ${meta.agency.nextStep}` : ''}。这是内部议程，不代表已经完成。`) : null)
 
       const nowPage = h('div', { 'data-fl-sec': '' },
         h('div', { 'data-fl-h': '' }, '今天的时序'),
