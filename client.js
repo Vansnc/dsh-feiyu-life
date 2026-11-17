@@ -2222,7 +2222,7 @@
             if (first) setTab(first);
           }
         }, t))),
-        (groupSections[group] || []).length > 1 ? h("div", { "data-fl-subtabs": "", role: "tablist", "aria-label": "\u751F\u6D3B\u9875\u9762\u5206\u533A" }, groupSections[group].map(([k, t]) => h("button", {
+        (groupSections[group] || []).length > 0 ? h("div", { "data-fl-subtabs": "", role: "tablist", "aria-label": "\u751F\u6D3B\u9875\u9762\u5206\u533A" }, groupSections[group].map(([k, t]) => h("button", {
           key: k,
           "data-fl-subtab": "",
           role: "tab",
