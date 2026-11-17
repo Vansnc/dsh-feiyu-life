@@ -56,8 +56,9 @@ test('route, tool, tab and data-file contracts are unchanged', () => {
   for (const route of ['/state', '/mind', '/affect', '/continuity', '/save', '/preview', '/replay', '/settings-backup', '/settings-restore', '/regenerate', '/undo-regenerate']) {
     assert.match(index, new RegExp(route.replace('/', '\\/')))
   }
+  const tools = read('src/plugin/tools.js')
   for (const tool of ['life_adjust', 'life_person', 'life_task', 'life_commitment', 'life_thread', 'mind_remember', 'mind_preference', 'mind_goal']) {
-    assert.match(index, new RegExp(tool))
+    assert.match(tools, new RegExp(tool))
   }
   const client = read('client.js')
   for (const tab of ['now', 'share', 'persona', 'inner', 'continuity', 'replay', 'map', 'year', 'week', 'day', 'body', 'photo', 'data']) {
@@ -94,9 +95,9 @@ test('no import cycles and no domain-to-plugin dependencies', () => {
 
 test('critical source modules are inside the declared layout', () => {
   for (const file of [
-    'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/life/time.js', 'src/cognition/agency/schema.js',
+    'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/plugin/tools.js', 'src/life/time.js', 'src/cognition/agency/schema.js',
     'src/cognition/agency/candidates.js', 'src/cognition/agency/executor.js',
     'src/cognition/agency/outreach.js', 'src/cognition/agency/state-machine.js',
-    'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/persistence/storage.js',
+    'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/media/image.js', 'src/persistence/storage.js',
   ]) assert.equal(existsSync(resolve(ROOT, file)), true, file)
 })
