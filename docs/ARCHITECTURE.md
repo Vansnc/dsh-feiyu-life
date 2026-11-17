@@ -29,7 +29,7 @@ src/proactive/    sharing 候选/策略/账本/发送协调
 src/media/        image、image-prompt、life-snapshot
 src/persistence/  storage、backup、原子文件边界
 src/infrastructure/ runtime、日志、超时
-src/ui/           client.js 权威源码；根 client.js 是生成产物
+src/ui/           entry/app/styles/constants/image-panel 权威源码；根 client.js 是 esbuild 生成产物
 ```
 
 ## 依赖方向

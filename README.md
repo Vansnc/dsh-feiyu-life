@@ -63,6 +63,7 @@ npm test
 - [安装、升级、备份、发布与故障排查](docs/OPERATIONS.md)
 - [设计原则与关键决策](docs/DESIGN.md)
 - [life 依赖盘点](docs/LIFE_DEPENDENCY_INVENTORY.md)
+- [设置页字段映射](docs/UI_PAGE_MAP.md)
 - [贡献指南](CONTRIBUTING.md)
 - [更新记录](CHANGELOG.md)
 

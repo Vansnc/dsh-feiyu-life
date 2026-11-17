@@ -71,7 +71,7 @@ test('route, tool, tab and data-file contracts are unchanged', () => {
   for (const tool of ['life_adjust', 'life_person', 'life_task', 'life_commitment', 'life_thread', 'mind_remember', 'mind_preference', 'mind_goal']) {
     assert.match(tools, new RegExp(tool))
   }
-  const client = read('src/ui/client.js')
+  const client = read('src/ui/constants.js')
   for (const tab of ['now', 'share', 'persona', 'inner', 'continuity', 'replay', 'map', 'year', 'week', 'day', 'body', 'photo', 'data']) {
     assert.match(client, new RegExp(`\\['${tab}'`))
   }
@@ -81,7 +81,7 @@ test('route, tool, tab and data-file contracts are unchanged', () => {
 })
 
 test('no import cycles and no domain-to-plugin dependencies', () => {
-  const files = graph(['index.js', 'client.js', 'life.js', 'agency.js', 'agency-runner.js', 'sharing.js', 'image.js', 'image-prompt.js', 'storage.js'])
+  const files = graph(['index.js', 'client.js', 'src/plugin/app.js', 'src/life/life.js', 'src/proactive/sharing.js', 'src/media/image.js', 'src/persistence/storage.js'])
   const visiting = new Set()
   const done = new Set()
   const stack = []
@@ -112,6 +112,6 @@ test('critical source modules are inside the declared layout', () => {
     'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/plugin/tools.js', 'src/plugin/http.js', 'src/plugin/lifecycle.js', 'src/plugin/routes/media.js', 'src/plugin/routes/backup.js', 'src/life/time.js', 'src/life/context.js', 'src/cognition/agency/schema.js',
     'src/cognition/agency/candidates.js', 'src/cognition/agency/executor.js',
     'src/cognition/agency/outreach.js', 'src/cognition/agency/state-machine.js',
-    'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/media/image.js', 'src/media/life-snapshot.js', 'src/persistence/storage.js',
+    'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/media/image.js', 'src/media/life-snapshot.js', 'src/ui/client.js', 'src/ui/app.js', 'src/ui/styles.js', 'src/ui/constants.js', 'src/ui/image-panel.js', 'src/persistence/storage.js',
   ]) assert.equal(existsSync(resolve(ROOT, file)), true, file)
 })

@@ -398,7 +398,7 @@ test('role and wardrobe settings are bounded and validated', () => {
 })
 
 test('the settings UI exposes role and wardrobe fields without a hardcoded persona', () => {
-  const source = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/ui/app.js', import.meta.url), 'utf8')
   assert.match(source, /角色设定与衣柜/)
   assert.match(source, /maxLength: 500/)
   assert.match(source, /patch\(\['衣柜', key\]/)
