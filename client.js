@@ -1,3 +1,4 @@
+/* GENERATED from src/ui/client.js by scripts/build-client.mjs. Do not edit. */
 /**
  * dsh-feiyu-life · browser half (Settings -> 鱼的生活)
  *

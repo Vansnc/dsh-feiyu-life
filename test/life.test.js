@@ -8,10 +8,10 @@ import {
   migrateConfig, normalizeConfig, validateConfig, todayDeviation,
   zonedNow, zonedDayStartMs, zonedDateTimeMs, addZonedDays,
   generate, replyReadiness, lastNightSleep, coldEpisode, vitalityFor,
-} from '../life.js'
-import { timeline, timelineCoverage, toMinute, writePlan } from '../plan.js'
-import { buildPrompt, normalizePlan } from '../gen.js'
-import { buildTimeline, segmentAt } from '../state.js'
+} from '../src/life/life.js'
+import { timeline, timelineCoverage, toMinute, writePlan } from '../src/life/plan.js'
+import { buildPrompt, normalizePlan } from '../src/life/gen.js'
+import { buildTimeline, segmentAt } from '../src/life/state.js'
 
 test('configuration is normalized at the save boundary', () => {
   const issues = []
@@ -426,7 +426,7 @@ test('sharing configuration migrates, clamps and stays optional-backward-compati
 
 
 test('the plugin has one proactive scheduler and does not call the legacy gate', () => {
-  const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/plugin/app.js', import.meta.url), 'utf8')
   assert.doesNotMatch(source, /initiativeDecision|markInitiative/)
   assert.doesNotMatch(source, /dsh-speak-up|speak-up-config/)
   assert.match(source, /sharingCheckedAt/)

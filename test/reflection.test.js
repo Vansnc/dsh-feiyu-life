@@ -8,7 +8,7 @@ import {
   affectContext, appendEvent, applyReflection, buildReflectionPrompt, decayedAffect,
   defaultAffect, eventId, normalizeReflection, readAffect, readEvents,
   recordLifeSettlement, reflectionUsage, shouldReflect,
-} from '../reflection.js'
+} from '../src/cognition/reflection.js'
 
 const inner = { 基线心情: 55, 回稳半衰期小时: 8, 注入阈值: 6, 每日反思上限: 2 }
 

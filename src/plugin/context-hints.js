@@ -1,11 +1,11 @@
 // Plugin-level prompt hints derived from life/cognition state. This module is
 // an adapter: it reads domain facades and formats short model-facing text; it
 // owns no state and is not imported by the domain.
-import { readPlan } from '../../plan.js'
-import { momentSummary } from '../../moments.js'
-import { readMind } from '../../mind.js'
-import { readAgency, agencyContext } from '../../agency.js'
-import { menstrualDay, coldEpisode } from '../../life.js'
+import { readPlan } from '../life/plan.js'
+import { momentSummary } from '../life/moments.js'
+import { readMind } from '../cognition/mind.js'
+import { readAgency, agencyContext } from '../cognition/agency/index.js'
+import { menstrualDay, coldEpisode } from '../life/life.js'
 
 export function bodyHint(cfg, t, deviation = {}) {
   const detour = deviation.flat ? '今天想躺平，基本不出门'

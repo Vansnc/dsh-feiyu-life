@@ -3,8 +3,8 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { generate, normalizeConfig, placeCategory } from '../life.js'
-import { buildCandidates, buildSharePrompt, commitShare, defaultSharingConfig, normalizeSharingConfig, readSharing, takeShare } from '../sharing.js'
+import { generate, normalizeConfig, placeCategory } from '../src/life/life.js'
+import { buildCandidates, buildSharePrompt, commitShare, defaultSharingConfig, normalizeSharingConfig, readSharing, takeShare } from '../src/proactive/sharing.js'
 
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'feiyu-share-sim-'))
 const cfg = normalizeConfig({})

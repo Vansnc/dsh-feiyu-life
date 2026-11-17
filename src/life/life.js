@@ -18,13 +18,13 @@
 // the clock) plus explicit life_adjust adjustments only — see state.js.
 
 import { mkdirSync, statSync } from 'node:fs'
-import { addZonedDays, clockOf, coldEpisode, dayDiff, hashSeed, lastNightSleep, menstrualDay, minuteLabel, pad2, rng, shiftDay, spokenClock, todayCalendar, todayDeviation, zonedDateTimeMs, zonedDayStartMs, zonedNow } from './src/life/time.js'
+import { addZonedDays, clockOf, coldEpisode, dayDiff, hashSeed, lastNightSleep, menstrualDay, minuteLabel, pad2, rng, shiftDay, spokenClock, todayCalendar, todayDeviation, zonedDateTimeMs, zonedDayStartMs, zonedNow } from './time.js'
 import { dayType, dailyPlan, readPlan, normalizeRoutine, normalizeWardrobe, timelineCoverage } from './plan.js'
 import { readFacts, buildTimeline, segmentAt, recentSegments } from './state.js'
 import { addWorldToTimeline, buildReplayFrames, defaultWorldConfig, normalizeWorldConfig, worldStateAt } from './world.js'
 import { ensureMoments, momentContext } from './moments.js'
-import { atomicWriteJson, quarantine, readJsonBounded, withLock } from './storage.js'
-import { defaultSharingConfig, normalizeSharingConfig } from './sharing.js'
+import { atomicWriteJson, quarantine, readJsonBounded, withLock } from '../persistence/storage.js'
+import { defaultSharingConfig, normalizeSharingConfig } from '../proactive/sharing.js'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -826,4 +826,4 @@ export {
   addZonedDays, coldEpisode, dayDiff, hashSeed, inRange, lastNightSleep,
   menstrualDay, rng, shiftDay, todayCalendar, todayDeviation,
   zonedDateTimeMs, zonedDayStartMs, zonedNow,
-} from './src/life/time.js'
+} from './time.js'

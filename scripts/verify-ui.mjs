@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium } from 'playwright'
-import { defaultWorldConfig } from '../world.js'
-import { defaultConfig } from '../life.js'
-import { normalizeImageConfig } from '../image.js'
+import { defaultWorldConfig } from '../src/life/world.js'
+import { defaultConfig } from '../src/life/life.js'
+import { normalizeImageConfig } from '../src/media/image.js'
 
 let definition
 globalThis.window = { __ModuleLoader__: { load(value) { definition = value } } }

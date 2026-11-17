@@ -12,8 +12,8 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { atomicWriteJson, readJsonBounded, withLock } from './storage.js'
-import { momentTitle } from './moments.js'
+import { atomicWriteJson, readJsonBounded, withLock } from '../persistence/storage.js'
+import { momentTitle } from '../life/moments.js'
 
 export const SHARING_VERSION = 1
 export const SHARING_LIMITS = { recent: 60, failures: 40, pendingLeaseMs: 5 * 60 * 1000, ledgerBytes: 256 * 1024 }

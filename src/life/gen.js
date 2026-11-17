@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { appendRotatingLog, withStreamTimeout } from './runtime.js'
+import { appendRotatingLog, withStreamTimeout } from '../infrastructure/runtime.js'
 import { BEHAVIOR_RULES, defaultWorldConfig, normalizeWorldConfig } from './world.js'
 import { normalizeWardrobe, occasion } from './plan.js'
 

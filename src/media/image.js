@@ -20,7 +20,7 @@ import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { generatePrompt, checkImage } from './image-prompt.js'
 import { mediaTimeZone, mediaZonedNow } from './life-snapshot.js'
-import { appendRotatingLog, timeoutSignal } from '../../runtime.js'
+import { appendRotatingLog, timeoutSignal } from '../infrastructure/runtime.js'
 
 const dshHome = () => process.env.DSH_HOME ?? join(homedir(), '.dsh')
 

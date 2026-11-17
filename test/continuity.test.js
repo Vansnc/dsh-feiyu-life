@@ -8,9 +8,9 @@ import {
   activeEntities, activePeople, continuityContext, continuityPath, continuityRevision, continuityView,
   effectsDir, mutateEntity, mutatePerson, planSyncInfo, projectsDir, readContinuity, readMemories,
   relationshipSummary, settleTimeline, writeContinuity,
-} from '../continuity.js'
-import { normalizePlan } from '../gen.js'
-import { buildTimeline } from '../state.js'
+} from '../src/life/continuity.js'
+import { normalizePlan } from '../src/life/gen.js'
+import { buildTimeline } from '../src/life/state.js'
 
 function sandbox(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'feiyu-continuity-'))

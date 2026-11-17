@@ -8,16 +8,16 @@ import { fileURLToPath } from 'node:url'
 
 import {
   writePlan, planPath, archivePlan, listPlanHistory, restoreLatestPlan, cleanupPlans, dailyPlan,
-} from '../plan.js'
+} from '../src/life/plan.js'
 import {
   MAX_ADJUSTMENTS_PER_DAY, addAdjustment, factsPath, listAdjustments, removeAdjustment, cleanupFacts,
-} from '../state.js'
-import { configPath, normalizeConfig, readConfig, saveConfig, LIFE_CONFIG_VERSION } from '../life.js'
+} from '../src/life/state.js'
+import { configPath, normalizeConfig, readConfig, saveConfig, LIFE_CONFIG_VERSION } from '../src/life/life.js'
 import {
   buildImageRequest, buildPhotoMetadata, cleanupPhotos, composeImagePrompt, detectImageFormat,
   normalizeImageConfig, photoMetadataName, photoThumbnailName, referenceImageFiles,
   IMAGE_CONFIG_VERSION,
-} from '../image.js'
+} from '../src/media/image.js'
 
 test('regeneration history restores the previous plan and adjustments are removable', () => {
   const dir = mkdtempSync(join(tmpdir(), 'feiyu-storage-'))
@@ -254,7 +254,7 @@ function listDirectory(dir) {
 
 test('concurrent config writers never leave a half-written file', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'feiyu-storage-'))
-  const modulePath = fileURLToPath(new URL('../life.js', import.meta.url))
+  const modulePath = fileURLToPath(new URL('../src/life/life.js', import.meta.url))
   const script = `import { saveConfig } from ${JSON.stringify(modulePath)}; for (let i = 0; i < 8; i++) saveConfig({ 角色设定: 'writer-' + i })`
   const run = () => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--input-type=module', '-e', script], {

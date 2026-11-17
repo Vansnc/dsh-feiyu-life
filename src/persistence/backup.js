@@ -1,6 +1,6 @@
-import { migrateImageConfig, normalizeImageConfig } from './image.js'
-import { migrateConfig, validateConfig } from './life.js'
-import { normalizeMind } from './mind.js'
+import { migrateImageConfig, normalizeImageConfig } from '../media/image.js'
+import { migrateConfig, validateConfig } from '../life/life.js'
+import { normalizeMind } from '../cognition/mind.js'
 
 export const SETTINGS_BACKUP_FORMAT = 'dsh-feiyu-life-settings'
 export const SETTINGS_BACKUP_VERSION = 2

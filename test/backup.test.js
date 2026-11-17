@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   createSettingsBackup, restoreSettingsBackup, SETTINGS_BACKUP_FORMAT,
-} from '../backup.js'
+} from '../src/persistence/backup.js'
 
 test('settings backup round-trips life, camera and personality', () => {
   const backup = createSettingsBackup({

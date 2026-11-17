@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
-import { readJsonBounded } from './storage.js'
+import { readJsonBounded } from '../persistence/storage.js'
 
 export const CONTINUITY_VERSION = 2
 export const ENTITY_LIMITS = { threads: 5, tasks: 30, commitments: 20, people: 20 }

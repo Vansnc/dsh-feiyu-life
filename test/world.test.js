@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   addWorldToTimeline, behaviorFor, buildReplayFrames, defaultWorldConfig, locationFor, normalizeWorldConfig,
   PLACE_ICON_IDS, worldStateAt,
-} from '../world.js'
+} from '../src/life/world.js'
 
 test('day replay is server-owned and samples real travel movement', () => {
   const timeline = addWorldToTimeline([

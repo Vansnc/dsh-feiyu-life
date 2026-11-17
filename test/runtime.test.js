@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { appendRotatingLog, withStreamTimeout } from '../runtime.js'
+import { appendRotatingLog, withStreamTimeout } from '../src/infrastructure/runtime.js'
 
 test('model stream timeout stays hard even when iterator close hangs', async () => {
   const iterable = {

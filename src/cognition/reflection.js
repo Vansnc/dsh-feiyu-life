@@ -8,8 +8,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { pickModel } from './gen.js'
-import { withStreamTimeout } from './runtime.js'
+import { pickModel } from '../life/gen.js'
+import { withStreamTimeout } from '../infrastructure/runtime.js'
 import { normalizeCognition } from './mind.js'
 
 export const AFFECT_VERSION = 1

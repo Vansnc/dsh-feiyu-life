@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -25,34 +25,44 @@ function graph(entries) {
 test('root facades and package exports stay stable', () => {
   const pkg = JSON.parse(read('package.json'))
   assert.equal(pkg.name, 'dsh-feiyu-life')
-  assert.equal(pkg.version, '2.5.3')
+  assert.equal(pkg.version, '2.6.0')
   assert.ok(pkg.files.includes('src/'))
-  for (const file of ['index.js', 'client.js', 'life.js', 'agency.js', 'agency-runner.js', 'storage.js', 'image-prompt.js', 'sharing.js']) {
+  const allowedRoot = new Set(['assets','docs','locale','scripts','src','test','node_modules','.git','.codex','.github','.editorconfig','.gitignore','index.js','client.js','package.json','package-lock.json','cordis.patch.yml','README.md','CHANGELOG.md','CONTRIBUTING.md','LICENSE','icon.png'])
+  for (const name of readdirSync(ROOT)) assert.equal(allowedRoot.has(name), true, `unexpected root entry: ${name}`)
+  for (const file of ['index.js', 'client.js', 'package.json', 'package-lock.json', 'cordis.patch.yml', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'LICENSE']) {
     assert.equal(existsSync(resolve(ROOT, file)), true, file)
   }
-  assert.match(read('agency.js'), /super|export \*|export \{/)
-  assert.match(read('agency-runner.js'), /export \{ runInternalAgencyRunner \}/)
-  assert.match(read('storage.js'), /export \*/)
-  assert.match(read('image-prompt.js'), /export \*/)
+  for (const file of ['agency.js', 'agency-runner.js', 'backup.js', 'continuity.js', 'gen.js', 'image.js', 'image-prompt.js', 'life.js', 'mind.js', 'moments.js', 'plan.js', 'reflection.js', 'runtime.js', 'sharing.js', 'state.js', 'storage.js', 'world.js']) {
+    assert.equal(existsSync(resolve(ROOT, file)), false, `root implementation should be gone: ${file}`)
+  }
+  assert.match(read('index.js'), /src\/plugin\/app\.js/)
+  assert.match(read('client.js'), /GENERATED from src\/ui\/client\.js/)
+  assert.match(read('client.js'), /GENERATED from src\/ui\/client\.js/)
+  assert.equal(existsSync(resolve(ROOT, 'storage.js')), false)
+  assert.equal(existsSync(resolve(ROOT, 'image-prompt.js')), false)
 })
 
-test('public API names remain available at the root', async () => {
-  const agency = await import('../agency.js')
+test('DSH root entry and domain exports remain stable', async () => {
+  const root = await import('../index.js')
+  assert.equal(root.name, 'feiyu-life')
+  assert.ok(Array.isArray(root.inject))
+  assert.equal(typeof root.apply, 'function')
+  const agency = await import('../src/cognition/agency/index.js')
   for (const name of ['AGENCY_VERSION', 'AGENCY_LIMITS', 'agencyPath', 'defaultAgency', 'normalizeAgency', 'readAgency', 'writeAgency', 'buildAgencyCandidates', 'tickAgency', 'agencyContext', 'agencyShareCandidates', 'markAgencyOutreach', 'observeAgencyReply', 'handleAgencyInboxReply', 'inboxReplyReference', 'agencyStatus']) {
     assert.equal(typeof agency[name] !== 'undefined', true, name)
   }
-  const life = await import('../life.js')
+  const life = await import('../src/life/life.js')
   for (const name of ['LIFE_CONFIG_VERSION', 'defaultConfig', 'normalizeConfig', 'validateConfig', 'readConfig', 'saveConfig', 'generate', 'zonedNow', 'todayCalendar', 'lastNightSleep']) {
     assert.equal(typeof life[name] !== 'undefined', true, name)
   }
-  const prompt = await import('../image-prompt.js')
+  const prompt = await import('../src/media/image-prompt.js')
   for (const name of ['buildElements', 'templatePrompt', 'modelPrompt', 'checkImage', 'generatePrompt']) {
     assert.equal(typeof prompt[name] !== 'undefined', true, name)
   }
 })
 
 test('route, tool, tab and data-file contracts are unchanged', () => {
-  const index = read('index.js')
+  const index = read('src/plugin/app.js')
   const routeSources = index + read('src/plugin/routes/media.js') + read('src/plugin/routes/backup.js')
   for (const route of ['/state', '/mind', '/affect', '/continuity', '/save', '/preview', '/replay', '/settings-backup', '/settings-restore', '/regenerate', '/undo-regenerate']) {
     assert.match(routeSources, new RegExp(route.replace('/', '\\/')))
@@ -61,7 +71,7 @@ test('route, tool, tab and data-file contracts are unchanged', () => {
   for (const tool of ['life_adjust', 'life_person', 'life_task', 'life_commitment', 'life_thread', 'mind_remember', 'mind_preference', 'mind_goal']) {
     assert.match(tools, new RegExp(tool))
   }
-  const client = read('client.js')
+  const client = read('src/ui/client.js')
   for (const tab of ['now', 'share', 'persona', 'inner', 'continuity', 'replay', 'map', 'year', 'week', 'day', 'body', 'photo', 'data']) {
     assert.match(client, new RegExp(`\\['${tab}'`))
   }

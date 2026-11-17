@@ -20,7 +20,7 @@ import { readdirSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { atomicWriteJson, readJsonBounded, withLock } from './storage.js'
+import { atomicWriteJson, readJsonBounded, withLock } from '../persistence/storage.js'
 
 const factsDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'feiyu-life-facts')
 const FACTS_MAX_BYTES = 512 * 1024
