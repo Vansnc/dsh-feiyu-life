@@ -259,6 +259,7 @@ export function buildReflectionPrompt({ userText, replyText, source = 'human' })
     `来源：${text(source, 40) || 'human'}`,
     `用户输入：${text(userText, 700)}`,
     `角色回复：${text(replyText, 700)}`,
+    'JSON 要紧凑、一行输出；候选数组可以为空（[]），不要为了让数组非空而编造；不要输出解释或代码块。',
     '',
     '只输出 JSON：',
     '{"affect":{"valenceDelta":-12到12,"arousalDelta":-12到12,"dimensions":{"joy":0到20,"calm":0到20,"worry":0到20,"sadness":0到20},"reason":"一句可审计的变化原因","confidence":0到1},"memoryCandidates":[{"summary":"可独立理解的候选","kind":"episode|fact|preference|promise|relationship","subject":"user|self|relationship|world","importance":0到1,"confidence":0到1,"sensitivity":"normal|private|sensitive","explicit":false,"ttlDays":365}],"preferenceCandidates":[{"owner":"self|user","key":"偏好方面","value":"偏好内容","confidence":0到1,"evidence":"证据","explicit":false}],"goalCandidates":[{"title":"目标","reason":"原因","nextStep":"下一步","scope":"virtual|local","confidence":0到1,"explicit":false}],"identityEvidence":[{"trait":"特质","polarity":"for|against","reason":"证据","confidence":0到1}],"relationshipCandidates":[{"person":"对方称呼","tone":"warm|neutral|tense","reason":"原因"}],"initiative":{"desire":0到1,"reason":"想主动说的原因","topic":"以后可自然提起的话题"}}',
@@ -266,9 +267,32 @@ export function buildReflectionPrompt({ userText, replyText, source = 'human' })
 }
 
 function parseJson(value) {
-  const match = String(value || '').match(/\{[\s\S]*\}/)
-  if (!match) return null
-  try { return JSON.parse(match[0]) } catch { return null }
+  const raw = String(value || '').replace(/```(?:json|JSON)?/g, '').trim()
+  try { return JSON.parse(raw) } catch {}
+  // 从第一个 { 开始做括号匹配，避开前后解释文字；字符串内的花括号不计
+  const start = raw.indexOf('{')
+  if (start < 0) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) {
+        try { return JSON.parse(raw.slice(start, i + 1)) } catch { return null }
+      }
+    }
+  }
+  return null
 }
 
 export async function reflectTurn(ctx, agent, { userText, replyText, source = 'human', config = {}, timeoutSeconds = 45 } = {}) {
@@ -279,7 +303,7 @@ export async function reflectTurn(ctx, agent, { userText, replyText, source = 'h
     provider: target.provider, model: target.model,
     system: '你是角色状态复盘器。只输出严格 JSON，不与用户对话。',
     messages: [{ role: 'user', id: randomUUID(), content: [{ type: 'text', text: buildReflectionPrompt({ userText, replyText, source }) }], source: { kind: 'plugin', plugin: 'dsh-feiyu-life' } }],
-    sessionId: String(agent?.session?.id || ''), maxTokens: 900, temperature: 0.2, reasoningEffort: 'low',
+    sessionId: String(agent?.session?.id || ''), maxTokens: 1800, temperature: 0.2, reasoningEffort: 'low',
   }
   let out = ''; let usage
   const timeoutMs = clamp(timeoutSeconds, 10, 120, 45) * 1000
