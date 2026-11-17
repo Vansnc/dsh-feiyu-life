@@ -139,7 +139,7 @@ export function locationHint(what) {
  */
 export function liveState(now = new Date()) {
   try {
-    const { cfg, life: r, zoned: t } = mediaLifeSnapshot(now)
+    const { state: r, zoned: t } = mediaLifeSnapshot(now)
     const clock = `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`
     const light = t.hour < 6 ? '天还没亮，只有台灯和窗外路灯'
       : t.hour < 9 ? '清晨的柔光，窗子那边是浅金色'

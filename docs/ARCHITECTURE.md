@@ -62,9 +62,14 @@ ui      -> HTTP API only (not server state rules)
 - 新设置页区域：`src/ui/`（在 DSH 浏览器加载约束允许时），只调用 HTTP API。
 - 新持久化格式：先加迁移/规范化测试，再改 storage 边界。
 
+## 深入盘点
+
+- [life.js 依赖盘点](./LIFE_DEPENDENCY_INVENTORY.md)
+
 ## 已知偏差
 
-- `life.js` 仍保留配置 schema/迁移和 generation/context；已抽出 time/calendar。完全拆 config/generator 需要单独迁移窗口。
+- `life.js` 仍保留配置 schema/迁移和 generation/context；已抽出 time/calendar 和窄 `context.js` snapshot。完全拆 config/generator 需要单独迁移窗口。
+- media 已通过 `src/life/context.js` 的只读 snapshot 消费 life 视图；仍不拥有配置/写入。
 - `src/plugin/tools.js` 承载 DSH 工具注册；`src/plugin/routes/media.js`、`routes/backup.js` 承载媒体/备份路由；`src/plugin/lifecycle.js` 承载维护定时器。剩余 config/continuity/mind/replay 路由仍在根 `index.js`，下一轮继续收敛。
 - `client.js` 受 DSH 的 `window.__ModuleLoader__` 无构建加载约束，暂不做物理多文件拆分；视觉和 data 属性由现有 UI 测试锁住。
 - continuity/mind/reflection 仍通过根 `storage.js` facade 使用持久化；没有一次性重写全部持久化，避免行为风险。

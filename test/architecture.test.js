@@ -99,7 +99,7 @@ test('no import cycles and no domain-to-plugin dependencies', () => {
 
 test('critical source modules are inside the declared layout', () => {
   for (const file of [
-    'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/plugin/tools.js', 'src/plugin/http.js', 'src/plugin/lifecycle.js', 'src/plugin/routes/media.js', 'src/plugin/routes/backup.js', 'src/life/time.js', 'src/cognition/agency/schema.js',
+    'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/plugin/tools.js', 'src/plugin/http.js', 'src/plugin/lifecycle.js', 'src/plugin/routes/media.js', 'src/plugin/routes/backup.js', 'src/life/time.js', 'src/life/context.js', 'src/cognition/agency/schema.js',
     'src/cognition/agency/candidates.js', 'src/cognition/agency/executor.js',
     'src/cognition/agency/outreach.js', 'src/cognition/agency/state-machine.js',
     'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/media/image.js', 'src/media/life-snapshot.js', 'src/persistence/storage.js',

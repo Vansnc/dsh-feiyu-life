@@ -1,5 +1,14 @@
 # 更新记录
 
+## Unreleased — phase 4 life contracts
+
+- 新增 `src/life/context.js`：只读、有界的 life context snapshot，过滤敏感文本，不暴露未知字段。
+- `src/media/life-snapshot.js` 只返回 `{ state, zoned }`，media 不再拿完整 config/raw life。
+- 新增配置契约测试：默认值、版本迁移、未知旧字段、错误回显、衣柜/主动分享/内在/连续性字段、路径和原子读写。
+- 新增 media 边界测试：不得写 config/continuity/mind/sharing，不得直接 import 完整 life。
+- 新增 `docs/LIFE_DEPENDENCY_INVENTORY.md`，记录 config/time/generation/context 的真实依赖与调用者。
+- 没有移动 config 读写：默认值/迁移/校验/写入仍交织，先锁契约，避免双源。
+
 ## Unreleased — architecture cleanup
 
 - 拆分 cognition/agency、persistence、life/time、media/image-prompt 到 `src/`，根入口保留兼容 facade。
