@@ -34,7 +34,7 @@ import {
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
 import { cleanupMoments, momentSummary } from './moments.js'
-import { agencyContext, agencyShareCandidates, readAgency, tickAgency } from './agency.js'
+import { agencyContext, agencyShareCandidates, markAgencyOutreach, observeAgencyReply, readAgency, tickAgency } from './agency.js'
 import {
   buildCandidates, buildSharePrompt, commitShare, normalizeSharingConfig, readSharing, releaseShare, sharingStatus, takeShare,
 } from './sharing.js'
@@ -145,6 +145,7 @@ export function apply(ctx) {
   const lastHumanText = new Map()
   const sharingCheckedAt = new Map()
   const initiativeRunning = new Set()
+  let lastInternalAgencyAt = 0
 
   const sessions = () => {
     try {
@@ -242,6 +243,7 @@ export function apply(ctx) {
         if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
           lastHumanAt.set(agent.id, Date.now())
           lastHumanText.set(agent.id, String(value).slice(0, 400))
+          try { observeAgencyReply(value, { now: Date.now() }) } catch {}
         }
       })
       if (typeof off === 'function') offs.push(off)
@@ -529,6 +531,30 @@ export function apply(ctx) {
     await Promise.all([ensurePlanFor(now), ensurePlanFor(addZonedDays(now, tz, 1))])
   }
 
+  /** Bounded, model-free internal cognition. Runs even when outbound sharing is off. */
+  const runInternalAgency = (now = Date.now()) => {
+    if (now - lastInternalAgencyAt < 60000) return { ok: true, reason: 'interval' }
+    lastInternalAgencyAt = now
+    try {
+      const cfg = readConfig()
+      const continuity = readContinuity(now)
+      const mind = readMind(cfg.人格 || {}, now)
+      const affect = readAffect(cfg.内在, now)
+      const events = readEvents({ timeZone: cfg.时区, now, limit: 8 }).concat(
+        (Array.isArray(continuity.recentChanges) ? continuity.recentChanges : []).slice(-6).map((x, i) => ({
+          id: `life-${Number(x.at) || 0}-${i}`, at: x.at, summary: x.reason, source: x.source,
+        }))
+      )
+      const result = tickAgency({
+        now, timeZone: cfg.时区, continuity, mind, affect, events,
+        vitality: { energy: continuity.needs?.energy },
+      })
+      return { ok: true, focus: result.focus?.sourceKey || '', changed: result.changed === true }
+    } catch (e) {
+      return { ok: false, reason: String(e?.message || e).slice(0, 120) }
+    }
+  }
+
   const tick = () => {
     const list = sessions()
     for (const agent of list) {
@@ -540,12 +566,16 @@ export function apply(ctx) {
       try { off() } catch {}
       mounted.delete(id)
     }
+    try { runInternalAgency() } catch {}
   }
 
   const runInitiative = async (forcedAgent = null, force = false) => {
+    const now = Date.now()
+    // Internal cognition is independent of outbound sharing. It is rate
+    // limited and never calls a model or sends a message.
+    try { runInternalAgency(now) } catch {}
     const cfg = readConfig()
     const sharingCfg = normalizeSharingConfig(cfg.主动分享)
-    const now = Date.now()
     const candidates = forcedAgent ? [forcedAgent] : sessions()
     const results = []
     for (const agent of candidates) {
@@ -566,12 +596,10 @@ export function apply(ctx) {
       const date = life.plan?.date || zonedNow(new Date(now), String(cfg.时区 || 'Asia/Shanghai')).ymd
       const mind = readMind(cfg.人格 || {}, now)
       const affect = readAffect(cfg.内在, now)
-      let agency = { focus: null }
+      let agency = { focus: null, state: { focus: null, outreach: {} } }
       try {
-        agency = tickAgency({
-          now, timeZone: cfg.时区, continuity, mind, affect,
-          vitality: life.vitality,
-        })
+        const state = readAgency(now)
+        agency = { state, focus: state.focus }
       } catch {}
       const candidateList = buildCandidates({
         now,
@@ -582,7 +610,7 @@ export function apply(ctx) {
         continuityChanges: Array.isArray(continuity.recentChanges) ? continuity.recentChanges : [],
         recentText: lastHumanText.get(agent.id) || '',
       }).concat(agencyShareCandidates(agency.focus, {
-        now, date, nowMinute: Number(life.currentMinute) || 0,
+        now, date, nowMinute: Number(life.currentMinute) || 0, state: agency.state,
       }))
       const decision = takeShare({
         now,
@@ -612,6 +640,9 @@ export function apply(ctx) {
         const accepted = agent.followup(message)
         if (accepted && typeof accepted.then === 'function') await accepted
         const committed = commitShare(decision.claim.claimId, { now: Date.now(), timeZone: cfg.时区 })
+        if (committed.ok && decision.claim.sourceKey) {
+          try { markAgencyOutreach(decision.claim, { now: Date.now() }) } catch {}
+        }
         appendEvent({
           id: eventId(['sharing.sent', agent.id, decision.claim.eventId, now]), at: now, type: 'sharing.sent',
           source: 'feiyu-life-sharing', status: committed.ok ? 'applied' : 'commit-failed',
@@ -744,6 +775,7 @@ export function apply(ctx) {
     // Previewing another date must not create decorative state for it.
     const r = generate(cfg, at, { moments: sameDay })
     const t = zonedNow(at, tz)
+    const agency = readAgency(at.getTime())
     return {
       ok: true,
       config: cfg,
@@ -769,6 +801,10 @@ export function apply(ctx) {
         reply: r.reply || null,
         moment: r.moment || null,
         coverage: r.coverage || null,
+        agency: agency.focus ? {
+          ...agency.focus,
+          lastExecution: (agency.executions || []).at(-1) || null,
+        } : null,
       },
       configPath: configPath(),
       time: at.toISOString(),
