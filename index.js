@@ -138,6 +138,9 @@ const clockOf = (minute) => {
   return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`
 }
 
+/** Testable, side-effect-free internal cycle; outbound sharing is not involved. */
+export function runAgencyCycle(input) { return tickAgency(input) }
+
 export function apply(ctx) {
   const mounted = new Map()
   let reflectionInFlight = 0
@@ -243,7 +246,7 @@ export function apply(ctx) {
         if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
           lastHumanAt.set(agent.id, Date.now())
           lastHumanText.set(agent.id, String(value).slice(0, 400))
-          try { observeAgencyReply(value, { now: Date.now() }) } catch {}
+          try { observeAgencyReply(value, { now: Date.now(), sessionId: agent.id }) } catch {}
         }
       })
       if (typeof off === 'function') offs.push(off)
@@ -545,8 +548,9 @@ export function apply(ctx) {
           id: `life-${Number(x.at) || 0}-${i}`, at: x.at, summary: x.reason, source: x.source,
         }))
       )
-      const result = tickAgency({
+      const result = runAgencyCycle({
         now, timeZone: cfg.时区, continuity, mind, affect, events,
+        sharingRecent: readSharing(now).recent,
         vitality: { energy: continuity.needs?.energy },
       })
       return { ok: true, focus: result.focus?.sourceKey || '', changed: result.changed === true }
@@ -610,7 +614,7 @@ export function apply(ctx) {
         continuityChanges: Array.isArray(continuity.recentChanges) ? continuity.recentChanges : [],
         recentText: lastHumanText.get(agent.id) || '',
       }).concat(agencyShareCandidates(agency.focus, {
-        now, date, nowMinute: Number(life.currentMinute) || 0, state: agency.state,
+        now, date, nowMinute: Number(life.currentMinute) || 0, state: agency.state, sessionId: agent.id,
       }))
       const decision = takeShare({
         now,
@@ -641,7 +645,7 @@ export function apply(ctx) {
         if (accepted && typeof accepted.then === 'function') await accepted
         const committed = commitShare(decision.claim.claimId, { now: Date.now(), timeZone: cfg.时区 })
         if (committed.ok && decision.claim.sourceKey) {
-          try { markAgencyOutreach(decision.claim, { now: Date.now() }) } catch {}
+          try { markAgencyOutreach(decision.claim, { now: Date.now(), sessionId: agent.id, topic: decision.claim.title }) } catch {}
         }
         appendEvent({
           id: eventId(['sharing.sent', agent.id, decision.claim.eventId, now]), at: now, type: 'sharing.sent',

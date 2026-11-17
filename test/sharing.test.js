@@ -222,3 +222,20 @@ test('two independent pollers cannot both claim the same candidate', async () =>
     else process.env.DSH_HOME = previousHome
   }
 })
+
+test('sharing pledge keeps the agency source/session for later reconciliation', () => withHome(() => {
+  const candidate = {
+    eventId: 'agency:continuity:task:t1', stageKey: 'agency:continuity:task:t1:0',
+    kind: 'followup', category: 'agency:task', title: '取快递', facts: ['还没完成'],
+    score: 90, followup: false, atMinute: 600, sourceKey: 'continuity:task:t1', sessionId: 's1',
+  }
+  const taken = takeShare({ now: noon, timeZone: 'Asia/Shanghai', config, candidates: [candidate], currentCategory: 'dorm', phone: '在手', behavior: 'idle', lastHumanAt: 0 })
+  assert.equal(taken.ok, true)
+  assert.equal(taken.claim.sourceKey, 'continuity:task:t1')
+  assert.equal(taken.claim.sessionId, 's1')
+  assert.equal(commitShare(taken.claim.claimId, { now: noon, timeZone: 'Asia/Shanghai' }).ok, true)
+  const row = readSharing(noon).recent.at(-1)
+  assert.equal(row.sourceKey, 'continuity:task:t1')
+  assert.equal(row.sessionId, 's1')
+  assert.equal(row.stageKey, candidate.stageKey)
+}))

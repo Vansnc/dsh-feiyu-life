@@ -11,6 +11,7 @@ import {
   defaultAgency, markAgencyOutreach, normalizeAgency, observeAgencyReply, readAgency, tickAgency, writeAgency,
 } from '../agency.js'
 import { buildSharePrompt } from '../sharing.js'
+import { runAgencyCycle } from '../index.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME
@@ -152,7 +153,7 @@ test('follow-up candidates are pending facts and wait for a response', () => wit
   assert.match(prompt, /还没完成/)
   assert.doesNotMatch(prompt, /- .*已经做完/)
 
-  markAgencyOutreach(candidate, { now })
+  markAgencyOutreach(candidate, { now, sessionId: 's1' })
   const waiting = readAgency(now)
   assert.equal(waiting.outreach[focus.sourceKey].status, 'awaiting')
   assert.equal(agencyShareCandidates(focus, { now: now + 24 * 3600000, date: '2026-11-18', state: waiting }).length, 0)
@@ -160,8 +161,8 @@ test('follow-up candidates are pending facts and wait for a response', () => wit
   assert.equal(ignored.state.outreach[focus.sourceKey].status, 'ignored')
   const retry = agencyShareCandidates(focus, { now: now + 122 * 3600000, date: '2026-11-20', state: ignored.state })
   assert.equal(retry.length, 1)
-  markAgencyOutreach(retry[0], { now: now + 122 * 3600000 })
-  assert.equal(observeAgencyReply('不用催了', { now: now + 123 * 3600000 }).changed, true)
+  markAgencyOutreach(retry[0], { now: now + 122 * 3600000, sessionId: 's1' })
+  assert.equal(observeAgencyReply('不用催了', { now: now + 123 * 3600000, sessionId: 's1' }).changed, true)
   const declined = readAgency(now + 123 * 3600000)
   assert.equal(declined.outreach[focus.sourceKey].status, 'declined')
   assert.equal(agencyShareCandidates(focus, { now: now + 124 * 3600000, date: '2026-11-21', state: declined }).length, 0)
@@ -170,8 +171,8 @@ test('follow-up candidates are pending facts and wait for a response', () => wit
 test('a human reply clears a pending follow-up without claiming delivery receipt', () => withHome(() => {
   const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
   const [candidate] = agencyShareCandidates(focus, { now, date: '2026-11-17' })
-  markAgencyOutreach(candidate, { now })
-  observeAgencyReply('知道了，晚点弄', { now: now + 60000 })
+  markAgencyOutreach(candidate, { now, sessionId: 's1' })
+  observeAgencyReply('知道了，晚点弄', { now: now + 60000, sessionId: 's1' })
   const state = readAgency(now + 60000)
   assert.equal(state.outreach[focus.sourceKey].status, 'responded')
   assert.equal(agencyShareCandidates(focus, { now: now + 2 * 60000, date: '2026-11-17', state }).length, 0)
@@ -247,8 +248,8 @@ test('concurrent agency ticks leave one consistent focus', async () => {
 test('a declined follow-up reopens only after a newer source fact', () => withHome(() => {
   const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
   const [candidate] = agencyShareCandidates(focus, { now, date: '2026-11-17' })
-  markAgencyOutreach(candidate, { now })
-  observeAgencyReply('别催了', { now: now + 1 })
+  markAgencyOutreach(candidate, { now, sessionId: 's1' })
+  observeAgencyReply('别催了', { now: now + 1, sessionId: 's1' })
   const declined = readAgency(now + 1)
   assert.equal(declined.outreach[focus.sourceKey].status, 'declined')
   assert.equal(agencyShareCandidates(focus, { now: now + 2, date: '2026-11-17', state: declined }).length, 0)
@@ -273,3 +274,129 @@ test('expired deferred records are persisted as abandoned, not silently lost', (
   assert.equal(stored.deferred.length, 0)
   assert.equal(stored.abandoned.some((x) => x.sourceKey === 'continuity:task:gone'), true)
 }))
+
+test('reply association only affects the same session and a recent pending item', () => withHome(() => {
+  const c = continuity({
+    tasks: [
+      { id: 't1', title: '取快递', status: 'open', dueAt: now + 3600000, updatedAt: now - 1000 },
+      { id: 't2', title: '回邮件', status: 'open', dueAt: now + 7200000, updatedAt: now - 1000 },
+    ],
+  })
+  const candidates = buildAgencyCandidates({ now, continuity: c, mind: { goals: [] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  const t1 = candidates.find((x) => x.sourceKey === 'continuity:task:t1')
+  const t2 = candidates.find((x) => x.sourceKey === 'continuity:task:t2')
+  markAgencyOutreach(agencyShareCandidates(t1, { now, date: '2026-11-17' })[0], { now, sessionId: 's1' })
+  markAgencyOutreach(agencyShareCandidates(t2, { now, date: '2026-11-17' })[0], { now, sessionId: 's2' })
+  assert.equal(observeAgencyReply('普通消息，另一个问题', { now: now + 1000 }).changed, false)
+  assert.equal(readAgency(now + 1000).outreach[t1.sourceKey].status, 'awaiting')
+  assert.equal(readAgency(now + 1000).outreach[t2.sourceKey].status, 'awaiting')
+  observeAgencyReply('算了我问另一个问题', { now: now + 2000, sessionId: 's1' })
+  const after = readAgency(now + 2000)
+  assert.equal(after.outreach[t1.sourceKey].status, 'responded')
+  assert.equal(after.outreach[t2.sourceKey].status, 'awaiting')
+  observeAgencyReply('别催了', { now: now + 3000, sessionId: 's2' })
+  assert.equal(readAgency(now + 3000).outreach[t2.sourceKey].status, 'declined')
+}))
+
+test('old v2 rows without sessionId cannot be answered by a generic message', () => withHome(() => {
+  const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
+  markAgencyOutreach(agencyShareCandidates(focus, { now, date: '2026-11-17' })[0], { now })
+  assert.equal(observeAgencyReply('好', { now: now + 1000, sessionId: 's1' }).changed, false)
+  assert.equal(readAgency(now + 1000).outreach[focus.sourceKey].status, 'awaiting')
+}))
+
+test('low-priority interests become reachable after a quiet period but never go outbound', () => withHome(() => {
+  const pref = { id: 'p1', owner: 'self', key: '散步', value: '傍晚慢慢走', status: 'active', updatedAt: now - 1000 }
+  const result = tickAgency({ now, continuity: defaultContinuity(now), mind: { goals: [], preferences: [pref] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.equal(result.focus.sourceKey, 'mind:preference:p1')
+  assert.equal(result.focus.sourceType, 'interest')
+  assert.ok(result.state.explored['mind:preference:p1'] > 0)
+  assert.equal(agencyShareCandidates(result.focus, { now, date: '2026-11-17' }).length, 0)
+  assert.equal(tickAgency({ now: now + 60000, continuity: defaultContinuity(now), mind: { goals: [], preferences: [pref] }, vitality: { energy: 80 }, affect: { valence: 60 } }).changed, false)
+}))
+
+test('TTL and source timestamps are stable across ticks and expire from real time', () => {
+  const c = defaultContinuity(now)
+  c.needs.energy = 30
+  c.needs.updatedAt = now - 2 * 3600000
+  const pref = { id: 'p1', owner: 'self', key: '散步', value: '傍晚慢慢走', status: 'active', updatedAt: now - 2 * 86400000 }
+  const rel = { id: 'r1', name: '阿岚', notes: '最近总在背书', status: 'active', updatedAt: now - 4 * 86400000 }
+  c.people = [rel]
+  const a = buildAgencyCandidates({ now, continuity: c, mind: { goals: [], preferences: [pref] }, vitality: { energy: 30 }, affect: { valence: 60 } })
+  const b = buildAgencyCandidates({ now: now + 3600000, continuity: c, mind: { goals: [], preferences: [pref] }, vitality: { energy: 30 }, affect: { valence: 60 } })
+  const ea = a.find((x) => x.sourceKey === 'needs:energy')
+  const eb = b.find((x) => x.sourceKey === 'needs:energy')
+  assert.equal(ea.sourceUpdatedAt, c.needs.updatedAt)
+  assert.equal(ea.expiresAt, c.needs.updatedAt + 12 * 3600000)
+  assert.equal(eb.sourceUpdatedAt, ea.sourceUpdatedAt)
+  assert.equal(eb.expiresAt, ea.expiresAt)
+  const pa = a.find((x) => x.sourceKey === 'mind:preference:p1')
+  const pb = b.find((x) => x.sourceKey === 'mind:preference:p1')
+  assert.equal(pa.sourceUpdatedAt, pref.updatedAt)
+  assert.equal(pa.expiresAt, pref.updatedAt + 7 * 86400000)
+  assert.equal(pb.expiresAt, pa.expiresAt)
+  assert.equal(a.some((x) => x.sourceKey === 'relationship:r1'), false)
+  const expired = buildAgencyCandidates({ now: c.needs.updatedAt + 13 * 3600000, continuity: c, mind: { goals: [], preferences: [pref] }, vitality: { energy: 30 }, affect: { valence: 60 } })
+  assert.equal(expired.some((x) => x.sourceKey === 'needs:energy'), false)
+})
+
+test('a deferred source cannot preempt before its window or due to time alone', () => withHome(() => {
+  const goal = { id: 'g1', title: '整理作品集', nextStep: '挑三张', progress: 30, scope: 'local', status: 'active', updatedAt: now - 1000 }
+  const task = { id: 't1', title: '取快递', status: 'open', dueAt: now + 3600000, createdAt: now - 1000, updatedAt: now - 1000 }
+  const c = continuity({ tasks: [task] })
+  const goalFocus = buildAgencyCandidates({ now, continuity: defaultContinuity(now), mind: { goals: [goal] }, vitality: { energy: 80 }, affect: { valence: 60 } })[0]
+  const state = defaultAgency(now)
+  state.focus = { ...goalFocus, status: 'active', createdAt: now - 3600000, updatedAt: now - 20 * 60000 }
+  state.deferred = [{ sourceKey: 'continuity:task:t1', until: now + 30 * 60000, attempts: 1, lastSourceUpdatedAt: task.updatedAt }]
+  writeAgency(state, now)
+  const before = tickAgency({ now, continuity: c, mind: { goals: [goal] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.equal(before.focus.sourceKey, 'mind:goal:g1')
+  const still = tickAgency({ now: now + 16 * 60000, continuity: c, mind: { goals: [goal] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.equal(still.focus.sourceKey, 'mind:goal:g1')
+  const updatedTask = { ...task, updatedAt: now + 16 * 60000 }
+  const fresh = tickAgency({ now: now + 16 * 60000, continuity: continuity({ tasks: [updatedTask] }), mind: { goals: [goal] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.equal(fresh.focus.sourceKey, 'continuity:task:t1')
+  const stable = tickAgency({ now: now + 17 * 60000, continuity: continuity({ tasks: [updatedTask] }), mind: { goals: [goal] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.equal(stable.focus.sourceKey, 'continuity:task:t1')
+}))
+
+test('sharing ledger rows reconcile a missing outreach exactly once', () => withHome(() => {
+  const recent = [{ kind: 'followup', sourceKey: 'continuity:task:t1', stageKey: 'agency:continuity:task:t1:0', sessionId: 's1', title: '取快递', at: now }]
+  const first = tickAgency({ now, continuity: defaultContinuity(now), mind: { goals: [] }, vitality: { energy: 80 }, affect: { valence: 60 }, sharingRecent: recent })
+  assert.equal(readAgency(now).outreach['continuity:task:t1'].status, 'awaiting')
+  assert.equal(first.changed, true)
+  const second = tickAgency({ now: now + 1000, continuity: defaultContinuity(now), mind: { goals: [] }, vitality: { energy: 80 }, affect: { valence: 60 }, sharingRecent: recent })
+  assert.equal(second.changed, false)
+  assert.equal(readAgency(now + 1000).outreach['continuity:task:t1'].lastAt, now)
+}))
+
+test('runAgencyCycle advances internal state without any sharing dependency', () => withHome(() => {
+  const result = runAgencyCycle({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.ok(result.focus)
+  assert.ok(readAgency(now).focus)
+}))
+
+
+test('persistent low energy does not reopen an abandoned need through time alone', () => withHome(() => {
+  const c = defaultContinuity(now)
+  c.needs.energy = 30
+  c.needs.updatedAt = now - 3600000
+  const state = defaultAgency(now)
+  state.abandoned = [{ sourceKey: 'needs:energy', at: now - 1000, reason: '旧', lastSourceUpdatedAt: c.needs.updatedAt }]
+  writeAgency(state, now)
+  const result = tickAgency({ now: now + 7200000, continuity: c, mind: { goals: [], preferences: [] }, vitality: { energy: 30 }, affect: { valence: 60 } })
+  assert.equal(result.focus, null)
+  assert.equal(readAgency(now + 7200000).abandoned.some((x) => x.sourceKey === 'needs:energy'), true)
+}))
+
+test('a reassuring phrase does not count as refusal, and candidate work stays bounded', () => {
+  const prefs = Array.from({ length: 80 }, (_, i) => ({ id: `p${i}`, owner: 'self', key: `兴趣${i}`, value: '随便看看', status: 'active', updatedAt: now - 1000 }))
+  const candidates = buildAgencyCandidates({ now, continuity: defaultContinuity(now), mind: { goals: [], preferences: prefs }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.ok(candidates.length <= 40)
+  withHome(() => {
+    const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
+    markAgencyOutreach(agencyShareCandidates(focus, { now, date: '2026-11-17' })[0], { now, sessionId: 's1' })
+    observeAgencyReply('不用担心，我自己来', { now: now + 1, sessionId: 's1' })
+    assert.equal(readAgency(now + 1).outreach[focus.sourceKey].status, 'responded')
+  })
+})

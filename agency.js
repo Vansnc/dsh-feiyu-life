@@ -25,13 +25,13 @@ const clamp = (n, a, b, fallback = 0) => {
   return Number.isFinite(value) ? Math.max(a, Math.min(b, value)) : fallback
 }
 const text = (value, max = 160) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, max)
-const negativeReply = /(不用|别催|别问|不想提|别提|烦|算了|没兴趣|别管)/
+const negativeReply = /(别催|不用催|别再提|不想提|别问|别管|没兴趣)/
 const sensitiveText = /密码|口令|验证码|私钥|助记词|api[ _-]?key|access[ _-]?token|secret|身份证|银行卡|信用卡/i
 
 export function defaultAgency(now = Date.now()) {
   return {
     v: AGENCY_VERSION, updatedAt: now, focus: null, deferred: [], abandoned: [],
-    outreach: {}, executions: [], recent: [],
+    outreach: {}, executions: [], recent: [], explored: {},
   }
 }
 
@@ -119,6 +119,8 @@ function normalizeOutreach(x) {
     lastStage: text(x?.lastStage, 180),
     lastSourceUpdatedAt: Math.max(0, Number(x?.lastSourceUpdatedAt) || 0),
     nextAt: Math.max(0, Number(x?.nextAt) || 0),
+    sessionId: text(x?.sessionId, 120),
+    topic: text(x?.topic, 160),
   }
 }
 
@@ -139,6 +141,10 @@ export function normalizeAgency(raw, now = Date.now()) {
     deferred: (Array.isArray(raw.deferred) ? raw.deferred : []).map(normalizeDeferred).filter(Boolean).slice(-AGENCY_LIMITS.deferred),
     abandoned: (Array.isArray(raw.abandoned) ? raw.abandoned : []).map(normalizeAbandoned).filter(Boolean).slice(-AGENCY_LIMITS.abandoned),
     outreach: Object.fromEntries(Object.entries(outreach).slice(-AGENCY_LIMITS.recent)),
+    explored: Object.fromEntries(Object.entries(raw.explored && typeof raw.explored === 'object' ? raw.explored : {}).flatMap(([key, value]) => {
+      const at = Math.max(0, Number(value) || 0)
+      return key && at ? [[text(key, 160), at]] : []
+    }).slice(-AGENCY_LIMITS.recent)),
     executions: (Array.isArray(raw.executions) ? raw.executions : []).flatMap((x) => {
       const sourceKey = text(x?.sourceKey, 160); const action = text(x?.action, 40); const evidence = text(x?.evidence, 220)
       return sourceKey && action && evidence ? [{ at: Math.max(0, Number(x?.at) || 0), sourceKey, action, evidence }] : []
@@ -257,6 +263,8 @@ function candidateForEntity(entity, sourceKey, now) {
 export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vitality = {}, affect = {}, events = [] } = {}) {
   const map = sourceMap(continuity, mind)
   const out = []
+  const needAt = Math.max(0, Number(continuity?.needs?.updatedAt) || 0)
+  const affectAt = Math.max(0, Number(affect?.lastEventAt) || 0)
   for (const [sourceKey, entity] of map) {
     const candidate = candidateForEntity(entity, sourceKey, now)
     if (candidate && candidate.title) out.push(candidate)
@@ -265,7 +273,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     out.push({
       id: 'agc-need-energy', sourceKey: 'needs:energy', sourceId: 'energy', sourceType: 'rest',
       title: '给自己留点空隙', detail: '精力偏低', nextStep: '先休息一下，别硬撑',
-      dueAt: 0, dueLabel: '', sourceUpdatedAt: now, expiresAt: now + 12 * 3600000,
+      dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt, expiresAt: needAt ? needAt + 12 * 3600000 : 0,
       priority: 55, score: 56, cost: 1, risk: 0,
       steps: [{ label: '先休息一下，别硬撑', kind: 'rest', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '精力偏低',
@@ -275,7 +283,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     out.push({
       id: 'agc-need-mood', sourceKey: 'needs:mood', sourceId: 'mood', sourceType: 'rest',
       title: '缓一缓', detail: '情绪偏低', nextStep: '不急着处理所有事',
-      dueAt: 0, dueLabel: '', sourceUpdatedAt: now, expiresAt: now + 12 * 3600000,
+      dueAt: 0, dueLabel: '', sourceUpdatedAt: affectAt, expiresAt: affectAt ? affectAt + 12 * 3600000 : 0,
       priority: 50, score: 50, cost: 1, risk: 0,
       steps: [{ label: '不急着处理所有事', kind: 'rest', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '情绪偏低',
@@ -285,8 +293,8 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     out.push({
       id: 'agc-need-stress', sourceKey: 'needs:stress', sourceId: 'stress', sourceType: 'rest',
       title: '松一口气', detail: '压力偏高', nextStep: '先把手头的事放一放',
-      dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(continuity?.needs?.updatedAt) || now,
-      expiresAt: now + 6 * 3600000, priority: 45, score: 48, cost: 1, risk: 0,
+      dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt,
+      expiresAt: needAt ? needAt + 6 * 3600000 : 0, priority: 45, score: 48, cost: 1, risk: 0,
       steps: [{ label: '先把手头的事放一放', kind: 'rest', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '压力偏高',
     })
@@ -295,8 +303,8 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     out.push({
       id: 'agc-need-social', sourceKey: 'needs:social', sourceId: 'social', sourceType: 'relationship',
       title: '想找人说说话', detail: '社交需求偏高', nextStep: '找合适的时机和人聊两句',
-      dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(continuity?.needs?.updatedAt) || now,
-      expiresAt: now + 6 * 3600000, priority: 45, score: 45, cost: 2, risk: 0,
+      dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt,
+      expiresAt: needAt ? needAt + 6 * 3600000 : 0, priority: 45, score: 45, cost: 2, risk: 0,
       steps: [{ label: '等一个不打扰人的时机', kind: 'wait', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '社交需求偏高',
     })
@@ -309,7 +317,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       sourceKey, sourceId: text(memory.id, 120), sourceType: 'task',
       title: `答应过：${text(memory.summary, 100)}`, detail: '一个明确的承诺',
       nextStep: '', dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(memory.updatedAt) || 0,
-      expiresAt: Number(memory.expiresAt) || now + 7 * 86400000, priority: 45, score: 45, cost: 1, risk: 0,
+      expiresAt: Number(memory.expiresAt) || (Number(memory.updatedAt) ? Number(memory.updatedAt) + 7 * 86400000 : 0), priority: 45, score: 45, cost: 1, risk: 0,
       steps: [{ label: '等合适的时机兑现', kind: 'wait', status: 'active', evidence: '' }, { label: '兑现后再确认', kind: 'confirm', status: 'pending', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '明确承诺',
     })
@@ -322,7 +330,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       sourceKey, sourceId: text(person.id, 120), sourceType: 'relationship',
       title: `想起${text(person.name, 40)}: ${text(person.notes, 100)}`, detail: '最近记录的关系',
       nextStep: '', dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(person.updatedAt) || 0,
-      expiresAt: now + 3 * 86400000, priority: 35, score: 42, cost: 1, risk: 0,
+      expiresAt: Number(person.updatedAt) ? Number(person.updatedAt) + 3 * 86400000 : 0, priority: 35, score: 42, cost: 1, risk: 0,
       steps: [{ label: '等自然的话题出现', kind: 'wait', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '最近记录的关系',
     })
@@ -337,7 +345,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       sourceKey, sourceId: text(pref.id || pref.key, 120), sourceType: 'interest',
       title: `想${text(pref.key, 60)}：${text(pref.value, 100)}`, detail: '自己的偏好',
       nextStep: '', dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(pref.updatedAt) || 0,
-      expiresAt: now + 7 * 86400000, priority: 40, score: 40, cost: 1, risk: 0,
+      expiresAt: Number(pref.updatedAt) ? Number(pref.updatedAt) + 7 * 86400000 : 0, priority: 40, score: 40, cost: 1, risk: 0,
       steps: [{ label: '留到合适的空闲再说', kind: 'wait', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '自己的偏好',
     })
@@ -357,7 +365,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       stepIndex: 0, progress: 0, reason: '近期经历',
     })
   }
-  return out.sort((a, b) => b.score - a.score || a.sourceKey.localeCompare(b.sourceKey)).slice(0, AGENCY_LIMITS.candidates)
+  return out.filter((x) => !x.expiresAt || x.expiresAt > now).sort((a, b) => b.score - a.score || a.sourceKey.localeCompare(b.sourceKey)).slice(0, AGENCY_LIMITS.candidates)
 }
 
 function stable(value) {
@@ -486,6 +494,49 @@ function updateOutreachTimeouts(state, now) {
   return changed
 }
 
+function candidateAvailable(candidate, state, deferred, now) {
+  if (!candidate) return false
+  if (candidate.expiresAt && candidate.expiresAt <= now) return false
+  if (isAbandoned(state, candidate)) return false
+  const blocked = deferred.get(candidate.sourceKey)
+  if (!blocked) return true
+  if (blocked.attempts >= 3) return false
+  if (blocked.until > now && !(candidate.sourceUpdatedAt > blocked.lastSourceUpdatedAt)) return false
+  return true
+}
+
+function reconcileSharingOutreach(state, rows, now) {
+  let changed = false
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const sourceKey = text(row?.sourceKey, 160)
+    const stageKey = text(row?.stageKey, 180)
+    const at = Math.max(0, Number(row?.at) || 0)
+    if (!sourceKey || !stageKey || !at || String(row?.kind || '') !== 'followup') continue
+    const previous = state.outreach[sourceKey]
+    if (previous && previous.lastStage === stageKey) {
+      if (!previous.sessionId && row.sessionId) {
+        previous.sessionId = text(row.sessionId, 120)
+        previous.topic = text(row.title, 160)
+        changed = true
+      }
+      continue
+    }
+    if (previous && previous.lastAt >= at) continue
+    state.outreach[sourceKey] = {
+      lastAt: at,
+      count: Math.max(1, Number(previous?.count) || 0) + (previous ? 1 : 0),
+      status: 'awaiting',
+      lastStage: stageKey,
+      lastSourceUpdatedAt: Math.max(0, Number(previous?.lastSourceUpdatedAt) || 0),
+      nextAt: 0,
+      sessionId: text(row?.sessionId, 120),
+      topic: text(row?.title, 160),
+    }
+    changed = true
+  }
+  return changed
+}
+
 export function tickAgency(input = {}) {
   const now = Number(input.now) || Date.now()
   const result = withLock(agencyPath() + '.lock', () => {
@@ -493,7 +544,8 @@ export function tickAgency(input = {}) {
     const candidates = buildAgencyCandidates({ ...input, now })
     const map = sourceMap(input.continuity, input.mind, candidates)
     const deferred = new Map(state.deferred.map((x) => [x.sourceKey, x]))
-    let changed = updateOutreachTimeouts(state, now)
+    let changed = reconcileSharingOutreach(state, input.sharingRecent, now)
+    changed = updateOutreachTimeouts(state, now) || changed
 
     // A new persisted fact reopens a previously abandoned source. It is not
     // automatic forgiveness: a genuinely newer source revision is required.
@@ -558,17 +610,16 @@ export function tickAgency(input = {}) {
     if (focus && executeReview(state, focus, now)) changed = true
 
     if (!focus) {
-      const available = candidates.filter((c) => {
-        if (c.expiresAt && c.expiresAt <= now) return false
-        if (isAbandoned(state, c)) return false
-        const blocked = deferred.get(c.sourceKey)
-        if (blocked) {
-          const fresh = c.sourceUpdatedAt > blocked.lastSourceUpdatedAt
-          return fresh || (blocked.until <= now && blocked.attempts < 3)
-        }
-        return true
-      })
-      const best = available.find((c) => c.score >= 50)
+      const available = candidates.filter((c) => candidateAvailable(c, state, deferred, now))
+      let best = available.find((c) => c.score >= 50)
+      if (!best) {
+        // Low-priority interests/relationships/events become reachable only
+        // after a deterministic exploration cooldown, never by randomness.
+        best = available.filter((c) => c.score >= 35).find((c) => {
+          const seen = Number(state.explored[c.sourceKey]) || 0
+          return !seen || now - seen >= 6 * 3600000
+        })
+      }
       if (best) {
         const blocked = deferred.get(best.sourceKey)
         focus = {
@@ -576,14 +627,14 @@ export function tickAgency(input = {}) {
           lastReviewAt: 0, lastActionAt: 0,
           attempts: Math.max(0, Number(blocked?.attempts) || 0),
         }
+        if (Number(best.score) < 50) state.explored[best.sourceKey] = now
         state.deferred = state.deferred.filter((x) => x.sourceKey !== best.sourceKey)
         state.focus = focus
         changed = true
       }
     } else {
-      const best = candidates
-        .filter((c) => !c.expiresAt || c.expiresAt > now)
-        .find((c) => c.score >= focus.score + 8 && c.sourceKey !== focus.sourceKey && !isAbandoned(state, c))
+      const available = candidates.filter((c) => candidateAvailable(c, state, deferred, now))
+      const best = available.find((c) => c.score >= 50 && c.score >= focus.score + 8 && c.sourceKey !== focus.sourceKey)
       if (best && now - focus.updatedAt >= AGENCY_LIMITS.holdMs) {
         deferFocus(state, focus, now, '更高优先级的当前事项')
         const blocked = deferred.get(best.sourceKey)
@@ -606,6 +657,7 @@ export function tickAgency(input = {}) {
     }
     state.abandoned = state.abandoned.slice(-AGENCY_LIMITS.abandoned)
     state.recent = state.recent.slice(-AGENCY_LIMITS.recent)
+    state.explored = Object.fromEntries(Object.entries(state.explored || {}).slice(-AGENCY_LIMITS.recent))
     state.updatedAt = now
     state.focus = focus
     if (changed) writeAgency(state, now)
@@ -660,6 +712,7 @@ export function agencyShareCandidates(focus, options = {}) {
     kind: 'followup', category: `agency:${focus.sourceType}`,
     title: focus.title, facts: [fact], tone: '关心', score,
     followup: false, atMinute: options.nowMinute || 0, sourceKey: focus.sourceKey,
+    sessionId: text(options.sessionId, 120),
     sourceUpdatedAt,
   }]
 }
@@ -680,6 +733,8 @@ export function markAgencyOutreach(candidate, options = {}) {
       lastStage: text(candidate.stageKey, 180),
       lastSourceUpdatedAt: Math.max(0, Number(focus?.sourceUpdatedAt || candidate.sourceUpdatedAt) || 0),
       nextAt: 0,
+      sessionId: text(options.sessionId, 120),
+      topic: text(options.topic || candidate.title, 160),
     }
     state.updatedAt = now
     writeAgency(state, now)
@@ -691,23 +746,32 @@ export function markAgencyOutreach(candidate, options = {}) {
 /** Consume a human message: a reply clears the wait; a refusal suppresses. */
 export function observeAgencyReply(value, options = {}) {
   const now = Number(options.now) || Date.now()
+  const sessionId = text(options.sessionId, 120)
+  const replyTo = text(options.replyTo, 180)
   const body = text(value, 400)
+  // Without a session there is no verifiable association. A generic message
+  // must not mark every pending follow-up as answered.
+  if (!sessionId) return { ok: false, changed: false, reason: 'no-session' }
   const result = withLock(agencyPath() + '.lock', () => {
     const state = readAgency(now)
-    let changed = false
-    for (const row of Object.values(state.outreach)) {
-      if (row.status !== 'awaiting' && row.status !== 'ignored') continue
-      if (negativeReply.test(body)) {
-        row.status = 'declined'
-        row.nextAt = now
-      } else {
-        row.status = 'responded'
-        row.nextAt = 0
-      }
-      changed = true
+    const candidates = Object.values(state.outreach)
+      .filter((row) => row.sessionId === sessionId)
+      .filter((row) => row.status === 'awaiting' || row.status === 'ignored')
+      .filter((row) => now - row.lastAt <= AGENCY_LIMITS.followupWaitMs)
+      .filter((row) => !replyTo || row.lastStage === replyTo || row.topic === replyTo)
+      .sort((a, b) => b.lastAt - a.lastAt)
+    const row = candidates[0]
+    if (!row) return { ok: true, changed: false, reason: 'unassociated' }
+    if (negativeReply.test(body)) {
+      row.status = 'declined'
+      row.nextAt = now
+    } else {
+      row.status = 'responded'
+      row.nextAt = 0
     }
-    if (changed) { state.updatedAt = now; writeAgency(state, now) }
-    return { ok: true, changed }
+    state.updatedAt = now
+    writeAgency(state, now)
+    return { ok: true, changed: true }
   }, { staleMs: 5000 })
   return result || { ok: false, reason: 'locked' }
 }
