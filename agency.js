@@ -26,6 +26,7 @@ const clamp = (n, a, b, fallback = 0) => {
 }
 const text = (value, max = 160) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, max)
 const negativeReply = /(不用|别催|别问|不想提|别提|烦|算了|没兴趣|别管)/
+const sensitiveText = /密码|口令|验证码|私钥|助记词|api[ _-]?key|access[ _-]?token|secret|身份证|银行卡|信用卡/i
 
 export function defaultAgency(now = Date.now()) {
   return {
@@ -301,7 +302,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     })
   }
   for (const memory of Array.isArray(mind?.memories) ? mind.memories.slice(-8) : []) {
-    if (memory.kind !== 'promise' || memory.status !== 'active' || !memory.summary) continue
+    if (memory.kind !== 'promise' || memory.status !== 'active' || !memory.summary || sensitiveText.test(memory.summary)) continue
     const sourceKey = `mind:promise:${memory.id}`
     out.push({
       id: `agc-${sourceKey.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48)}`,
@@ -314,7 +315,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     })
   }
   for (const person of Array.isArray(continuity?.people) ? continuity.people.slice(-12) : []) {
-    if (person.status !== 'active' || !person.notes || Number(person.updatedAt) < now - 7 * 86400000) continue
+    if (person.status !== 'active' || !person.notes || sensitiveText.test(person.notes) || Number(person.updatedAt) < now - 7 * 86400000) continue
     const sourceKey = `relationship:${person.id}`
     out.push({
       id: `agc-${sourceKey.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48)}`,
@@ -329,7 +330,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
   // Persisted self preferences are low-priority interests, not requests for
   // the user to do anything. TTL keeps them from becoming permanent clutter.
   for (const pref of Array.isArray(mind?.preferences) ? mind.preferences.slice(-12) : []) {
-    if (pref.owner !== 'self' || pref.status !== 'active' || !pref.key) continue
+    if (pref.owner !== 'self' || pref.status !== 'active' || !pref.key || sensitiveText.test(`${pref.key} ${pref.value}`)) continue
     const sourceKey = `mind:preference:${pref.id || pref.key}`
     out.push({
       id: `agc-${sourceKey.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48)}`,
@@ -345,7 +346,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
   // intentionally low priority and expires quickly; it never invents details.
   for (const event of Array.isArray(events) ? events.slice(-4) : []) {
     const summary = text(event?.summary || event?.reason || event?.text, 120)
-    if (!summary || !event?.id) continue
+    if (!summary || !event?.id || sensitiveText.test(summary)) continue
     const at = Math.max(0, Number(event.at) || now)
     out.push({
       id: `agc-event-${String(event.id).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40)}`,
