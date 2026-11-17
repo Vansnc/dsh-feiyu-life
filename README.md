@@ -62,6 +62,7 @@ npm test
 - [配置参考与迁移](docs/CONFIGURATION.md)
 - [安装、升级、备份、发布与故障排查](docs/OPERATIONS.md)
 - [设计原则与关键决策](docs/DESIGN.md)
+- [life.js 依赖盘点](docs/LIFE_DEPENDENCY_INVENTORY.md)
 - [贡献指南](CONTRIBUTING.md)
 - [更新记录](CHANGELOG.md)
 
