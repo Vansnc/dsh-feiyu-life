@@ -1,6 +1,6 @@
 {
   "name": "dsh-feiyu-life",
-  "version": "2.5.3",
+  "version": "2.6.0",
   "description": "大肥鱼的完整人格智能体（DSH 插件）：生活、内在、长期记忆、自我叙事、关系、目标、主动性、地图与相机。",
   "type": "module",
   "license": "MIT",
@@ -27,12 +27,14 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "node --check index.js && node --check life.js && node --check plan.js && node --check state.js && node --check storage.js && node --check moments.js && node --check sharing.js && node --check agency.js && node --check agency-runner.js && node --check continuity.js && node --check reflection.js && node --check mind.js && node --check world.js && node --check runtime.js && node --check gen.js && node --check image.js && node --check image-prompt.js && node --check backup.js && node --check client.js && node --check src/plugin/context-hints.js && node --check src/plugin/initiative.js && node --check src/plugin/tools.js && node --check src/plugin/http.js && node --check src/plugin/lifecycle.js && node --check src/plugin/routes/media.js && node --check src/plugin/routes/backup.js && node --check src/life/time.js && node --check src/life/context.js && node --check src/media/image-prompt.js && node --check src/media/image.js && node --check src/media/life-snapshot.js && node --check src/persistence/storage.js && node --check src/cognition/agency/schema.js && node --check src/cognition/agency/candidates.js && node --check src/cognition/agency/executor.js && node --check src/cognition/agency/outreach.js && node --check src/cognition/agency/state-machine.js && node --check src/cognition/agency/runner.js && node --check scripts/build-xueyuan-map.mjs && node --check scripts/simulate-sharing.mjs",
+    "check": "node scripts/build-client.mjs --check && node scripts/check-syntax.mjs",
     "test": "node --test",
     "test:ui": "node scripts/verify-ui.mjs",
-    "test:all": "npm test && npm run test:ui"
+    "test:all": "npm test && npm run test:ui",
+    "build:client": "node scripts/build-client.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "playwright": "^1.56.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -47,30 +49,14 @@
   },
   "files": [
     "index.js",
-    "image.js",
-    "image-prompt.js",
-    "life.js",
-    "state.js",
-    "storage.js",
-    "moments.js",
-    "sharing.js",
-    "agency.js",
-    "agency-runner.js",
-    "src/",
-    "world.js",
-    "runtime.js",
-    "plan.js",
-    "gen.js",
-    "continuity.js",
-    "reflection.js",
-    "mind.js",
-    "backup.js",
     "client.js",
-    "cordis.patch.yml",
-    "locale/*.json",
-    "icon.png",
+    "src/",
     "assets",
     "docs",
+    "scripts/",
+    "locale/*.json",
+    "icon.png",
+    "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

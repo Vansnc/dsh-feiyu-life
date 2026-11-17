@@ -4,10 +4,10 @@ import { mkdtempSync, readFileSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { generate, normalizeConfig } from '../life.js'
+import { generate, normalizeConfig } from '../src/life/life.js'
 import {
   dailyPlan, mergeFutureItems, planPath, readPlan, scheduleRevision, timelineCoverage, writePlan,
-} from '../plan.js'
+} from '../src/life/plan.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME

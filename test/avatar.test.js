@@ -22,7 +22,7 @@ test('plugin logo is a transparent square PNG suitable for package and sidebar u
 })
 
 test('client animation only advances horizontally through isolated strips', () => {
-  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const client = readFileSync(new URL('../src/ui/app.js', import.meta.url), 'utf8') + readFileSync(new URL('../src/ui/styles.js', import.meta.url), 'utf8')
   assert.match(client, /background-size:320px 80px/)
   assert.match(client, /\/avatar\/\$\{spriteBehavior\}/)
   assert.doesNotMatch(client, /--fl-sprite-y|background-position-y/)
@@ -41,7 +41,7 @@ test('real map assets share one viewport and keep OpenStreetMap attribution', ()
 })
 
 test('map renders configured paths as layered roads with active-route state', () => {
-  const client = readFileSync(new URL('../client.js', import.meta.url), 'utf8')
+  const client = readFileSync(new URL('../src/ui/app.js', import.meta.url), 'utf8') + readFileSync(new URL('../src/ui/styles.js', import.meta.url), 'utf8')
   assert.match(client, /data-fl-map-layer/)
   assert.match(client, /layer=base/)
   assert.match(client, /layer=anime/)

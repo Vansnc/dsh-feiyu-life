@@ -11,7 +11,7 @@
 - `src/persistence/`：原子写、锁、迁移边界。
 - `src/ui/`：浏览器设置页；界面只调用 HTTP API。
 
-根 `index.js/client.js/life.js/agency.js/sharing.js/storage.js/image-prompt.js` 是兼容 facade，不要绕过 facade 改外部契约。
+根 `index.js` 只是 DSH 入口；`client.js` 只是 `src/ui/client.js` 的生成产物。不要再往根目录放内部实现或 facade。
 
 ## 提交前
 

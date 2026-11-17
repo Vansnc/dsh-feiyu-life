@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path'
 import {
   MOMENT_LIMITS, cleanupMoments, ensureMoments, generateMoments, momentContext,
   momentStage, momentTemplates, momentsPath, normalizeMoments, readMoments, writeMoments,
-} from '../moments.js'
-import { normalizeConfig } from '../life.js'
+} from '../src/life/moments.js'
+import { normalizeConfig } from '../src/life/life.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME

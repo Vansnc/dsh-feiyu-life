@@ -1,5 +1,5 @@
 // Pure time, calendar, body-cycle and sleep-projection helpers.
-import { readPlan, normalizeRoutine } from '../../plan.js'
+import { readPlan, normalizeRoutine } from './plan.js'
 const sleepText = /(?:睡着|午睡|补觉|还睡着|睡熟|睡了|睡到|睡觉)/
 
 export function pad2(n) { return String(n).padStart(2, '0') }

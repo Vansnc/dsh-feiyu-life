@@ -1,6 +1,6 @@
 // Narrow read-only snapshot interface for media. Media must not own or mutate
 // life state; it may only consume these derived views.
-import { readConfig, generate, zonedNow } from '../../life.js'
+import { readConfig, generate, zonedNow } from '../life/life.js'
 import { buildLifeContextSnapshot } from '../life/context.js'
 
 export function mediaTimeZone() {

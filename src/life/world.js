@@ -1,4 +1,4 @@
-import { xueyuanGeometry } from './assets/maps/xueyuan-world.js'
+import { xueyuanGeometry } from '../../assets/maps/xueyuan-world.js'
 
 // Spatial layer for the character's life.
 //

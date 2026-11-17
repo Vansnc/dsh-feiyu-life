@@ -1,5 +1,14 @@
 # 更新记录
 
+## 2.6.0
+
+- 物理文件重组：内部实现全部迁入 `src/`；根目录只保留 `index.js`、`client.js` 与项目文件。
+- 根 `index.js` 仅 re-export `src/plugin/app.js`；根 `client.js` 由 `src/ui/client.js` 确定性生成。
+- 内部模块迁入 `src/life`、`src/cognition`、`src/proactive`、`src/media`、`src/persistence`、`src/infrastructure`、`src/plugin`。
+- 测试/脚本导入改为权威 `src/` 路径；新增根目录清单、生成物可重复性检查。
+- 设置页按「此刻/生活/内在/主动/世界/相机/数据」重排，UI 源码拆为 app/entry/styles/constants/image-panel；esbuild 生成根 client.js。
+- 不改变配置/状态格式、HTTP 路由、工具名、主动分享策略或 UI 契约；本版本未在本 PR 发布或重载。
+
 ## 2.5.3
 
 - 发布架构整理后的版本：cognition/agency、persistence、life time/context、media snapshot、plugin routes/lifecycle/tools 拆入 `src/`，根入口保持兼容 facade。

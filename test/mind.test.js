@@ -8,7 +8,7 @@ import {
   applyCognition, defaultMind, initiativeDecision, markInitiative, mindContext,
   mutateGoal, mutateMemory, mutatePreference, normalizeCognition, normalizeMind, readMind,
   retrieveMemories, mindPath,
-} from '../mind.js'
+} from '../src/cognition/mind.js'
 
 const cfg = {
   启用: true, 记忆启用: true, 自动沉淀: true, 记忆重要度阈值: 0.68, 记忆置信度阈值: 0.72,

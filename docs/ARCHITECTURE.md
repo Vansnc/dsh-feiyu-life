@@ -2,74 +2,84 @@
 
 ## 目标
 
-`dsh-feiyu-life` 是一个 DSH 插件。根目录文件是稳定 facade，实现按职责放在 `src/`。重构的第一目标是降低单文件认知负担和跨域耦合；不是减少总行数。
+根目录只保留运行入口和项目文件；所有内部实现、UI 源码、测试支持都在 `src/`。外部入口仍由 `package.json exports` 固定。
+
+## 根目录
+
+```text
+index.js                 DSH 运行入口，仅 re-export src/plugin/app.js
+client.js                由 src/ui/client.js 确定性生成（browser entry）
+package.json             exports / files / scripts
+package-lock.json
+cordis.patch.yml         DSH bundle patch
+README.md CHANGELOG.md CONTRIBUTING.md LICENSE
+assets/ docs/ locale/ scripts/ src/ test/
+.github/ .editorconfig .gitignore
+```
+
+根目录不再保留 `life.js / agency.js / sharing.js / storage.js / image.js` 等实现或 facade。
 
 ## 分层
 
 ```text
-src/plugin/      DSH 适配：系统上下文、会话事件、工具、HTTP 路由、主动调度
-src/life/        生活领域：时间/日历/身体/睡眠投影（逐步从 life.js 抽出）
-src/cognition/   认知领域：agency 状态机、候选、outreach、runner
-src/proactive/   主动分享候选/策略/账本/发送协调
-src/media/       图片提示词与媒体适配
-src/persistence/ 原子写、锁、bounded read、quarantine
-src/ui/          浏览器设置页（受 DSH 无构建加载方式限制，暂保留根 client.js）
+src/plugin/       apply/composition、sessions、routes、tools、lifecycle、http
+src/life/         config 语义、plan/state/world/moments/continuity、time、generation、context
+src/cognition/    mind、reflection、agency 子域
+src/proactive/    sharing 候选/策略/账本/发送协调
+src/media/        image、image-prompt、life-snapshot
+src/persistence/  storage、backup、原子文件边界
+src/infrastructure/ runtime、日志、超时
+src/ui/           entry/app/styles/constants/image-panel 权威源码；根 client.js 是 esbuild 生成产物
 ```
-
-根目录 `index.js`、`client.js`、`life.js`、`agency.js`、`sharing.js`、`storage.js`、`image-prompt.js` 等继续存在，作为兼容入口/re-export facade。
 
 ## 依赖方向
 
 ```text
-plugin -> domain/application
-domain -> persistence
-media   -> life narrow read interface
-ui      -> HTTP API only (not server state rules)
+plugin -> life/cognition/proactive/media/persistence
+life/cognition/proactive -> persistence/infrastructure
+media -> src/life/context.js 的只读 snapshot
+ui -> HTTP API only
 ```
 
-- `src/cognition/*`、`src/life/*` 不得 import `src/plugin/*` 或根 `index.js/client.js`。
-- `src/persistence/*` 不 import 业务模块。
-- `src/media/*` 通过 `src/media/life-snapshot.js` 的窄只读快照接口读取生活状态，不直接 import 整份 `life.js`；`image.js` 与 `image-prompt.js` 均已移入 `src/media`，根文件只做 facade。
-- 禁止新的循环依赖；`test/architecture.test.js` 会遍历实际 import 图。
+- `src/life`、`src/cognition` 等 domain 不得 import `src/plugin` 或 `src/ui`。
+- 禁止循环依赖；`test/architecture.test.js` 遍历实际 import 图。
+- 配置默认值只有一个权威来源：`src/life/life.js` 的 `defaultConfig`。
+- 根 `index.js` 只做入口 re-export；根 `client.js` 只做生成产物。
 
 ## 状态所有权
 
 | 状态 | 所有者 |
 |---|---|
-| 配置、日程、剧本、世界 | `life.js` / `plan.js` / `world.js` |
-| 连续性、需求、人物、记忆 | `continuity.js` |
-| 情绪、事件账本、反思 | `reflection.js` |
-| 人格、目标、偏好、关系感受 | `mind.js` |
-| 内在焦点、defer/abandon/outreach | `src/cognition/agency/*` |
-| 主动分享候选/额度/冷却/租约 | `sharing.js` |
-| 图片配置、照片 | `image.js` / `src/media` |
-| 原子文件和锁 | `src/persistence/storage.js` |
+| 配置、日程、剧本、世界 | `src/life/life.js` / `plan.js` / `world.js` |
+| 连续性、需求、人物、记忆 | `src/life/continuity.js` |
+| 情绪、反思、事件账本 | `src/cognition/reflection.js` |
+| 人格、目标、偏好、关系感受 | `src/cognition/mind.js` |
+| 内在焦点/outreach | `src/cognition/agency/*` |
+| 主动分享候选/额度/冷却/租约 | `src/proactive/sharing.js` |
+| 图片配置/照片 | `src/media/image.js` |
+| 原子文件/备份 | `src/persistence/*` |
+| 浏览器 UI | `src/ui/client.js`，根产物生成 |
 
-## 主要数据流
+## 构建
 
-1. 计划/状态/身体/世界 -> `life.generate()` -> 每轮上下文。
-2. 对话结束 -> reflection -> affect/mind 候选 -> 存储。
-3. 连续性结算 -> 真实完成/进展 -> agency 候选。
-4. 内部 tick -> 选择/复盘/推迟/关闭焦点 -> agency 文件。
-5. 主动分享 tick -> 候选 + 全部安全闸门 -> `agent.followup` 入队 -> sharing 账本；失败释放租约。
-6. 设置页 -> HTTP API -> 同一组 domain 函数。
+```bash
+npm run build:client   # src/ui/client.js -> client.js
+npm run check          # build 可重复性 + 全 JS 语法
+```
+
+`client.js` 首行有 `GENERATED from src/ui/client.js` 标记；不得手工改根产物。DSH 仍加载根 `client.js`，但权威源码在 `src/ui/client.js`。
 
 ## 扩展点
 
-- 新生活内容：优先放 `src/life/`，通过根 facade 导出；不要从 domain import plugin。
-- 新主动策略：候选/策略放 `src/proactive/` 或 sharing，不新增发送器。
-- 新模型/图片能力：`src/media/`，通过窄接口读生活快照。
-- 新设置页区域：`src/ui/`（在 DSH 浏览器加载约束允许时），只调用 HTTP API。
-- 新持久化格式：先加迁移/规范化测试，再改 storage 边界。
+- 新生活能力：`src/life/`，更新窄接口/测试。
+- 新认知能力：`src/cognition/`。
+- 新主动策略：`src/proactive/`，不新增发送器。
+- 新媒体能力：`src/media/`，通过 `life-snapshot` 只读快照。
+- 新设置页：`src/ui/`，生成根 client，保持 UI 契约。
+- 新持久化：`src/persistence/`，先加迁移/契约测试。
 
-## 深入盘点
+## 已知边界
 
-- [life.js 依赖盘点](./LIFE_DEPENDENCY_INVENTORY.md)
-
-## 已知偏差
-
-- `life.js` 仍保留配置 schema/迁移和 generation/context；已抽出 time/calendar 和窄 `context.js` snapshot。完全拆 config/generator 需要单独迁移窗口。
-- media 已通过 `src/life/context.js` 的只读 snapshot 消费 life 视图；仍不拥有配置/写入。
-- `src/plugin/tools.js` 承载 DSH 工具注册；`src/plugin/routes/media.js`、`routes/backup.js` 承载媒体/备份路由；`src/plugin/lifecycle.js` 承载维护定时器。剩余 config/continuity/mind/replay 路由仍在根 `index.js`，下一轮继续收敛。
-- `client.js` 受 DSH 的 `window.__ModuleLoader__` 无构建加载约束，暂不做物理多文件拆分；视觉和 data 属性由现有 UI 测试锁住。
-- continuity/mind/reflection 仍通过根 `storage.js` facade 使用持久化；没有一次性重写全部持久化，避免行为风险。
+- `src/plugin/app.js` 仍承担 composition 和部分剩余路由；后续可继续按域拆。
+- `src/life/life.js` 仍包含 config/generation，未做高风险大重写。
+- UI 不引入构建框架，仍是确定性字符串拼接/复制脚本，避免破坏 DSH 的 `window.__ModuleLoader__` 契约。

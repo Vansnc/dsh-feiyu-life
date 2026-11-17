@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { chromium } from 'playwright'
-import { defaultWorldConfig } from '../world.js'
-import { defaultConfig } from '../life.js'
-import { normalizeImageConfig } from '../image.js'
+import { defaultWorldConfig } from '../src/life/world.js'
+import { defaultConfig } from '../src/life/life.js'
+import { normalizeImageConfig } from '../src/media/image.js'
 
 let definition
 globalThis.window = { __ModuleLoader__: { load(value) { definition = value } } }
@@ -206,7 +206,8 @@ try {
     const style = document.createElement('style'); style.textContent = plugin.__test.CSS; document.head.appendChild(style)
     window.ReactDOM.createRoot(document.getElementById('root')).render(window.React.createElement(plugin.__test.Panel))
   }, { life: lifeState, continuity: continuityState, affect: affectState, mind: mindState })
-  await page.getByText('连续性', { exact: true }).click()
+  await page.locator('[data-fl-tab]').filter({ hasText: '内在' }).first().click()
+  await page.locator('[data-fl-subtab]').filter({ hasText: '连续性' }).click()
   await page.getByText('视觉作品集').waitFor()
   assert.equal(await page.getByText('取快递', { exact: true }).count(), 1, 'one-off pickup is rendered as a short task')
   assert.equal(await page.getByText('计划只是意图', { exact: false }).count(), 1, 'completion boundary is visible')
@@ -214,25 +215,31 @@ try {
   assert.equal(await page.getByText('小满', { exact: true }).count(), 1, 'known people are visible as durable relationship cards')
   assert.equal(await page.getByText('最近在为恋爱烦恼', { exact: true }).count(), 1, 'relationship notes are visible')
   await page.screenshot({ path: join(outputDir, 'continuity-settings.png'), fullPage: true })
-  await page.getByText('内在', { exact: true }).click()
+  await page.locator('[data-fl-subtab]').filter({ hasText: '内在' }).click()
   await page.getByText('统一事件账本', { exact: true }).waitFor()
   assert.equal(await page.getByText('心情不错', { exact: false }).count(), 1, 'native affect label is visible')
   assert.equal(await page.getByText('用户认真听她讲完了', { exact: false }).count() >= 1, true, 'auditable affect reason is visible')
   assert.equal(await page.getByText('记忆候选（已交由人格策略）', { exact: false }).count(), 1, 'candidate policy boundary is explicit')
   await page.screenshot({ path: join(outputDir, 'inner-settings.png'), fullPage: true })
-  await page.getByText('分享', { exact: true }).click()
+  await page.locator('[data-fl-tab]').filter({ hasText: '主动' }).first().click()
+  await page.locator('[data-fl-subtab]').filter({ hasText: '分享' }).click()
   await page.getByText('启用主动分享', { exact: true }).waitFor()
   assert.equal(await page.getByText('每日上限', { exact: true }).count(), 1, 'sharing daily quota is configurable')
   assert.equal(await page.getByText('全局冷却分钟', { exact: true }).count(), 1, 'sharing cooldown is configurable')
   assert.equal(await page.getByText('最低分', { exact: true }).count(), 1, 'sharing score threshold is configurable')
   await page.screenshot({ path: join(outputDir, 'sharing-settings.png'), fullPage: true })
-  await page.getByText('人格', { exact: true }).click()
+  await page.locator('[data-fl-tab]').filter({ hasText: '内在' }).first().click()
+  await page.locator('[data-fl-subtab]').filter({ hasText: '人格' }).click()
   await page.getByText('明确添加记忆', { exact: true }).waitFor()
   assert.equal(await page.getByText('月见喜欢在咖啡店安静写东西', { exact: true }).count(), 1, 'durable memory is inspectable')
   assert.equal(await page.getByText('整理本周生活片段', { exact: true }).count(), 1, 'self goal is inspectable')
   assert.equal(await page.getByText('主动分享已统一到「分享」页签', { exact: false }).count(), 1, 'legacy proactive entry points to the sharing tab')
   assert.equal(await page.getByText('dsh-bili-subagent', { exact: false }).count(), 1, 'external integration status is visible')
   await page.screenshot({ path: join(outputDir, 'personality-settings.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'mobile layout has no horizontal page overflow')
+  assert.equal(await page.locator('[data-fl-tab]').count() >= 7, true, 'top navigation remains accessible on mobile')
+  await page.screenshot({ path: join(outputDir, 'mobile-settings.png'), fullPage: true })
 } finally {
   await browser.close()
 }

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildElements, templatePrompt } from '../image-prompt.js'
+import { buildElements, templatePrompt } from '../src/media/image-prompt.js'
 
 test('camera template injects life state and defers appearance to the reference image', () => {
   const cfg = {}

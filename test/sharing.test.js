@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import {
   buildCandidates, buildSharePrompt, commitShare, defaultSharingConfig, defaultSharingLedger,
   normalizeSharingConfig, readSharing, releaseShare, selectShareCandidate, sharingPath, takeShare, writeSharing,
-} from '../sharing.js'
+} from '../src/proactive/sharing.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME
@@ -197,7 +197,7 @@ test('two independent pollers cannot both claim the same candidate', async () =>
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = dir
   try {
-  const modulePath = fileURLToPath(new URL('../sharing.js', import.meta.url))
+  const modulePath = fileURLToPath(new URL('../src/proactive/sharing.js', import.meta.url))
   const candidates = buildCandidates({ now: noon, nowMinute: 12 * 60, date: '2026-11-16', life: lifeAt(), ledger: defaultSharingLedger(noon) }).filter((x) => x.kind === 'moment')
   const input = { now: noon, timeZone: 'Asia/Shanghai', config, candidates, currentCategory: 'dorm', phone: '在手', behavior: 'idle', lastHumanAt: 0 }
   const script = `import { takeShare } from ${JSON.stringify(modulePath)}; const input = JSON.parse(process.env.SHARING_INPUT); process.stdout.write(JSON.stringify(takeShare(input)))`

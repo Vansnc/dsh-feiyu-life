@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { promisify } from 'node:util'
 import { mediaLifeSnapshot } from './life-snapshot.js'
-import { appendRotatingLog, withStreamTimeout } from '../../runtime.js'
+import { appendRotatingLog, withStreamTimeout } from '../infrastructure/runtime.js'
 
 const dshHome = () => process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const logFile = () => join(dshHome(), 'feiyu-life-image.log')

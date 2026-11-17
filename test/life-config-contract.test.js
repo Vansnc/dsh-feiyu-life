@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import {
   configPath, defaultConfig, LIFE_CONFIG_VERSION, migrateConfig, normalizeConfig,
   readConfig, replaceConfig, saveConfig, validateConfig,
-} from '../life.js'
+} from '../src/life/life.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME
@@ -49,7 +49,7 @@ test('old config versions migrate forward without changing the public root API',
   assert.ok(old.changed)
   const cfg = normalizeConfig(old.value)
   assert.equal(cfg.衣柜.class[0], '旧卫衣')
-  const root = await import('../life.js')
+  const root = await import('../src/life/life.js')
   for (const name of ['configPath', 'defaultConfig', 'LIFE_CONFIG_VERSION', 'normalizeConfig', 'validateConfig', 'migrateConfig', 'readConfig', 'saveConfig', 'replaceConfig']) {
     assert.equal(typeof root[name] !== 'undefined', true, name)
   }

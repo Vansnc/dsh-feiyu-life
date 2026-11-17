@@ -18,7 +18,7 @@
 import { readdirSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { atomicWriteJson, readJsonBounded } from './storage.js'
+import { atomicWriteJson, readJsonBounded } from '../persistence/storage.js'
 
 export const MOMENT_VERSION = 1
 export const MOMENT_LIMITS = { perDay: 2, stages: 4, fileBytes: 64 * 1024, recentDays: 7 }

@@ -17,7 +17,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { readJsonBounded } from './storage.js'
+import { readJsonBounded } from '../persistence/storage.js'
 
 const plansDir = () => join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'feiyu-life-days')
 const historyDir = (ymd) => join(plansDir(), 'history', ymd)

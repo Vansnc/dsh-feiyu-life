@@ -5,17 +5,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 
-import { defaultContinuity } from '../continuity.js'
+import { defaultContinuity } from '../src/life/continuity.js'
 import {
   AGENCY_VERSION, agencyContext, agencyPath, agencyShareCandidates, buildAgencyCandidates,
   defaultAgency, handleAgencyInboxReply, inboxReplyReference, markAgencyOutreach, normalizeAgency, observeAgencyReply, readAgency, tickAgency, writeAgency,
-} from '../agency.js'
-import { buildSharePrompt } from '../sharing.js'
-import { runInternalAgencyRunner } from '../agency-runner.js'
-import { readContinuity } from '../continuity.js'
-import { readAffect, readEvents } from '../reflection.js'
-import { readMind } from '../mind.js'
-import { defaultSharingLedger, readSharing } from '../sharing.js'
+} from '../src/cognition/agency/index.js'
+import { buildSharePrompt } from '../src/proactive/sharing.js'
+import { runInternalAgencyRunner } from '../src/cognition/agency/runner.js'
+import { readContinuity } from '../src/life/continuity.js'
+import { readAffect, readEvents } from '../src/cognition/reflection.js'
+import { readMind } from '../src/cognition/mind.js'
+import { defaultSharingLedger, readSharing } from '../src/proactive/sharing.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME
@@ -203,7 +203,7 @@ test('index runs the internal tick before the outbound sharing gate', () => {
   const gate = source.indexOf('if (!sharingCfg.启用)')
   assert.ok(internal > 0)
   assert.ok(gate > internal)
-  const agencySource = readFileSync(new URL('../agency.js', import.meta.url), 'utf8')
+  const agencySource = readFileSync(new URL('../src/cognition/agency/index.js', import.meta.url), 'utf8')
   assert.doesNotMatch(agencySource, /\.followup\s*\(/)
 })
 
@@ -221,10 +221,10 @@ test('concurrent agency ticks leave one consistent focus', async () => {
   const previous = process.env.DSH_HOME
   process.env.DSH_HOME = dir
   try {
-    const moduleUrl = new URL('../agency.js', import.meta.url).href
+    const moduleUrl = new URL('../src/cognition/agency/index.js', import.meta.url).href
     const script = `
       import { tickAgency } from ${JSON.stringify(moduleUrl)};
-      import { defaultContinuity } from ${JSON.stringify(new URL('../continuity.js', import.meta.url).href)};
+      import { defaultContinuity } from ${JSON.stringify(new URL('../src/life/continuity.js', import.meta.url).href)};
       const now = ${now};
       const c = defaultContinuity(now);
       c.tasks = [{ id: 't1', title: '取快递', status: 'open', dueAt: now - 3600000, updatedAt: now - 3600000 }];
@@ -396,7 +396,7 @@ test('the injectable internal runner advances state while sharing is disabled', 
   assert.ok(result.focus)
   assert.ok(readAgency(now).focus)
   assert.equal(readAgency(now).focus.sourceKey, 'continuity:task:t1')
-  const runnerSource = readFileSync(new URL('../agency-runner.js', import.meta.url), 'utf8')
+  const runnerSource = readFileSync(new URL('../src/cognition/agency/runner.js', import.meta.url), 'utf8')
   assert.doesNotMatch(runnerSource, /\.followup\s*\(/)
 }))
 
