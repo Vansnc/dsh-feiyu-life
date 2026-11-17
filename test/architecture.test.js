@@ -53,8 +53,9 @@ test('public API names remain available at the root', async () => {
 
 test('route, tool, tab and data-file contracts are unchanged', () => {
   const index = read('index.js')
+  const routeSources = index + read('src/plugin/routes/media.js') + read('src/plugin/routes/backup.js')
   for (const route of ['/state', '/mind', '/affect', '/continuity', '/save', '/preview', '/replay', '/settings-backup', '/settings-restore', '/regenerate', '/undo-regenerate']) {
-    assert.match(index, new RegExp(route.replace('/', '\\/')))
+    assert.match(routeSources, new RegExp(route.replace('/', '\\/')))
   }
   const tools = read('src/plugin/tools.js')
   for (const tool of ['life_adjust', 'life_person', 'life_task', 'life_commitment', 'life_thread', 'mind_remember', 'mind_preference', 'mind_goal']) {
@@ -85,6 +86,9 @@ test('no import cycles and no domain-to-plugin dependencies', () => {
     done.add(file)
   }
   for (const file of files) visit(file)
+  for (const rel of ['src/media/image.js', 'src/media/image-prompt.js']) {
+    assert.doesNotMatch(read(rel), /from ['"]\.\.\/\.\.\/life\.js['"]/, rel)
+  }
   for (const file of files) {
     const rel = file.slice(ROOT.length + 1)
     if (rel.startsWith('src/cognition/') || rel.startsWith('src/life/')) {
@@ -95,9 +99,9 @@ test('no import cycles and no domain-to-plugin dependencies', () => {
 
 test('critical source modules are inside the declared layout', () => {
   for (const file of [
-    'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/plugin/tools.js', 'src/life/time.js', 'src/cognition/agency/schema.js',
+    'src/plugin/context-hints.js', 'src/plugin/initiative.js', 'src/plugin/tools.js', 'src/plugin/http.js', 'src/plugin/lifecycle.js', 'src/plugin/routes/media.js', 'src/plugin/routes/backup.js', 'src/life/time.js', 'src/cognition/agency/schema.js',
     'src/cognition/agency/candidates.js', 'src/cognition/agency/executor.js',
     'src/cognition/agency/outreach.js', 'src/cognition/agency/state-machine.js',
-    'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/media/image.js', 'src/persistence/storage.js',
+    'src/cognition/agency/runner.js', 'src/media/image-prompt.js', 'src/media/image.js', 'src/media/life-snapshot.js', 'src/persistence/storage.js',
   ]) assert.equal(existsSync(resolve(ROOT, file)), true, file)
 })

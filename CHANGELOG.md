@@ -4,7 +4,8 @@
 
 - 拆分 cognition/agency、persistence、life/time、media/image-prompt 到 `src/`，根入口保留兼容 facade。
 - 提取 plugin context hints、initiative scheduler、tools adapter。
-- 将 `image.js`/`image-prompt.js` 实现移入 `src/media`，根文件保留 facade。
+- 将 `image.js`/`image-prompt.js` 实现移入 `src/media`，根文件保留 facade；媒体改走 `life-snapshot.js` 窄接口。
+- 提取 `src/plugin/http.js`、`routes/media.js`、`routes/backup.js`、`lifecycle.js`；index 继续收敛为 composition root。
 - 新增架构依赖/公共契约测试；README/docs 收敛为产品、架构、配置、操作四个入口。
 - 不改配置语义、路由、工具名、数据格式、UI 契约、主动策略；不发布、不重载。
 
