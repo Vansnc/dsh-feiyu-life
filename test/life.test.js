@@ -432,3 +432,31 @@ test('the plugin has one proactive scheduler and does not call the legacy gate',
   assert.match(source, /sharingCheckedAt/)
   assert.equal((source.match(/runInitiative\(\)/g) || []).length, 1)
 })
+
+
+test('model plans obey the configured wardrobe and see mood/goals/agency', () => {
+  const cfg = normalizeConfig({
+    衣柜: { class: ['藏青卫衣'], sleep: ['睡衣'], home: ['旧卫衣'], out: ['黑大衣'], eat: ['卫衣'], bath: ['浴巾'] },
+  })
+  const prompt = buildPrompt({
+    cfg, date: '2026-11-17', weekdayLabel: '二', typeName: '上课日',
+    routine: [['00:00', '24:00', '在宿舍']], classes: [['08:00', '10:00', '上课']],
+    calendarLabel: '学期', body: '平常', sleep: '7 小时', mood: '有点累',
+    self: '- 自己的目标：整理作品集，下一步：挑三张片子', recent: '', continuity: '', relationships: '',
+  })
+  assert.match(prompt, /## 衣柜/)
+  assert.match(prompt, /藏青卫衣/)
+  assert.match(prompt, /## 她心里的事/)
+  assert.match(prompt, /挑三张片子/)
+  const normalized = normalizePlan({
+    title: '一天',
+    items: [
+      { start: '00:00', end: '08:00', what: '睡着了', phone: '在床头', outfit: '西装', locationId: 'dorm', behavior: 'sleep' },
+      { start: '08:00', end: '10:00', what: '上课', phone: '静音', outfit: '西装', locationId: 'classroom', behavior: 'study' },
+      { start: '10:00', end: '24:00', what: '在宿舍待着', phone: '在手', outfit: '', locationId: 'dorm', behavior: 'idle' },
+    ],
+  }, undefined, [], [], cfg.衣柜)
+  assert.equal(normalized.items[0].outfit, '睡衣')
+  assert.equal(normalized.items[1].outfit, '藏青卫衣')
+  assert.equal(normalized.items[2].outfit, '旧卫衣')
+})

@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { appendRotatingLog, withStreamTimeout } from './runtime.js'
 import { BEHAVIOR_RULES, defaultWorldConfig, normalizeWorldConfig } from './world.js'
+import { normalizeWardrobe, occasion } from './plan.js'
 
 const dshHome = () => process.env.DSH_HOME || join(homedir(), '.dsh')
 const sleepText = /(?:睡着|午睡|补觉|还睡着|睡熟|睡了|睡到|睡觉)/
@@ -45,7 +46,7 @@ export function pickModel(agent, cfg = {}) {
 }
 
 export function buildPrompt(o) {
-  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, sleep, recent, continuity, relationships } = o
+  const { cfg, date, weekdayLabel, typeName, routine, classes, calendarLabel, body, sleep, mood, self, recent, continuity, relationships } = o
   // Persona is user settings, never a constant in the life layer. If nothing
   // is configured, write a day without inventing a personality for her.
   // The life layer writes a day, not a personality. Persona stays in the
@@ -56,6 +57,10 @@ export function buildPrompt(o) {
   const routineRows = Array.isArray(routine) ? routine : []
   const routineSkeleton = routineRows.length ? routineRows.map((x) => `${x[0]}-${x[1]} ${x[2]}`).join('；') : '没有额外作息约束'
   const world = normalizeWorldConfig(cfg.地图 || defaultWorldConfig)
+  const wardrobe = normalizeWardrobe(cfg.衣柜)
+  const wardrobeText = [
+    ['sleep', '睡觉'], ['bath', '洗澡'], ['class', '上课'], ['home', '在家'], ['out', '出门'], ['eat', '吃饭'],
+  ].map(([key, label]) => `- ${label}：${wardrobe[key].join(' / ')}`).join('\n')
   const locations = world.地点.map((x) => `${x.id}=${x.name}`).join('；')
   const behaviors = BEHAVIOR_RULES.map((x) => `${x.id}=${x.label}`).concat('idle=发呆').join('；')
   return [
@@ -71,6 +76,13 @@ export function buildPrompt(o) {
     `- ${calendarLabel}`,
     `- 身体/状态：${body || '平常'}`,
     `- 昨晚睡眠：${sleep || '还没有记录，按作息骨架推断'}`,
+    `- 心情底色：${mood || '平常'}`,
+    '',
+    '## 她心里的事（只作为生活取舍，不要声称已经完成）',
+    self || '没有需要强行塞进这一天的目标。',
+    '',
+    '## 衣柜（outfit 必须从对应类别中选）',
+    wardrobeText,
     '',
     '## 最近三天（这些桥段**不要再写**，换别的）',
     recent || '（还没有记录）',
@@ -85,7 +97,7 @@ export function buildPrompt(o) {
     '1. 从 00:00 排到 24:00，**不留空隙、不重叠**，8–14 段；',
     '2. 必须有一段「睡着了」，至少 6 小时；',
     '3. 「what」是口语短句，10–18 字，带细节（「刚起，脸还有点肿」「啃面包看课件」），不要写「上课」两个字就完事；',
-    '4. 「outfit」写一件具体的衣服（睡衣 / 藏青卫衣 / 黑大衣 / 牛仔外套…），睡觉那几段写睡衣；',
+    '4. 「outfit」必须从上面衣柜对应类别里选一件；睡觉那几段用「睡觉」类，不要自己编衣柜外的衣服；',
     '5. 「phone」只能是：在手 / 静音 / 在床头 / 不在手边；',
     '6. 以作息骨架为主，课表覆盖冲突时段；可以细化生活细节，但不要擅自改变睡醒、上课和用餐的大致区间，身体/状态要求优先；',
     '7. 全天最多一两件小插曲（快递、猫、洗衣服、被叫走），不要堆戏剧化事件；最近三天出现过的具体桥段不要重复；',
@@ -131,8 +143,9 @@ function fillLabel(x) {
 }
 
 /** Turn model output into a usable timeline; null if unusable. */
-export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEntities = [], allowedPeople = []) {
+export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEntities = [], allowedPeople = [], wardrobeConfig = null) {
   if (!raw || !Array.isArray(raw.items)) return null
+  const wardrobe = wardrobeConfig ? normalizeWardrobe(wardrobeConfig) : null
   const world = normalizeWorldConfig(worldConfig)
   const locationIds = new Set(world.地点.map((x) => x.id))
   const homeLocationId = world.地点.find((x) => x.id === 'dorm')?.id || world.地点[0]?.id || ''
@@ -197,6 +210,14 @@ export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEnti
     const what = sleepText.test(last.what) ? '还睡着' : '躺床上刷手机'
     clean.push({ start: last.end, end: 1440, what, phone: '在床头', outfit: last.outfit || '睡衣', ...inferred(what) })
   }
+  if (wardrobe) {
+    // Apply after prefix/tail synthesis too; those rows are generated locally
+    // and would otherwise bypass the selected wardrobe.
+    for (const row of clean) {
+      const pool = wardrobe[occasion(row.what, row.behavior, row.locationId)] || []
+      if (pool.length && !pool.includes(row.outfit)) row.outfit = pool[0]
+    }
+  }
   const sleep = clean.filter((x) => sleepText.test(x.what)).reduce((n, x) => n + (x.end - x.start), 0)
   if (sleep < 360) return null
   return { title: String(raw.title || '').slice(0, 40), mood: String(raw.mood || '').slice(0, 80), items: clean }
@@ -233,7 +254,7 @@ export async function writeDayWithModel(ctx, agent, params) {
   } catch (e) { log('call failed: ' + String((e && e.message) || e)); return null }
   const raw = parseJson(out)
   if (!raw) { log('JSON parse failed: len=' + String(out).length + ' kinds=' + JSON.stringify(kinds) + ' body=' + String(out).slice(0, 200)); return null }
-  const ok = normalizePlan(raw, params.cfg.地图, params.continuityEntities, params.continuityPeople)
+  const ok = normalizePlan(raw, params.cfg.地图, params.continuityEntities, params.continuityPeople, params.cfg.衣柜)
   if (!ok) { log('normalize failed: ' + String(out).slice(0, 300)); return null }
   return { ...ok, source: 'llm', model: target.model }
 }

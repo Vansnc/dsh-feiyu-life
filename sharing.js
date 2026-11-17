@@ -463,13 +463,21 @@ export function sharingStatus(now = Date.now()) {
 export function buildSharePrompt(candidate, options = {}) {
   if (!candidate) return ''
   const facts = (Array.isArray(candidate.facts) ? candidate.facts : []).map((x) => text(x, 160)).filter(Boolean)
-  const lines = [
-    '<feiyu-share>',
-    '这是你自己生活里刚发生、可以追溯的一件小事，不是对方发来的，也不是计划：',
-    ...facts.map((fact) => `- ${fact}`),
-  ]
-  if (candidate.followup) lines.push('- 这是你之前提过的同一件事的后续，可以自然承接，但不要当成一件全新的陌生事。')
-  lines.push('如果你想分享，就用 1–2 句口语说一句；不强制提问或称呼，不报时间、不列清单、不解释来源，也别每次都用“刚刚/突然/对了”开头。他没回也可以放下。')
-  lines.push('</feiyu-share>')
+  const lines = candidate.kind === 'followup'
+    ? [
+        '<feiyu-share>',
+        '这是你心里记着、还没完成的事，不是已经发生的结果：',
+        ...facts.map((fact) => `- ${fact}`),
+        '如果想提，就自然问一句或关心一下，1–2 句口语；不要声称已经做完，也不要催、不要一连串追问。不想提也可以先放着。',
+        '</feiyu-share>',
+      ]
+    : [
+        '<feiyu-share>',
+        '这是你自己生活里刚发生、可以追溯的一件小事，不是对方发来的，也不是计划：',
+        ...facts.map((fact) => `- ${fact}`),
+      ]
+  if (candidate.kind !== 'followup' && candidate.followup) lines.push('- 这是你之前提过的同一件事的后续，可以自然承接，但不要当成一件全新的陌生事。')
+  if (candidate.kind !== 'followup') lines.push('如果你想分享，就用 1–2 句口语说一句；不强制提问或称呼，不报时间、不列清单、不解释来源，也别每次都用“刚刚/突然/对了”开头。他没回也可以放下。')
+  if (candidate.kind !== 'followup') lines.push('</feiyu-share>')
   return lines.join('\n')
 }

@@ -34,6 +34,7 @@ import {
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
 import { cleanupMoments, momentSummary } from './moments.js'
+import { agencyContext, agencyShareCandidates, readAgency, tickAgency } from './agency.js'
 import {
   buildCandidates, buildSharePrompt, commitShare, normalizeSharingConfig, readSharing, releaseShare, sharingStatus, takeShare,
 } from './sharing.js'
@@ -106,6 +107,25 @@ function recentSummary(cfg, t) {
   return lines.join('\n')
 }
 
+function selfHint(cfg, now = Date.now()) {
+  const mind = readMind(cfg.人格 || {}, now)
+  const goals = (Array.isArray(mind.goals) ? mind.goals : [])
+    .filter((x) => x.status === 'active')
+    .sort((a, b) => (Number(a.progress) || 0) - (Number(b.progress) || 0))
+    .slice(0, 3)
+    .map((x) => `${x.title}${x.nextStep ? `，下一步：${x.nextStep}` : ''}`)
+  const preferences = (Array.isArray(mind.preferences) ? mind.preferences : [])
+    .filter((x) => x.status === 'active' && x.owner === 'self')
+    .slice(-3)
+    .map((x) => `${x.key}：${x.value}`)
+  const focus = readAgency(now).focus
+  return [
+    goals.length ? `- 自己的目标：${goals.join('；')}` : '',
+    preferences.length ? `- 自己的长期偏好：${preferences.join('；')}` : '',
+    agencyContext(focus) ? `- ${agencyContext(focus)}` : '',
+  ].filter(Boolean).join('\n')
+}
+
 function calendarLabel(calendar) {
   if (calendar.special) return `特殊：${calendar.special.名}`
   if (calendar.vacation) return `假期：${calendar.vacation.名}`
@@ -168,12 +188,14 @@ export function apply(ctx) {
           const personalityCfg = externalFirst && external.memory ? { ...cfg.人格, 记忆启用: false } : cfg.人格
           const personality = cfg.人格?.启用 === false ? '' : mindContext(readMind(cfg.人格), pendingInbox?.text || '', personalityCfg)
           if (!state) return [life.text, inner, personality].filter(Boolean).join('\n')
+          const agency = readAgency()
           return [
             life.text,
             inner,
             personality,
             `（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区, vitality: life.vitality })}`,
             continuitySummary(state, { timeZone: cfg.时区 }),
+            agencyContext(agency.focus),
             `（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`,
           ].filter(Boolean).join('\n')
         } catch { return '' }
@@ -479,6 +501,8 @@ export function apply(ctx) {
           calendarLabel: calendarLabel(calendar),
           body: bodyHint(cfg, t, deviation),
           sleep: sleepHint,
+          mood: affectLabel(readAffect(cfg.内在, when.getTime?.() || Date.now())),
+          self: selfHint(cfg, when.getTime?.() || Date.now()),
           recent: recentSummary(cfg, t),
           continuity: `${continuitySummary(continuityState, { timeZone: cfg.时区 })}\n${continuityContext(continuityState, readMemories(2), { timeZone: cfg.时区 })}`,
           continuityEntities: activeEntities(continuityState),
@@ -540,6 +564,15 @@ export function apply(ctx) {
       const current = life.current || {}
       const ledger = readSharing(now)
       const date = life.plan?.date || zonedNow(new Date(now), String(cfg.时区 || 'Asia/Shanghai')).ymd
+      const mind = readMind(cfg.人格 || {}, now)
+      const affect = readAffect(cfg.内在, now)
+      let agency = { focus: null }
+      try {
+        agency = tickAgency({
+          now, timeZone: cfg.时区, continuity, mind, affect,
+          vitality: life.vitality,
+        })
+      } catch {}
       const candidateList = buildCandidates({
         now,
         nowMinute: Number(life.currentMinute) || 0,
@@ -548,7 +581,9 @@ export function apply(ctx) {
         ledger,
         continuityChanges: Array.isArray(continuity.recentChanges) ? continuity.recentChanges : [],
         recentText: lastHumanText.get(agent.id) || '',
-      })
+      }).concat(agencyShareCandidates(agency.focus, {
+        now, date, nowMinute: Number(life.currentMinute) || 0,
+      }))
       const decision = takeShare({
         now,
         timeZone: cfg.时区,
@@ -589,6 +624,7 @@ export function apply(ctx) {
         results.push({
           sessionId: agent.id, sent: true, reason: 'shared', eventId: decision.claim.eventId,
           title: decision.claim.title, score: decision.claim.score, committed: committed.ok,
+          focus: agency.focus?.sourceKey || '',
         })
       } catch (e) {
         const released = releaseShare(decision.claim.claimId, String(e?.message || e), { now: Date.now() })
