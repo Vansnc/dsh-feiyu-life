@@ -1,5 +1,14 @@
 # 更新记录
 
+## 2.5.2
+
+- **回复关联改为保守语义**：生产 inbox payload 只有 `{agent,message}`，没有可靠的 reply-to/parent 字段；`observeAgencyReply()` 只有在显式 `replyTo` 或文本明确指向 topic 时才改变状态。普通同会话消息不再自动标 responded/declined；“算了我问另一个问题”“不用担心”保持 awaiting；“别催了”只在紧跟单个跟进的 10 分钟窗口内作为拒绝。“只更新活跃”不再伪造回应。
+- **低优先内部复盘**：interest/relationship/event 焦点现在有 review 步骤，执行一次无模型复盘，写入 `executions/internalPlan/recent`，随后释放焦点并进入探索冷却；不会发消息或篡改来源。
+- **持续 needs 不随时钟消失**：energy/mood/stress/social 的候选不再按 `now + TTL` 过期；阈值仍满足时持续存在，恢复后自然关闭，再次下降才产生新的来源版本。abandoned 仍只由真实状态更新/阈值重新进入恢复。
+- **对账保留来源版本**：sharing pending/recent 新增 `sourceUpdatedAt`；两次中断恢复不会把缺失版本当成新事实，无来源更新不重发，真实更新后才恢复评估。
+- **可注入 runner**：新增 `agency-runner.js`，生产 `runInternalAgency()` 使用它；单元测试直接传入关闭的分享配置、fake readers 和真实 agency 文件，确认内部状态更新且 runner 没有发送调用。
+- **文档术语**：区分可靠关联、topic 启发式和仅记录活跃，不再把普通同会话消息写成“已回应”。
+
 ## 2.5.1
 
 - **回复关联修复**：outreach 现在保存 `sessionId / sourceKey / stageKey / topic / lastSourceUpdatedAt`；普通消息只处理同一会话最近一个仍在 48 小时窗口内的候选，无 `sessionId` 或旧 v2 无会话行不会被标记。否定词收窄为明确的“别催/不用催/别再提/不想提/别问/别管/没兴趣”，不再用“算了/不用”误杀其他事项。

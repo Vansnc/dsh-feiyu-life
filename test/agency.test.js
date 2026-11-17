@@ -8,10 +8,14 @@ import { spawn } from 'node:child_process'
 import { defaultContinuity } from '../continuity.js'
 import {
   AGENCY_VERSION, agencyContext, agencyPath, agencyShareCandidates, buildAgencyCandidates,
-  defaultAgency, markAgencyOutreach, normalizeAgency, observeAgencyReply, readAgency, tickAgency, writeAgency,
+  defaultAgency, inboxReplyReference, markAgencyOutreach, normalizeAgency, observeAgencyReply, readAgency, tickAgency, writeAgency,
 } from '../agency.js'
 import { buildSharePrompt } from '../sharing.js'
-import { runAgencyCycle } from '../index.js'
+import { runInternalAgencyRunner } from '../agency-runner.js'
+import { readContinuity } from '../continuity.js'
+import { readAffect, readEvents } from '../reflection.js'
+import { readMind } from '../mind.js'
+import { defaultSharingLedger, readSharing } from '../sharing.js'
 
 function withHome(fn) {
   const old = process.env.DSH_HOME
@@ -162,8 +166,8 @@ test('follow-up candidates are pending facts and wait for a response', () => wit
   const retry = agencyShareCandidates(focus, { now: now + 122 * 3600000, date: '2026-11-20', state: ignored.state })
   assert.equal(retry.length, 1)
   markAgencyOutreach(retry[0], { now: now + 122 * 3600000, sessionId: 's1' })
-  assert.equal(observeAgencyReply('不用催了', { now: now + 123 * 3600000, sessionId: 's1' }).changed, true)
-  const declined = readAgency(now + 123 * 3600000)
+  assert.equal(observeAgencyReply('不用催了', { now: now + 122 * 3600000 + 60000, sessionId: 's1' }).changed, true)
+  const declined = readAgency(now + 122 * 3600000 + 60000)
   assert.equal(declined.outreach[focus.sourceKey].status, 'declined')
   assert.equal(agencyShareCandidates(focus, { now: now + 124 * 3600000, date: '2026-11-21', state: declined }).length, 0)
 }))
@@ -172,7 +176,7 @@ test('a human reply clears a pending follow-up without claiming delivery receipt
   const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
   const [candidate] = agencyShareCandidates(focus, { now, date: '2026-11-17' })
   markAgencyOutreach(candidate, { now, sessionId: 's1' })
-  observeAgencyReply('知道了，晚点弄', { now: now + 60000, sessionId: 's1' })
+  observeAgencyReply('取快递还没弄，晚点去', { now: now + 60000, sessionId: 's1' })
   const state = readAgency(now + 60000)
   assert.equal(state.outreach[focus.sourceKey].status, 'responded')
   assert.equal(agencyShareCandidates(focus, { now: now + 2 * 60000, date: '2026-11-17', state }).length, 0)
@@ -292,7 +296,7 @@ test('reply association only affects the same session and a recent pending item'
   assert.equal(readAgency(now + 1000).outreach[t2.sourceKey].status, 'awaiting')
   observeAgencyReply('算了我问另一个问题', { now: now + 2000, sessionId: 's1' })
   const after = readAgency(now + 2000)
-  assert.equal(after.outreach[t1.sourceKey].status, 'responded')
+  assert.equal(after.outreach[t1.sourceKey].status, 'awaiting')
   assert.equal(after.outreach[t2.sourceKey].status, 'awaiting')
   observeAgencyReply('别催了', { now: now + 3000, sessionId: 's2' })
   assert.equal(readAgency(now + 3000).outreach[t2.sourceKey].status, 'declined')
@@ -312,10 +316,14 @@ test('low-priority interests become reachable after a quiet period but never go 
   assert.equal(result.focus.sourceType, 'interest')
   assert.ok(result.state.explored['mind:preference:p1'] > 0)
   assert.equal(agencyShareCandidates(result.focus, { now, date: '2026-11-17' }).length, 0)
-  assert.equal(tickAgency({ now: now + 60000, continuity: defaultContinuity(now), mind: { goals: [], preferences: [pref] }, vitality: { energy: 80 }, affect: { valence: 60 } }).changed, false)
+  const reviewed = tickAgency({ now: now + 60000, continuity: defaultContinuity(now), mind: { goals: [], preferences: [pref] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  assert.equal(reviewed.changed, true)
+  assert.equal(reviewed.focus, null)
+  assert.ok(readAgency(now + 60000).executions.some((x) => x.action === 'review' && x.sourceKey === 'mind:preference:p1'))
+  assert.equal(readAgency(now + 60000).recent.some((x) => x.sourceKey === 'mind:preference:p1' && x.status === 'reviewed'), true)
 }))
 
-test('TTL and source timestamps are stable across ticks and expire from real time', () => {
+test('source timestamps are stable and persistent needs follow state, not elapsed time', () => {
   const c = defaultContinuity(now)
   c.needs.energy = 30
   c.needs.updatedAt = now - 2 * 3600000
@@ -327,7 +335,7 @@ test('TTL and source timestamps are stable across ticks and expire from real tim
   const ea = a.find((x) => x.sourceKey === 'needs:energy')
   const eb = b.find((x) => x.sourceKey === 'needs:energy')
   assert.equal(ea.sourceUpdatedAt, c.needs.updatedAt)
-  assert.equal(ea.expiresAt, c.needs.updatedAt + 12 * 3600000)
+  assert.equal(ea.expiresAt, 0)
   assert.equal(eb.sourceUpdatedAt, ea.sourceUpdatedAt)
   assert.equal(eb.expiresAt, ea.expiresAt)
   const pa = a.find((x) => x.sourceKey === 'mind:preference:p1')
@@ -336,8 +344,12 @@ test('TTL and source timestamps are stable across ticks and expire from real tim
   assert.equal(pa.expiresAt, pref.updatedAt + 7 * 86400000)
   assert.equal(pb.expiresAt, pa.expiresAt)
   assert.equal(a.some((x) => x.sourceKey === 'relationship:r1'), false)
-  const expired = buildAgencyCandidates({ now: c.needs.updatedAt + 13 * 3600000, continuity: c, mind: { goals: [], preferences: [pref] }, vitality: { energy: 30 }, affect: { valence: 60 } })
-  assert.equal(expired.some((x) => x.sourceKey === 'needs:energy'), false)
+  const persistent = buildAgencyCandidates({ now: c.needs.updatedAt + 24 * 3600000, continuity: c, mind: { goals: [], preferences: [pref] }, vitality: { energy: 30 }, affect: { valence: 60 } })
+  assert.ok(persistent.some((x) => x.sourceKey === 'needs:energy'))
+  const recovered = buildAgencyCandidates({ now: c.needs.updatedAt + 25 * 3600000, continuity: { ...c, needs: { ...c.needs, energy: 75, updatedAt: c.needs.updatedAt + 25 * 3600000 } }, mind: { goals: [], preferences: [pref] }, vitality: { energy: 75 }, affect: { valence: 60 } })
+  assert.equal(recovered.some((x) => x.sourceKey === 'needs:energy'), false)
+  const droppedAgain = buildAgencyCandidates({ now: c.needs.updatedAt + 26 * 3600000, continuity: { ...c, needs: { ...c.needs, energy: 30, updatedAt: c.needs.updatedAt + 26 * 3600000 } }, mind: { goals: [], preferences: [pref] }, vitality: { energy: 30 }, affect: { valence: 60 } })
+  assert.equal(droppedAgain.find((x) => x.sourceKey === 'needs:energy').sourceUpdatedAt, c.needs.updatedAt + 26 * 3600000)
 })
 
 test('a deferred source cannot preempt before its window or due to time alone', () => withHome(() => {
@@ -370,10 +382,22 @@ test('sharing ledger rows reconcile a missing outreach exactly once', () => with
   assert.equal(readAgency(now + 1000).outreach['continuity:task:t1'].lastAt, now)
 }))
 
-test('runAgencyCycle advances internal state without any sharing dependency', () => withHome(() => {
-  const result = runAgencyCycle({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })
+test('the injectable internal runner advances state while sharing is disabled', () => withHome(() => {
+  const result = runInternalAgencyRunner({
+    now,
+    readConfig: () => ({ 主动分享: { 启用: false }, 时区: 'Asia/Shanghai' }),
+    readContinuity: () => continuity(),
+    readMind: () => mind(),
+    readAffect: () => ({ valence: 60 }),
+    readEvents: () => [],
+    readSharing,
+  })
+  assert.equal(result.ok, true)
   assert.ok(result.focus)
   assert.ok(readAgency(now).focus)
+  assert.equal(readAgency(now).focus.sourceKey, 'continuity:task:t1')
+  const runnerSource = readFileSync(new URL('../agency-runner.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(runnerSource, /\.followup\s*\(/)
 }))
 
 
@@ -389,7 +413,7 @@ test('persistent low energy does not reopen an abandoned need through time alone
   assert.equal(readAgency(now + 7200000).abandoned.some((x) => x.sourceKey === 'needs:energy'), true)
 }))
 
-test('a reassuring phrase does not count as refusal, and candidate work stays bounded', () => {
+test('a reassuring phrase is not treated as an association, and candidate work stays bounded', () => {
   const prefs = Array.from({ length: 80 }, (_, i) => ({ id: `p${i}`, owner: 'self', key: `兴趣${i}`, value: '随便看看', status: 'active', updatedAt: now - 1000 }))
   const candidates = buildAgencyCandidates({ now, continuity: defaultContinuity(now), mind: { goals: [], preferences: prefs }, vitality: { energy: 80 }, affect: { valence: 60 } })
   assert.ok(candidates.length <= 40)
@@ -397,6 +421,43 @@ test('a reassuring phrase does not count as refusal, and candidate work stays bo
     const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
     markAgencyOutreach(agencyShareCandidates(focus, { now, date: '2026-11-17' })[0], { now, sessionId: 's1' })
     observeAgencyReply('不用担心，我自己来', { now: now + 1, sessionId: 's1' })
-    assert.equal(readAgency(now + 1).outreach[focus.sourceKey].status, 'responded')
+    assert.equal(readAgency(now + 1).outreach[focus.sourceKey].status, 'awaiting')
   })
 })
+
+
+test('production inbox payload has no implicit reply reference, only explicit fields are used', () => {
+  assert.equal(inboxReplyReference({ agent: {}, message: { id: 'm1', content: [] } }), '')
+  assert.equal(inboxReplyReference({ message: { replyTo: 'share-1' } }), 'share-1')
+  assert.equal(inboxReplyReference({ message: { source: { parentId: 'share-2' } } }), 'share-2')
+})
+
+test('a short refusal with sibling pending items does not guess which one', () => withHome(() => {
+  const c = continuity({
+    tasks: [
+      { id: 't1', title: '取快递', status: 'open', dueAt: now + 3600000, updatedAt: now - 1000 },
+      { id: 't2', title: '回邮件', status: 'open', dueAt: now + 7200000, updatedAt: now - 1000 },
+    ],
+  })
+  const candidates = buildAgencyCandidates({ now, continuity: c, mind: { goals: [] }, vitality: { energy: 80 }, affect: { valence: 60 } })
+  for (const x of candidates) markAgencyOutreach(agencyShareCandidates(x, { now, date: '2026-11-17' })[0], { now, sessionId: 's1' })
+  assert.equal(observeAgencyReply('别催了', { now: now + 60000, sessionId: 's1' }).changed, false)
+  const state = readAgency(now + 60000)
+  assert.equal(state.outreach[candidates[0].sourceKey].status, 'awaiting')
+  assert.equal(state.outreach[candidates[1].sourceKey].status, 'awaiting')
+}))
+
+test('two ledger interruptions do not invent a newer source fact', () => withHome(() => {
+  const rows = [
+    { kind: 'followup', sourceKey: 'continuity:task:t1', stageKey: 'stage-0', sessionId: 's1', title: '取快递', at: now, sourceUpdatedAt: 0 },
+    { kind: 'followup', sourceKey: 'continuity:task:t1', stageKey: 'stage-1', sessionId: 's1', title: '取快递', at: now + 1000, sourceUpdatedAt: 0 },
+  ]
+  const result = tickAgency({ now: now + 1000, continuity: defaultContinuity(now), mind: { goals: [] }, vitality: { energy: 80 }, affect: { valence: 60 }, sharingRecent: rows })
+  const row = readAgency(now + 1000).outreach['continuity:task:t1']
+  assert.equal(row.count, 2)
+  assert.equal(row.lastSourceUpdatedAt, 0)
+  const focus = { ...buildAgencyCandidates({ now: now + 1000, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0], sourceUpdatedAt: 0 }
+  assert.equal(agencyShareCandidates(focus, { now: now + 49 * 3600000, date: '2026-11-19', state: result.state }).length, 0)
+  const fresh = { ...focus, sourceUpdatedAt: 1 }
+  assert.equal(agencyShareCandidates(fresh, { now: now + 49 * 3600000, date: '2026-11-19', state: result.state }).length, 1)
+}))

@@ -27,6 +27,29 @@ const clamp = (n, a, b, fallback = 0) => {
 const text = (value, max = 160) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, max)
 const negativeReply = /(别催|不用催|别再提|不想提|别问|别管|没兴趣)/
 const sensitiveText = /密码|口令|验证码|私钥|助记词|api[ _-]?key|access[ _-]?token|secret|身份证|银行卡|信用卡/i
+const stopTopic = new Set(['事情', '这个', '那个', '一下', '最近', '自己', '问题', '东西', '时候', '还是', '可以'])
+
+/** Pull a reply reference only if the host payload actually exposes one. */
+export function inboxReplyReference(payload) {
+  const message = payload?.message || payload?.data?.message || payload?.data?.item || payload || {}
+  return text(message.replyTo || message.reply_to || message.parentId || message.parent_id || message.source?.replyTo || message.source?.parentId || payload?.replyTo || '', 180)
+}
+
+function topicMatches(body, row) {
+  const haystack = String(body || '').replace(/\s+/g, '')
+  if (!haystack) return false
+  const topic = text(row?.topic, 160)
+  if (topic && topic.length >= 2) {
+    if (haystack.includes(topic)) return true
+    const parts = topic.split(/[，。！？、；：,.!?;:\s/|]+/).filter((x) => x.length >= 2 && !stopTopic.has(x))
+    if (parts.some((x) => haystack.includes(x))) return true
+  }
+  // A source key is not user-facing, but its last meaningful segment can be
+  // an explicit referent in Chinese (e.g. task title already in topic).
+  const source = text(row?.lastStage, 180)
+  if (source && haystack.includes(source)) return true
+  return false
+}
 
 export function defaultAgency(now = Date.now()) {
   return {
@@ -211,6 +234,12 @@ function stepsFor(entity, type) {
       { label: entity.nextStep ? `下一步：${text(entity.nextStep, 120)}` : '等待真实进展', kind: 'wait', status: 'pending', evidence: '' },
     ]
   }
+  if (type === 'interest' || type === 'relationship') {
+    return [
+      { label: `想一想：${text(entity.title, 100)}`, kind: 'review', status: 'active', evidence: '' },
+      { label: '放回心里，不急着说', kind: 'wait', status: 'pending', evidence: '' },
+    ]
+  }
   return [
     { label: '等待合适时机', kind: 'wait', status: 'active', evidence: '' },
     { label: '完成后再确认', kind: 'confirm', status: 'pending', evidence: '' },
@@ -273,7 +302,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     out.push({
       id: 'agc-need-energy', sourceKey: 'needs:energy', sourceId: 'energy', sourceType: 'rest',
       title: '给自己留点空隙', detail: '精力偏低', nextStep: '先休息一下，别硬撑',
-      dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt, expiresAt: needAt ? needAt + 12 * 3600000 : 0,
+      dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt, expiresAt: 0,
       priority: 55, score: 56, cost: 1, risk: 0,
       steps: [{ label: '先休息一下，别硬撑', kind: 'rest', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '精力偏低',
@@ -283,7 +312,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
     out.push({
       id: 'agc-need-mood', sourceKey: 'needs:mood', sourceId: 'mood', sourceType: 'rest',
       title: '缓一缓', detail: '情绪偏低', nextStep: '不急着处理所有事',
-      dueAt: 0, dueLabel: '', sourceUpdatedAt: affectAt, expiresAt: affectAt ? affectAt + 12 * 3600000 : 0,
+      dueAt: 0, dueLabel: '', sourceUpdatedAt: affectAt, expiresAt: 0,
       priority: 50, score: 50, cost: 1, risk: 0,
       steps: [{ label: '不急着处理所有事', kind: 'rest', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '情绪偏低',
@@ -294,7 +323,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       id: 'agc-need-stress', sourceKey: 'needs:stress', sourceId: 'stress', sourceType: 'rest',
       title: '松一口气', detail: '压力偏高', nextStep: '先把手头的事放一放',
       dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt,
-      expiresAt: needAt ? needAt + 6 * 3600000 : 0, priority: 45, score: 48, cost: 1, risk: 0,
+      expiresAt: 0, priority: 45, score: 48, cost: 1, risk: 0,
       steps: [{ label: '先把手头的事放一放', kind: 'rest', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '压力偏高',
     })
@@ -304,7 +333,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       id: 'agc-need-social', sourceKey: 'needs:social', sourceId: 'social', sourceType: 'relationship',
       title: '想找人说说话', detail: '社交需求偏高', nextStep: '找合适的时机和人聊两句',
       dueAt: 0, dueLabel: '', sourceUpdatedAt: needAt,
-      expiresAt: needAt ? needAt + 6 * 3600000 : 0, priority: 45, score: 45, cost: 2, risk: 0,
+      expiresAt: 0, priority: 45, score: 45, cost: 2, risk: 0,
       steps: [{ label: '等一个不打扰人的时机', kind: 'wait', status: 'active', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '社交需求偏高',
     })
@@ -331,7 +360,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       title: `想起${text(person.name, 40)}: ${text(person.notes, 100)}`, detail: '最近记录的关系',
       nextStep: '', dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(person.updatedAt) || 0,
       expiresAt: Number(person.updatedAt) ? Number(person.updatedAt) + 3 * 86400000 : 0, priority: 35, score: 42, cost: 1, risk: 0,
-      steps: [{ label: '等自然的话题出现', kind: 'wait', status: 'active', evidence: '' }],
+      steps: [{ label: `想一想：${text(person.name, 40)}`, kind: 'review', status: 'active', evidence: '' }, { label: '等自然的话题出现', kind: 'wait', status: 'pending', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '最近记录的关系',
     })
   }
@@ -346,7 +375,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       title: `想${text(pref.key, 60)}：${text(pref.value, 100)}`, detail: '自己的偏好',
       nextStep: '', dueAt: 0, dueLabel: '', sourceUpdatedAt: Number(pref.updatedAt) || 0,
       expiresAt: Number(pref.updatedAt) ? Number(pref.updatedAt) + 7 * 86400000 : 0, priority: 40, score: 40, cost: 1, risk: 0,
-      steps: [{ label: '留到合适的空闲再说', kind: 'wait', status: 'active', evidence: '' }],
+      steps: [{ label: `想一想：${text(pref.key, 60)}`, kind: 'review', status: 'active', evidence: '' }, { label: '放回心里，不急着说', kind: 'wait', status: 'pending', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '自己的偏好',
     })
   }
@@ -361,7 +390,7 @@ export function buildAgencyCandidates({ now = Date.now(), continuity, mind, vita
       sourceKey: `event:${event.id}`, sourceId: text(event.id, 120), sourceType: 'interest',
       title: `想起：${summary}`, detail: '最近落盘的经历', nextStep: '', dueAt: 0, dueLabel: '',
       sourceUpdatedAt: at, expiresAt: at + 24 * 3600000, priority: 35, score: 38, cost: 1, risk: 0,
-      steps: [{ label: '只是想一想，不急着说', kind: 'wait', status: 'active', evidence: '' }],
+      steps: [{ label: '想一想这段经历', kind: 'review', status: 'active', evidence: '' }, { label: '只是想一想，不急着说', kind: 'wait', status: 'pending', evidence: '' }],
       stepIndex: 0, progress: 0, reason: '近期经历',
     })
   }
@@ -398,7 +427,7 @@ function advanceProgress(steps, evidence, now) {
 }
 
 function executeReview(state, focus, now) {
-  if (!focus || !['goal', 'thread'].includes(focus.sourceType)) return false
+  if (!focus || !['goal', 'thread', 'interest', 'relationship'].includes(focus.sourceType)) return false
   if (focus.lastReviewAt && now - focus.lastReviewAt < AGENCY_LIMITS.reviewIntervalMs) return false
   const index = focus.steps.findIndex((x) => x.kind === 'review' && x.status !== 'done')
   if (index < 0) return false
@@ -527,7 +556,7 @@ function reconcileSharingOutreach(state, rows, now) {
       count: Math.max(1, Number(previous?.count) || 0) + (previous ? 1 : 0),
       status: 'awaiting',
       lastStage: stageKey,
-      lastSourceUpdatedAt: Math.max(0, Number(previous?.lastSourceUpdatedAt) || 0),
+      lastSourceUpdatedAt: Math.max(0, Number(previous?.lastSourceUpdatedAt) || 0, Number(row?.sourceUpdatedAt) || 0),
       nextAt: 0,
       sessionId: text(row?.sessionId, 120),
       topic: text(row?.title, 160),
@@ -607,9 +636,19 @@ export function tickAgency(input = {}) {
       }
     }
 
-    if (focus && executeReview(state, focus, now)) changed = true
+    let lowReviewed = false
+    if (focus && executeReview(state, focus, now)) {
+      changed = true
+      if (['interest', 'relationship'].includes(focus.sourceType)) {
+        state.recent.push({ at: now, sourceKey: focus.sourceKey, title: focus.title, status: 'reviewed' })
+        state.recent = state.recent.slice(-AGENCY_LIMITS.recent)
+        state.explored[focus.sourceKey] = now
+        focus = null
+        lowReviewed = true
+      }
+    }
 
-    if (!focus) {
+    if (!focus && !lowReviewed) {
       const available = candidates.filter((c) => candidateAvailable(c, state, deferred, now))
       let best = available.find((c) => c.score >= 50)
       if (!best) {
@@ -749,19 +788,33 @@ export function observeAgencyReply(value, options = {}) {
   const sessionId = text(options.sessionId, 120)
   const replyTo = text(options.replyTo, 180)
   const body = text(value, 400)
-  // Without a session there is no verifiable association. A generic message
-  // must not mark every pending follow-up as answered.
   if (!sessionId) return { ok: false, changed: false, reason: 'no-session' }
   const result = withLock(agencyPath() + '.lock', () => {
     const state = readAgency(now)
-    const candidates = Object.values(state.outreach)
+    const rows = Object.values(state.outreach)
       .filter((row) => row.sessionId === sessionId)
       .filter((row) => row.status === 'awaiting' || row.status === 'ignored')
       .filter((row) => now - row.lastAt <= AGENCY_LIMITS.followupWaitMs)
-      .filter((row) => !replyTo || row.lastStage === replyTo || row.topic === replyTo)
       .sort((a, b) => b.lastAt - a.lastAt)
-    const row = candidates[0]
-    if (!row) return { ok: true, changed: false, reason: 'unassociated' }
+    let row = null
+    if (replyTo) {
+      // Explicit reference is the only reliable association.
+      row = rows.find((x) => x.lastStage === replyTo || x.topic === replyTo) || null
+      if (!row) return { ok: true, changed: false, reason: 'unassociated' }
+    } else {
+      // Otherwise require the text itself to point at the topic. An arbitrary
+      // same-session message is not evidence that the pending item was answered.
+      row = rows.find((x) => topicMatches(body, x)) || null
+      if (!row) {
+        // A short, strong refusal immediately after a single pending item can
+        // be treated as a refusal of that only item. It never touches siblings.
+        if (negativeReply.test(body)) {
+          const recent = rows.filter((x) => now - x.lastAt <= 10 * 60000)
+          if (recent.length === 1) row = recent[0]
+        }
+        if (!row) return { ok: true, changed: false, reason: 'unassociated' }
+      }
+    }
     if (negativeReply.test(body)) {
       row.status = 'declined'
       row.nextAt = now
@@ -771,7 +824,7 @@ export function observeAgencyReply(value, options = {}) {
     }
     state.updatedAt = now
     writeAgency(state, now)
-    return { ok: true, changed: true }
+    return { ok: true, changed: true, sourceKey: row.lastStage || row.topic || '' }
   }, { staleMs: 5000 })
   return result || { ok: false, reason: 'locked' }
 }

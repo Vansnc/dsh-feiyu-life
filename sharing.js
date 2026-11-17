@@ -87,6 +87,7 @@ export function normalizeSharingLedger(raw, now = Date.now()) {
         title: text(raw.pending.title, 80),
         sourceKey: text(raw.pending.sourceKey, 160),
         sessionId: text(raw.pending.sessionId, 120),
+        sourceUpdatedAt: Math.max(0, Number(raw.pending.sourceUpdatedAt) || 0),
         facts: Array.isArray(raw.pending.facts) ? raw.pending.facts.map((x) => text(x, 160)).filter(Boolean).slice(0, 4) : [],
         tone: text(raw.pending.tone, 40),
         score: Math.round(clamp(raw.pending.score, 0, 100, 0)),
@@ -120,6 +121,7 @@ export function normalizeSharingLedger(raw, now = Date.now()) {
         title: text(row.title, 80),
         sourceKey: text(row.sourceKey, 160),
         sessionId: text(row.sessionId, 120),
+        sourceUpdatedAt: Math.max(0, Number(row.sourceUpdatedAt) || 0),
         at: Math.max(0, Number(row.at) || 0),
         followup: row.followup === true,
       }]
@@ -424,7 +426,8 @@ export function commitShare(claimId, options = {}) {
     ledger.recent = [...(ledger.recent || []), {
       eventId: pending.eventId, stageKey: pending.stageKey, kind: pending.kind,
       category: pending.category, title: pending.title, sourceKey: pending.sourceKey,
-      sessionId: pending.sessionId, at: now, followup: pending.followup === true,
+      sessionId: pending.sessionId, sourceUpdatedAt: pending.sourceUpdatedAt,
+      at: now, followup: pending.followup === true,
     }].slice(-SHARING_LIMITS.recent)
     ledger.pending = null
     ledger.updatedAt = now

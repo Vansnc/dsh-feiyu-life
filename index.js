@@ -34,7 +34,8 @@ import {
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
 import { cleanupMoments, momentSummary } from './moments.js'
-import { agencyContext, agencyShareCandidates, markAgencyOutreach, observeAgencyReply, readAgency, tickAgency } from './agency.js'
+import { agencyContext, agencyShareCandidates, inboxReplyReference, markAgencyOutreach, observeAgencyReply, readAgency } from './agency.js'
+import { runInternalAgencyRunner } from './agency-runner.js'
 import {
   buildCandidates, buildSharePrompt, commitShare, normalizeSharingConfig, readSharing, releaseShare, sharingStatus, takeShare,
 } from './sharing.js'
@@ -137,9 +138,6 @@ const clockOf = (minute) => {
   const v = ((Math.round(minute) % 1440) + 1440) % 1440
   return `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`
 }
-
-/** Testable, side-effect-free internal cycle; outbound sharing is not involved. */
-export function runAgencyCycle(input) { return tickAgency(input) }
 
 export function apply(ctx) {
   const mounted = new Map()
@@ -246,7 +244,7 @@ export function apply(ctx) {
         if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
           lastHumanAt.set(agent.id, Date.now())
           lastHumanText.set(agent.id, String(value).slice(0, 400))
-          try { observeAgencyReply(value, { now: Date.now(), sessionId: agent.id }) } catch {}
+          try { observeAgencyReply(value, { now: Date.now(), sessionId: agent.id, replyTo: inboxReplyReference(payload) }) } catch {}
         }
       })
       if (typeof off === 'function') offs.push(off)
@@ -538,25 +536,9 @@ export function apply(ctx) {
   const runInternalAgency = (now = Date.now()) => {
     if (now - lastInternalAgencyAt < 60000) return { ok: true, reason: 'interval' }
     lastInternalAgencyAt = now
-    try {
-      const cfg = readConfig()
-      const continuity = readContinuity(now)
-      const mind = readMind(cfg.人格 || {}, now)
-      const affect = readAffect(cfg.内在, now)
-      const events = readEvents({ timeZone: cfg.时区, now, limit: 8 }).concat(
-        (Array.isArray(continuity.recentChanges) ? continuity.recentChanges : []).slice(-6).map((x, i) => ({
-          id: `life-${Number(x.at) || 0}-${i}`, at: x.at, summary: x.reason, source: x.source,
-        }))
-      )
-      const result = runAgencyCycle({
-        now, timeZone: cfg.时区, continuity, mind, affect, events,
-        sharingRecent: readSharing(now).recent,
-        vitality: { energy: continuity.needs?.energy },
-      })
-      return { ok: true, focus: result.focus?.sourceKey || '', changed: result.changed === true }
-    } catch (e) {
-      return { ok: false, reason: String(e?.message || e).slice(0, 120) }
-    }
+    return runInternalAgencyRunner({
+      now, readConfig, readContinuity, readMind, readAffect, readEvents, readSharing,
+    })
   }
 
   const tick = () => {
