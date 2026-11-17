@@ -1,11 +1,11 @@
-# life.js dependency inventory (phase 4)
+# src/life/life.js dependency inventory (phase 4)
 
-Read-only audit of the current `life.js` (829 lines). This is the migration map, not a claim that every boundary is already safe to move.
+Read-only audit of the current `src/life/life.js` (829 lines). This is the migration map, not a claim that every boundary is already safe to move.
 
 ## Imports
 
 ```text
-life.js
+src/life/life.js
 ├── plan.js        dayType, dailyPlan, readPlan, normalizeRoutine, normalizeWardrobe, timelineCoverage
 ├── state.js       readFacts, buildTimeline, segmentAt, recentSegments
 ├── world.js       addWorldToTimeline, buildReplayFrames, defaultWorldConfig, normalizeWorldConfig, worldStateAt
@@ -42,7 +42,7 @@ Moved to `src/life/time.js` in phase 1:
 - `todayCalendar`, `todayDeviation`, `menstrualDay`, `coldEpisode`
 - `lastNightSleep`, `spokenClock`, `minuteLabel`, `pad2`, `hashSeed`, `rng`, `dayDiff`, `shiftDay`, `inRange`
 
-Callers: `life.js` generate/config validation, tests. Dependency direction is one-way (`life -> time -> plan`).
+Callers: `src/life/life.js` generate/config validation, tests. Dependency direction is one-way (`life -> time -> plan`).
 
 ### Generation / timeline
 
@@ -71,10 +71,10 @@ Callers: `life.js` generate/config validation, tests. Dependency direction is on
 
 ### Config data ownership
 
-`life.js` remains the sole owner of config read/write in this phase. `src/life/config.js` was intentionally not created: doing so now would require copying defaults or moving interleaved migration/normalization code, creating a duplicate source of truth. The contract tests lock defaults, versions, migration, issue reporting, paths and atomic read/save/replace before any later move.
+`src/life/life.js` remains the sole owner of config read/write in this phase. `src/life/config.js` was intentionally not created: doing so now would require copying defaults or moving interleaved migration/normalization code, creating a duplicate source of truth. The contract tests lock defaults, versions, migration, issue reporting, paths and atomic read/save/replace before any later move.
 
 ## Next safe migration order
 
 1. Extract pure config schema/validation functions only, with `defaultConfig` as the single imported source.
 2. Extract `generate` context/view only after `src/life/context.js` covers all consumers.
-3. Keep read/write in `life.js` until injected path/storage interfaces and migration parity are tested.
+3. Keep read/write in `src/life/life.js` until injected path/storage interfaces and migration parity are tested.

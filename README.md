@@ -62,9 +62,23 @@ npm test
 - [配置参考与迁移](docs/CONFIGURATION.md)
 - [安装、升级、备份、发布与故障排查](docs/OPERATIONS.md)
 - [设计原则与关键决策](docs/DESIGN.md)
-- [life.js 依赖盘点](docs/LIFE_DEPENDENCY_INVENTORY.md)
+- [life 依赖盘点](docs/LIFE_DEPENDENCY_INVENTORY.md)
 - [贡献指南](CONTRIBUTING.md)
 - [更新记录](CHANGELOG.md)
+
+## 仓库结构
+
+根目录只有 `index.js`、`client.js` 和项目文件；内部实现与 UI 源码都在 `src/`。
+
+- `index.js`：DSH 入口，re-export `src/plugin/app.js`
+- `client.js`：由 `src/ui/client.js` 生成，不要手改
+- `src/plugin/`：装配、工具、路由、生命周期
+- `src/life/`：生活、日程、状态、世界、连续性
+- `src/cognition/`：人格、反思、内在议程
+- `src/proactive/`：主动分享
+- `src/media/`：图片与快照
+- `src/persistence/`、`src/infrastructure/`：存储与运行时
+- `src/ui/`：浏览器 UI 权威源码
 
 ## 开发
 
