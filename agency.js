@@ -829,4 +829,13 @@ export function observeAgencyReply(value, options = {}) {
   return result || { ok: false, reason: 'locked' }
 }
 
+/** Production inbox adapter: only exposes a reply reference when payload has one. */
+export function handleAgencyInboxReply(value, payload, sessionId, options = {}) {
+  return observeAgencyReply(value, {
+    ...options,
+    sessionId,
+    replyTo: inboxReplyReference(payload),
+  })
+}
+
 export function agencyStatus(now = Date.now()) { return readAgency(now) }

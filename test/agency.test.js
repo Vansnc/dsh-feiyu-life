@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process'
 import { defaultContinuity } from '../continuity.js'
 import {
   AGENCY_VERSION, agencyContext, agencyPath, agencyShareCandidates, buildAgencyCandidates,
-  defaultAgency, inboxReplyReference, markAgencyOutreach, normalizeAgency, observeAgencyReply, readAgency, tickAgency, writeAgency,
+  defaultAgency, handleAgencyInboxReply, inboxReplyReference, markAgencyOutreach, normalizeAgency, observeAgencyReply, readAgency, tickAgency, writeAgency,
 } from '../agency.js'
 import { buildSharePrompt } from '../sharing.js'
 import { runInternalAgencyRunner } from '../agency-runner.js'
@@ -460,4 +460,16 @@ test('two ledger interruptions do not invent a newer source fact', () => withHom
   assert.equal(agencyShareCandidates(focus, { now: now + 49 * 3600000, date: '2026-11-19', state: result.state }).length, 0)
   const fresh = { ...focus, sourceUpdatedAt: 1 }
   assert.equal(agencyShareCandidates(fresh, { now: now + 49 * 3600000, date: '2026-11-19', state: result.state }).length, 1)
+}))
+
+
+test('production inbox adapter does not infer an association from the payload', () => withHome(() => {
+  const focus = buildAgencyCandidates({ now, continuity: continuity(), mind: mind(), vitality: { energy: 80 }, affect: { valence: 60 } })[0]
+  markAgencyOutreach(agencyShareCandidates(focus, { now, date: '2026-11-17' })[0], { now, sessionId: 's1' })
+  const ordinary = handleAgencyInboxReply('算了我问另一个问题', { agent: {}, message: { id: 'm1', content: [] } }, 's1', { now: now + 1 })
+  assert.equal(ordinary.changed, false)
+  assert.equal(readAgency(now + 1).outreach[focus.sourceKey].status, 'awaiting')
+  const referenced = handleAgencyInboxReply('好', { agent: {}, message: { id: 'm2', replyTo: 'agency:continuity:task:t1:0' } }, 's1', { now: now + 2 })
+  assert.equal(referenced.changed, true)
+  assert.equal(readAgency(now + 2).outreach[focus.sourceKey].status, 'responded')
 }))

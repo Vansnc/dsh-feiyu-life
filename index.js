@@ -34,7 +34,7 @@ import {
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from './state.js'
 import { writeDayWithModel } from './gen.js'
 import { cleanupMoments, momentSummary } from './moments.js'
-import { agencyContext, agencyShareCandidates, inboxReplyReference, markAgencyOutreach, observeAgencyReply, readAgency } from './agency.js'
+import { agencyContext, agencyShareCandidates, handleAgencyInboxReply, markAgencyOutreach, observeAgencyReply, readAgency } from './agency.js'
 import { runInternalAgencyRunner } from './agency-runner.js'
 import {
   buildCandidates, buildSharePrompt, commitShare, normalizeSharingConfig, readSharing, releaseShare, sharingStatus, takeShare,
@@ -244,7 +244,7 @@ export function apply(ctx) {
         if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
           lastHumanAt.set(agent.id, Date.now())
           lastHumanText.set(agent.id, String(value).slice(0, 400))
-          try { observeAgencyReply(value, { now: Date.now(), sessionId: agent.id, replyTo: inboxReplyReference(payload) }) } catch {}
+          try { handleAgencyInboxReply(value, payload, agent.id, { now: Date.now() }) } catch {}
         }
       })
       if (typeof off === 'function') offs.push(off)
