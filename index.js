@@ -74,65 +74,8 @@ const XUEYUAN_MAP_FILES = new Map(['base', 'anime', 'buildings'].map((layer) => 
   new URL(`./assets/maps/xueyuan-${layer}.svg`, import.meta.url),
 ]))
 
-/** Body/state hint passed to the model when writing a day. */
-function bodyHint(cfg, t, deviation = {}) {
-  const detour = deviation.flat ? '今天想躺平，基本不出门'
-    : deviation.outing ? '今天临时想出门走走'
-      : deviation.skipAfternoon ? '今天不想去下午的课' : ''
-  const d = menstrualDay(cfg, t.ymd)
-  const cold = coldEpisode(cfg, t.ymd)
-  const body = d && d <= 3 ? '经期头几天，腰酸、想吃甜的、没力气'
-    : d ? '经期后段，肚子还坠着'
-      : cold ? (cold.day === 1 ? '有点感冒，嗓子发紧、没力气' : '感冒还没好，鼻子有点堵')
-        : ''
-  return [body, detour].filter(Boolean).join('；')
-}
-
-/** Last three days' plans, so the model does not repeat the same beats. */
-function recentSummary(cfg, t) {
-  const lines = []
-  for (let i = 1; i <= 3; i++) {
-    const d = new Date(Date.parse(t.ymd + 'T00:00:00Z') - i * 86400000).toISOString().slice(0, 10)
-    try {
-      const plan = readPlan(d)
-      if (!plan) continue
-      const title = plan.title || (plan.type && plan.type.name) || ''
-      const items = plan.items || []
-      const head = items.slice(0, 3).map((x) => x.what ?? x.在).filter(Boolean).join('、')
-      const tail = items.slice(-2).map((x) => x.what ?? x.在).filter(Boolean).join('、')
-      const small = momentSummary(d)
-      const bits = [head ? head + '…' : '', tail ? '后段：' + tail : '', small.length ? '小事：' + small.join('、') : ''].filter(Boolean).join('；')
-      lines.push(`- ${d}：${title}${bits ? '（' + bits + '）' : ''}`)
-    } catch {}
-  }
-  return lines.join('\n')
-}
-
-function selfHint(cfg, now = Date.now()) {
-  const mind = readMind(cfg.人格 || {}, now)
-  const goals = (Array.isArray(mind.goals) ? mind.goals : [])
-    .filter((x) => x.status === 'active')
-    .sort((a, b) => (Number(a.progress) || 0) - (Number(b.progress) || 0))
-    .slice(0, 3)
-    .map((x) => `${x.title}${x.nextStep ? `，下一步：${x.nextStep}` : ''}`)
-  const preferences = (Array.isArray(mind.preferences) ? mind.preferences : [])
-    .filter((x) => x.status === 'active' && x.owner === 'self')
-    .slice(-3)
-    .map((x) => `${x.key}：${x.value}`)
-  const focus = readAgency(now).focus
-  return [
-    goals.length ? `- 自己的目标：${goals.join('；')}` : '',
-    preferences.length ? `- 自己的长期偏好：${preferences.join('；')}` : '',
-    agencyContext(focus) ? `- ${agencyContext(focus)}` : '',
-  ].filter(Boolean).join('\n')
-}
-
-function calendarLabel(calendar) {
-  if (calendar.special) return `特殊：${calendar.special.名}`
-  if (calendar.vacation) return `假期：${calendar.vacation.名}`
-  if (calendar.term) return `学期：${calendar.term.名}`
-  return '平时'
-}
+import { bodyHint, calendarLabel, recentSummary, selfHint } from './src/plugin/context-hints.js'
+import { createInitiativeRunner } from './src/plugin/initiative.js'
 
 const clockOf = (minute) => {
   const v = ((Math.round(minute) % 1440) + 1440) % 1440
@@ -555,106 +498,13 @@ export function apply(ctx) {
     try { runInternalAgency() } catch {}
   }
 
-  const runInitiative = async (forcedAgent = null, force = false) => {
-    const now = Date.now()
-    // Internal cognition is independent of outbound sharing. It is rate
-    // limited and never calls a model or sends a message.
-    try { runInternalAgency(now) } catch {}
-    const cfg = readConfig()
-    const sharingCfg = normalizeSharingConfig(cfg.主动分享)
-    const candidates = forcedAgent ? [forcedAgent] : sessions()
-    const results = []
-    for (const agent of candidates) {
-      if (!agent || initiativeRunning.has(agent.id)) { if (agent) results.push({ sessionId: agent.id, sent: false, reason: 'busy' }); continue }
-      const cwd = String(agent?.session?.cwd || '')
-      if (!inWorkspace(cfg, cwd)) { results.push({ sessionId: agent.id, sent: false, reason: 'outside-workspace' }); continue }
-      if (!sharingCfg.启用) { results.push({ sessionId: agent.id, sent: false, reason: 'disabled' }); continue }
-      const checked = sharingCheckedAt.get(agent.id) || 0
-      if (!force && now - checked < sharingCfg.检查间隔分钟 * 60000) { results.push({ sessionId: agent.id, sent: false, reason: 'check-interval' }); continue }
-      sharingCheckedAt.set(agent.id, now)
-      const continuity = readContinuity(now)
-      const life = generate(cfg, new Date(now), {
-        energyBaseline: cfg.连续性?.启用 === false ? undefined : continuity.needs.energy,
-        people: cfg.连续性?.启用 === false ? [] : activePeople(continuity).map((x) => x.name),
-      })
-      const current = life.current || {}
-      const ledger = readSharing(now)
-      const date = life.plan?.date || zonedNow(new Date(now), String(cfg.时区 || 'Asia/Shanghai')).ymd
-      const mind = readMind(cfg.人格 || {}, now)
-      const affect = readAffect(cfg.内在, now)
-      let agency = { focus: null, state: { focus: null, outreach: {} } }
-      try {
-        const state = readAgency(now)
-        agency = { state, focus: state.focus }
-      } catch {}
-      const candidateList = buildCandidates({
-        now,
-        nowMinute: Number(life.currentMinute) || 0,
-        date,
-        life,
-        ledger,
-        continuityChanges: Array.isArray(continuity.recentChanges) ? continuity.recentChanges : [],
-        recentText: lastHumanText.get(agent.id) || '',
-      }).concat(agencyShareCandidates(agency.focus, {
-        now, date, nowMinute: Number(life.currentMinute) || 0, state: agency.state, sessionId: agent.id,
-      }))
-      const decision = takeShare({
-        now,
-        timeZone: cfg.时区,
-        config: sharingCfg,
-        candidates: candidateList,
-        lastHumanAt: lastHumanAt.get(agent.id) || now,
-        phone: current.phone || '',
-        behavior: life.world?.behavior || current.behavior || '',
-        currentCategory: placeCategory(current),
-        what: current.what || '',
-        asleep: Boolean(life.vitality?.asleep),
-        agentBusy: agent.status !== undefined && agent.status !== 'idle',
-      })
-      if (!decision.ok) { results.push({ sessionId: agent.id, sent: false, reason: decision.reason || 'no-candidate' }); continue }
-      initiativeRunning.add(agent.id)
-      try {
-        const prompt = buildSharePrompt(decision.claim, { now, timeZone: cfg.时区 })
-        const message = {
-          role: 'user', id: eventId(['share-message', agent.id, now, decision.claim.eventId]),
-          content: [{ type: 'text', text: prompt }],
-          source: { kind: 'feiyu-life-share' },
-        }
-        // DSH's current followup(message) is a void inbox enqueue and exposes no
-        // model-reply receipt. Treat "accepted without throwing" as delivery;
-        // tolerate a future Promise-returning implementation without relying on it.
-        const accepted = agent.followup(message)
-        if (accepted && typeof accepted.then === 'function') await accepted
-        const committed = commitShare(decision.claim.claimId, { now: Date.now(), timeZone: cfg.时区 })
-        if (committed.ok && decision.claim.sourceKey) {
-          try { markAgencyOutreach(decision.claim, { now: Date.now(), sessionId: agent.id, topic: decision.claim.title }) } catch {}
-        }
-        appendEvent({
-          id: eventId(['sharing.sent', agent.id, decision.claim.eventId, now]), at: now, type: 'sharing.sent',
-          source: 'feiyu-life-sharing', status: committed.ok ? 'applied' : 'commit-failed',
-          reason: decision.claim.title || '生活分享', meta: {
-            eventId: decision.claim.eventId, stageKey: decision.claim.stageKey,
-            category: decision.claim.category, score: decision.claim.score,
-            followup: decision.claim.followup, claimId: decision.claim.claimId,
-          },
-        }, { timeZone: cfg.时区 })
-        results.push({
-          sessionId: agent.id, sent: true, reason: 'shared', eventId: decision.claim.eventId,
-          title: decision.claim.title, score: decision.claim.score, committed: committed.ok,
-          focus: agency.focus?.sourceKey || '',
-        })
-      } catch (e) {
-        const released = releaseShare(decision.claim.claimId, String(e?.message || e), { now: Date.now() })
-        appendEvent({
-          id: eventId(['sharing.failed', agent.id, decision.claim.eventId, now]), at: now, type: 'sharing.failed',
-          source: 'feiyu-life-sharing', status: 'failed', reason: String(e?.message || e).slice(0, 180),
-          meta: { eventId: decision.claim.eventId, stageKey: decision.claim.stageKey, released: released.ok },
-        }, { timeZone: cfg.时区 })
-        results.push({ sessionId: agent.id, sent: false, reason: 'followup-failed', eventId: decision.claim.eventId, error: String(e?.message || e).slice(0, 180) })
-      } finally { initiativeRunning.delete(agent.id) }
-    }
-    return results
-  }
+  const runInitiative = createInitiativeRunner({
+    readConfig, normalizeSharingConfig, sessions, inWorkspace, generate, readContinuity,
+    activePeople, readSharing, readMind, readAffect, readAgency, buildCandidates,
+    agencyShareCandidates, takeShare, buildSharePrompt, commitShare, releaseShare,
+    appendEvent, eventId, markAgencyOutreach, placeCategory, zonedNow,
+    lastHumanAt, lastHumanText, sharingCheckedAt, initiativeRunning, runInternalAgency,
+  })
 
   ctx.effect(() => ctx.interval(tick, 30000))
   try { ctx.effect(() => ctx.interval(() => { runInitiative().catch(() => {}) }, 5 * 60 * 1000)) } catch {}
