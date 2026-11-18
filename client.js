@@ -64,7 +64,7 @@
       const [savedConfig, setSavedConfig] = useState(null);
       const [message, setMessage] = useState("");
       const [busy, setBusy] = useState(false);
-      const [draft, setDraft] = useState({ type: "selfie" });
+      const [draft, setDraft] = useState({ type: "character" });
       const [result, setResult] = useState(null);
       const [models, setModels] = useState([]);
       const [modelNote, setModelNote] = useState("");
@@ -251,7 +251,7 @@
             h(Label, { label: "\u7C7B\u578B" }, h(
               "select",
               { value: draft.type, onChange: (e) => setDraft({ ...draft, type: e.target.value }) },
-              h("option", { value: "selfie" }, "\u89D2\u8272\u81EA\u62CD"),
+              h("option", { value: "character" }, "\u89D2\u8272\u751F\u6D3B\u7167"),
               h("option", { value: "scene" }, "\u53EA\u62CD\u573A\u666F")
             )),
             h("button", { "data-fi-btn": "", "data-primary": "", disabled: busy || config.\u603B\u5F00\u5173 === false, onClick: shoot }, "\u62CD\u4E00\u5F20")

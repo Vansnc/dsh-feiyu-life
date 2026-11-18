@@ -302,7 +302,7 @@ export function buildPhotoMetadata(cfg, elements, check, notes, prompt, timestam
     aspect: String(cfg.画幅 || DEFAULT_CONFIG.画幅),
     prompt: String(prompt || '').slice(0, 1200),
     context: {
-      type: String(elements?.type || 'selfie'),
+      type: String(elements?.type || 'character'),
       clock: String(elements?.clock || ''),
       location: String(elements?.location || ''),
       activity: String(elements?.state?.what || elements?.hint || ''),
@@ -521,7 +521,7 @@ async function shootAndCheck(ctx, cfg, { prompt, useRef, useStyleRef, elements }
     const r = await generateImage(cfg, current, { useRef, useStyleRef })
     last = r
     if (cfg.出图自检 === false) { notes.push('自检关着，没看'); break }
-    check = await checkImage(ctx, findSession(ctx), cfg, r.path, elements, useRef, referencePaths, useStyleRef)
+    check = await checkImage(ctx, findSession(ctx), cfg, r.path, elements, useRef, referencePaths, useStyleRef, prompt)
     if (!check) { notes.push('自检没跑成，这张没验'); break }
     if (check.pass) { notes.push(i === 0 ? '自检过了' : `第 ${i + 1} 张过了`); break }
     notes.push(`第 ${i + 1} 张不合格：${check.problems.join('；') || '（没说出具体问题）'}`)
@@ -671,7 +671,7 @@ function registerRoutes(ctx) {
       lastShotAt = Date.now()
       try {
         const expanded = await generatePrompt(ctx, findSession(ctx), cfg, {
-          type: body.type || 'selfie',
+          type: body.type || 'character',
         })
         const useRef = expanded.useRef
         const useStyleRef = expanded.useStyleRef
@@ -745,11 +745,12 @@ export function registerImage(ctx) {
 
   ctx.effect(() => ctx.tools.register({
     name: 'shoot',
-    description: '按她此刻的真实生活状态拍一张图并保存。只需选择自拍或场景照；人物身份由参考图确定，地点、动作、穿着、发型状态、表情、镜头、光线和细节由插件动态注入与扩写。出图后自动检查身份漂移、动作、构图、肢体和水印，不合格会重拍。回复里拿到路径后用 ![描述](路径) 发出去。',
+    description: '拍下此刻的角色生活照或场景照。根据自己想记录的瞬间选择视角、距离和姿态，可用 framing 简述选择；地点、活动、穿着与人物参考由相机提供。回复里拿到路径后用 ![描述](路径) 发出去。',
     parameters: {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['selfie', 'scene'], description: 'selfie=根据此刻生活状态拍她本人；scene=拍此刻她看到的场景，不出现她本人' },
+        type: { type: 'string', enum: ['character', 'scene', 'selfie'], description: 'character=角色生活照（默认），scene=只拍场景，selfie 兼容旧调用' },
+        framing: { type: 'string', maxLength: 120, description: '可选。角色此次想怎样入画，比如沿树影走远时的全身背影。留空由扩写模型选择。' },
       },
       additionalProperties: false,
     },
@@ -760,6 +761,7 @@ export function registerImage(ctx) {
     async execute(rawArgs = {}) {
       const args = {
         type: rawArgs.type ?? rawArgs.类型,
+        framing: rawArgs.framing,
       }
       const cfg = readImageConfig()
       if (!cfg.总开关) return { ok: false, say: '相机没开' }

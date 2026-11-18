@@ -33,7 +33,7 @@ const log = (m) => {
 // place -> props that belong there (used by template expansion)
 const propsByPlace = {
   宿舍书桌: ['摊开的画册', '散着的马克笔', '半杯奶茶', '亮着的台灯', '床帘一角'],
-  宿舍床上: ['皱掉的被子', '枕头', '充电线', '床头的手机'],
+  宿舍床上: ['皱掉的被子', '枕头', '床帘边缘', '床单的褶皱'],
   宿舍洗手间: ['起雾的镜子', '洗手台的瓶瓶罐罐', '挂着的毛巾'],
   食堂: ['不锈钢打饭台', '盛满菜的餐盘', '窗口的阿姨', '塑料托盘'],
   教室: ['黑板上的板书', '课桌的划痕', '投影仪的余光', '前排同学的后脑勺'],
@@ -45,10 +45,11 @@ const propsByPlace = {
 
 // shot library by kind
 const shots = {
-  selfie: [
-    '手机前置自拍，正常手持距离，胸像构图，带一点肩部和少量环境，脸约占画面 40%',
-    '手机前置自拍，半身近景，人物位于画面中央偏一侧，保留当前环境信息，脸不要贴满画面',
-    '手机前置自拍，肩部以上构图，镜头稍高于眼睛，画面自然舒展，不要极端广角变形',
+  character: [
+    '全身入画，从头到脚留出余量，交代人物与周围空间的位置关系',
+    '从侧后方观察她，视线落向正在做的事',
+    '中景，连同她身边正在使用的空间一起入画',
+    '近景，选择最能说明这一刻的局部细节',
   ],
   scene: [
     '平视近景，主体清楚，环境辅助说明场景',
@@ -95,7 +96,9 @@ function rand(seedStr) {
 function dynamicDirectives(elements) {
   const r = rand(elements.variationSeed)
   const s = `${elements?.state?.what || ''} ${elements?.location || ''}`
-  const shotPool = shots[elements.type] || shots.selfie
+  const shotPool = elements.type === 'character' && /散步|穿过|走向|跑步|跳舞|上楼/.test(elements.hint)
+    ? [shots.character[0], '从环境远景交代完整身形与移动方向', shots.character[1]]
+    : shots[elements.type] || shots.character
   const shot = shotPool[Math.floor(r() * shotPool.length) % shotPool.length]
   const hairPool = /洗澡|洗漱|刚洗/.test(s)
     ? ['头发刚吹到半干，发尾有自然湿润感', '头发松散披着，少量潮湿发丝贴近脸侧']
@@ -168,12 +171,14 @@ export function liveState(now = new Date()) {
 
 /** Split one shoot request into elements. */
 export function buildElements(cfg, args, state = liveState()) {
-  const type = String(args.type || 'selfie')
+  // Legacy callers use "selfie" for any picture that includes the character.
+  const type = args.type === 'scene' ? 'scene' : 'character'
   const hint = String(state.what || '').trim()
-  const outfit = type === 'selfie' ? String(state.outfit || '').trim() : ''
+  const outfit = type === 'character' ? String(state.outfit || '').trim() : ''
   const location = state.location || locationHint(state.what)
   const variationSeed = String(args.__seed || `${Date.now()}-${Math.random()}`)
-  return { type, hint, outfit, location, state, clock: state.clock, light: state.light, variationSeed }
+  const framing = type === 'character' && typeof args.framing === 'string' ? args.framing.trim().slice(0, 120) : ''
+  return { type, hint, outfit, location, state, clock: state.clock, light: state.light, variationSeed, framing }
 }
 
 /** Template expansion: a decent description without calling any model. */
@@ -190,16 +195,16 @@ export function templatePrompt(cfg, elements, useRef = false) {
     if (!props.includes(x)) props.push(x)
   }
   const parts = []
-  if (type === 'selfie') {
-    parts.push(`这是她在 ${clock} 拍的一张自拍，${light}`)
+  if (type === 'character') {
+    parts.push(`这是她在 ${clock} 想留下的生活瞬间，${light}`)
     parts.push(`地点：${location}`)
-    parts.push(`当前动作：${hint || elements?.state?.what || '在进行日常活动'}（这个动作要实际画出来，比如刷手机就画出手和手机，不要省略）`)
+    parts.push(`当前动作：${hint || '在进行日常活动'}。姿态、视线和双手自然随活动，画中道具来自此刻正在做的事`)
     parts.push(`穿着：${outfit}`)
     parts.push(`此刻发型：${dynamic.hair}`)
     parts.push(`表情：${dynamic.expression}`)
-    parts.push(`构图：${dynamic.shot}，${dynamic.moment}`)
+    parts.push(`构图：${elements.framing || dynamic.shot}`)
     parts.push(`背景中自然带出：${props.join('、')}`)
-    parts.push('画面要求：人物与环境关系自然，整体协调，主体清楚，不要怼脸，不要僵硬摆拍')
+    parts.push('画面要求：人物与环境关系自然，整体协调，主体清楚')
     parts.push('人物要求：以参考图保持同一个人的脸、五官比例、瞳色和有辨识度的身体特征；发型是可变化状态，不把参考图服装、帽子和可拆卸发饰当成永久身份特征')
   } else {
     parts.push(`时间 ${clock}，${light}`)
@@ -223,13 +228,13 @@ export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
   if (!target || !ctx?.llm?.stream) { log('prompt expand skipped: ' + (target ? 'no ctx.llm.stream' : 'no model')); return null }
   const dynamic = dynamicDirectives(elements)
   const system = '你是生活摄影导演和图像提示词工程师。每次都根据当前真实状态重新设计一张自然、好看、细节充分的动漫生活照。参考图既是人物身份依据，也是画风标准；不能复制其中的固定姿势、服装、帽子或可拆卸饰品。只输出本次完整画面描述，不解释、不分点、不加引号。'
-  const head = useRef && elements.type !== 'scene'
+  const head = elements.type !== 'scene'
     ? [
       '身份连续性：保持参考图中稳定的脸型、五官比例、瞳色、基础发色以及有辨识度的身体特征，确保仍是同一个人。',
       `本次可变外貌：${dynamic.hair}。妆容、碎发和疲态可以随当前生活状态自然变化。`,
       '参考图中的服装、帽子、发箍和可拆卸饰品不属于永久身份，除非当前生活状态明确需要，否则不要照搬。',
       `服装：${autoOutfit(elements)}`,
-      `表情：${dynamic.expression}`,
+      '由她决定此刻最想留下什么，依此选择一个具体的视角、距离、姿态与注视方向。全身、远景、局部、背影均可；只描述最终选定的画面。拍摄设备仅在当前活动确实用到时入画。',
     ]
     : [
       '这是一张不出现角色本人的场景照；只从参考图借鉴线稿、上色、材质和光影语言，不能把参考图人物、鲸尾或服装画进场景。',
@@ -238,12 +243,11 @@ export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
     ...head,
     '',
     '要求：',
-    `1. 本次构图方向：${dynamic.shot}；采用${dynamic.moment}，避免正面证件照式摆拍；`,
-    '2. 必须保留用户片段里的动作细节（比如「刷手机」就要画出手拿手机在刷，「照镜子」就要画镜子），不能省略或改成别的动作；',
+    elements.type === 'scene' ? `1. 本次构图方向：${dynamic.shot}` : '1. 先写选定的景别、角度与动作，让读者能看出她为什么选择这一刻。',
+    '2. 遵循当前活动，物件与手势都应有生活依据。',
     '3. 表情必须符合当前动作和精神状态，可以专注、困倦、走神、惊喜或放松，不要每次固定浅笑，也不能僵硬；',
     '4. 发型可像真人一样随睡眠、洗漱、学习、出门而改变扎法、碎发和整齐程度，但基础发色、发质和大致长度不能突变；',
     '5. 具体到能画：从当前地点和动作推导 3–6 个真正相关且彼此协调的环境、材质或使用痕迹，并写明主光方向；不要机械复用固定道具；',
-    '6. 不要写「手臂伸向镜头」这类手部前景——手最容易画崩；',
     '7. 人物与背景要协调，画风统一；',
     `8. 视觉目标：${renderingGoal}；具体光色、材质和景深应为这一次场景服务，而不是套固定风格词；`,
     '9. 结尾补一句：画面里不要出现任何文字、水印、签名；',
@@ -252,7 +256,8 @@ export async function modelPrompt(ctx, agent, cfg, elements, useRef = false) {
     '',
     `时间：${elements.clock}（${elements.light}）`,
     `地点：${elements.location}`,
-    `类型：${elements.type === 'selfie' ? '自拍，人物本人出镜，脸在画面里' : '场景照，不出现她本人'}`,
+    `类型：${elements.type === 'character' ? '角色生活照' : '场景照，不出现她本人'}`,
+    ...(elements.framing ? [`她为这张照片选定的构图：${elements.framing}。结合当前动作落实这个选择。`] : []),
     `当前状态：${elements.hint || elements.state?.what || '日常生活片段'}`,
   ].join('\n')
   // Reasoning budget eats the whole allowance on some models; expansion needs none.
@@ -323,7 +328,7 @@ function pickModel(agent, cfg) {
 }
 
 /** Post-shot check: character drift / wrong style / broken drawing / text watermark. */
-export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = true, referencePaths = [], useStyleRef = true) {
+export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = true, referencePaths = [], useStyleRef = true, intendedPrompt = '') {
   if (!ctx?.llm?.stream || !ctx?.attachments?.saveImages) { log('check skipped: no llm or attachments'); return null }
   let tempImage = ''
   let toCheck = imagePath
@@ -362,8 +367,8 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
   const identityChecks = selfie ? [
     '1. 生成图的脸型、五官相对位置与比例、瞳色、基础发色、鲸类耳鳍和鲸尾等辨识特征是否仍是参考图中的同一个人；',
     '2. 发型允许随当前生活改变扎法、刘海整理、碎发、湿润和凌乱程度；不要因为发型变化误判身份漂移。但若基础发色、发质或大致长度无缘无故突变，应判不合格；',
-    '3. 自拍构图是否自然：至少看到肩部或上半身，不要只剩半张脸，不要过度怼脸；',
-    '4. 表情是否符合当前状态且面部肌肉协调；允许不微笑、困倦、专注或走神，但不能僵硬木然；',
+    '3. 按实际景别和角度检查画面连贯性。全身、远景、近景、背影和局部都可以。只评估可见的身份特征。',
+    '4. 面部可见时检查表情是否自然；活动需要的手势、重心与环境是否协调。',
   ] : [
     '1. 场景中不得出现参考图人物、鲸尾、服装或人物残影；',
     '2. 场景的线稿、柔和低饱和上色、赛璐璐与轻厚涂融合、材质和光影是否与参考图属于同一套插画语言；',
@@ -378,15 +383,17 @@ export async function checkImage(ctx, agent, cfg, imagePath, elements, useRef = 
     selfie ? '5. 人物与背景是否协调，画面是否统一；' : '5. 场景主体与背景是否协调，画面是否统一；',
     '6. 是否存在画崩、多手多指、五官错位、肢体畸形；',
     '7. 是否出现文字、水印、签名、边框；',
-    '8. 当前状态里的动作有没有画出来（比如刷手机要看到手机和手）；参考图里的服装、帽子和可拆卸饰品若与当前穿着无关，不应被机械照搬；',
+    '8. 道具和动作是否符合生活状态；留意无缘由地举起拍摄设备，以及照搬参考服饰。',
     '',
     `当前时间与光线：${elements.clock || '未知'}（${elements.light || ''}）`,
     `当前地点：${elements.location || '未知'}`,
     `当前状态：${elements.hint || elements.state?.what || '未知'}`,
     `当前穿着：${autoOutfit(elements)}`,
+    ...(elements.framing ? [`她选定的构图：${elements.framing}`] : []),
+    ...(intendedPrompt ? [`本次成图描述：${intendedPrompt}。按其中选定的距离、姿态和取景检查；若选的是全身照，检查头脚是否完整入画。`] : []),
     '',
     selfie
-      ? '判定标准：只要出现“脸明显不是同一个人、身份基础特征突变、画风明显偏离参考图、照搬与当前状态无关的参考服饰、表情或动作不自然、过度怼脸、画崩、有字水印”中的任意一项，就判不合格。不要因合理发型变化或没有微笑而判不合格。'
+      ? '判定标准：可见身份特征明显不符、画风偏离、照搬无关服饰、动作或道具与活动明显冲突、画崩或有字水印，判为不合格。合理遮挡、背面或局部构图本身可以合格。'
       : '判定标准：只要出现“参考图人物或其身体特征混入场景、画风明显偏离参考图、动作或场景不符、构图崩坏、有字水印”中的任意一项，就判不合格。',
     '',
     '只输出 JSON：{"合格":true 或 false,"问题":["最多 4 条"],"改法":"一句话说明下一张该怎么修"}',

@@ -61,7 +61,7 @@ export function createImagePanel(React) {
         const [savedConfig, setSavedConfig] = useState(null)
         const [message, setMessage] = useState('')
         const [busy, setBusy] = useState(false)
-        const [draft, setDraft] = useState({ type: 'selfie' })
+        const [draft, setDraft] = useState({ type: 'character' })
         const [result, setResult] = useState(null)
         const [models, setModels] = useState([])
         const [modelNote, setModelNote] = useState('')
@@ -212,7 +212,7 @@ export function createImagePanel(React) {
             h('div', { 'data-fi-sub': '' }, '不进入对话，直接验证当前已保存的角色和生图设置。'),
             h('div', { 'data-fi-row': '' },
               h(Label, { label: '类型' }, h('select', { value: draft.type, onChange: (e) => setDraft({ ...draft, type: e.target.value }) },
-                h('option', { value: 'selfie' }, '角色自拍'), h('option', { value: 'scene' }, '只拍场景'))),
+                h('option', { value: 'character' }, '角色生活照'), h('option', { value: 'scene' }, '只拍场景'))),
               h('button', { 'data-fi-btn': '', 'data-primary': '', disabled: busy || config.总开关 === false, onClick: shoot }, '拍一张')),
             h('div', { 'data-fi-note': '' }, '无需填写提示词：人物身份来自参考图；地点、动作、服装和时间来自此刻生活状态；发型、表情、镜头、光线与场景细节由扩写模块为这一张动态设计。'),
             dirty ? h('div', { 'data-fi-note': '' }, '当前有未保存设置；试拍仍使用上一次保存的配置。') : null,
