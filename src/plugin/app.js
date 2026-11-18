@@ -62,17 +62,27 @@ export const inject = ['systemPrompt', 'agents', 'timer', 'webServer', 'connecti
 
 const ROUTE_PREFIX = '/dsh-feiyu-life'
 const WEEKDAY = ['', '一', '二', '三', '四', '五', '六', '日']
-const PLUGIN_LOGO_FILE = new URL('./icon.png', import.meta.url)
-const AVATAR_FILE = new URL('./assets/character-actions.png', import.meta.url)
+export const PLUGIN_LOGO_FILE = new URL('../../icon.png', import.meta.url)
+export const AVATAR_FILE = new URL('../../assets/character-actions.png', import.meta.url)
 const AVATAR_BEHAVIORS = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo', 'bath']
-const AVATAR_ACTION_FILES = new Map(AVATAR_BEHAVIORS.map((behavior) => [
+export const AVATAR_ACTION_FILES = new Map(AVATAR_BEHAVIORS.map((behavior) => [
   behavior,
-  new URL(`./assets/actions/${behavior}.png`, import.meta.url),
+  new URL(`../../assets/actions/${behavior}.png`, import.meta.url),
 ]))
-const XUEYUAN_MAP_FILES = new Map(['base', 'anime', 'buildings'].map((layer) => [
+export const XUEYUAN_MAP_FILES = new Map(['base', 'anime', 'buildings'].map((layer) => [
   layer,
-  new URL(`./assets/maps/xueyuan-${layer}.svg`, import.meta.url),
+  new URL(`../../assets/maps/xueyuan-${layer}.svg`, import.meta.url),
 ]))
+
+export function requestedAt(searchParams, config, fallback = new Date()) {
+  const date = String(searchParams.get('date') || '')
+  const minute = Number(searchParams.get('minute'))
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isInteger(minute) && minute >= 0 && minute < 1440) {
+    return new Date(zonedDateTimeMs(date, minute, String(config?.时区 || 'Asia/Shanghai')))
+  }
+  const ts = Number(searchParams.get('ts'))
+  return Number.isFinite(ts) && ts > 0 ? new Date(ts) : fallback
+}
 
 import { bodyHint, calendarLabel, recentSummary, selfHint } from './context-hints.js'
 import { createInitiativeRunner } from './initiative.js'
@@ -726,9 +736,9 @@ export function apply(ctx) {
         if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
         try {
           const url = new URL(req.url || '/', 'http://x')
-          const ts = Number(url.searchParams.get('ts'))
-          const at = Number.isFinite(ts) && ts > 0 ? new Date(ts) : new Date()
-          const r = generate(readConfig(), at)
+          const cfg = readConfig()
+          const at = requestedAt(url.searchParams, cfg)
+          const r = generate(cfg, at)
           return reply(res, 200, {
             ok: true,
             preview: { text: r.text, evidence: r.evidence },
@@ -736,7 +746,7 @@ export function apply(ctx) {
             currentMinute: r.currentMinute || 0,
             current: r.current || null,
             world: r.world || null,
-            adjustments: adjustmentPayload(readConfig(), at),
+            adjustments: adjustmentPayload(cfg, at),
             meta: {
               dayType: r.dayType || null,
               calendar: calendarLabel(r.calendar || {}),
@@ -746,7 +756,7 @@ export function apply(ctx) {
                 date: r.plan.date || '', source: r.plan.source || 'preview',
                 title: r.plan.title || '', model: r.plan.model || '',
               } : null,
-              planHistoryCount: listPlanHistory(zonedNow(at, String(readConfig().时区 || 'Asia/Shanghai')).ymd).length,
+              planHistoryCount: listPlanHistory(zonedNow(at, String(cfg.时区 || 'Asia/Shanghai')).ymd).length,
             },
             time: at.toISOString(),
           })
@@ -763,9 +773,8 @@ export function apply(ctx) {
         if (req.method !== 'GET') return reply(res, 405, { ok: false, error: 'method not allowed' })
         try {
           const url = new URL(req.url || '/', 'http://x')
-          const ts = Number(url.searchParams.get('ts'))
-          const at = Number.isFinite(ts) && ts > 0 ? new Date(ts) : new Date()
           const cfg = readConfig()
+          const at = requestedAt(url.searchParams, cfg)
           const r = generate(cfg, at, { replay: true, moments: false })
           const zoned = zonedNow(at, String(cfg.时区 || 'Asia/Shanghai'))
           const today = zonedNow(new Date(), String(cfg.时区 || 'Asia/Shanghai')).ymd

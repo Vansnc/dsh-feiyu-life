@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-const root = new URL('..', import.meta.url).pathname
+import { fileURLToPath } from 'node:url'
+const root = fileURLToPath(new URL('..', import.meta.url))
 const files = []
 const walk = (dir) => {
   for (const name of readdirSync(dir)) {

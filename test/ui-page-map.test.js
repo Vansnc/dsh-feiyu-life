@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { defaultConfig } from '../src/life/life.js'
-import { groupSections, tabs } from '../src/ui/constants.js'
+import {
+  UI_ASSET_VERSION, firstTabForGroup, groupSections, isSupportedSettingsBackup, tabs,
+} from '../src/ui/constants.js'
 
 const MAP = {
   此刻: ['总开关'],
@@ -31,6 +33,25 @@ test('grouped navigation keeps all legacy sections addressable', () => {
   }
 })
 
+test('top navigation always selects a page, including the standalone now page', () => {
+  assert.equal(firstTabForGroup('now'), 'now')
+  assert.equal(firstTabForGroup('life'), 'day')
+  assert.equal(firstTabForGroup('camera'), 'photo')
+})
+
+test('settings import accepts every server-supported backup version', () => {
+  const backup = (version) => ({ format: 'dsh-feiyu-life-settings', version, life: {}, camera: {} })
+  assert.equal(isSupportedSettingsBackup(backup(1)), true)
+  assert.equal(isSupportedSettingsBackup(backup(2)), true)
+  assert.equal(isSupportedSettingsBackup(backup(3)), false)
+  assert.equal(isSupportedSettingsBackup({ ...backup(2), camera: null }), false)
+})
+
+test('browser asset cache key follows the package version', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(UI_ASSET_VERSION, pkg.version)
+})
+
 test('UI source modules and generated entry keep the DSH contract', () => {
   const entry = readFileSync(new URL('../src/ui/client.js', import.meta.url), 'utf8')
   const app = readFileSync(new URL('../src/ui/app.js', import.meta.url), 'utf8')
@@ -40,4 +61,5 @@ test('UI source modules and generated entry keep the DSH contract', () => {
   assert.match(app, /export function createUI/)
   assert.match(root, /GENERATED from src\/ui\/client\.js/)
   assert.doesNotMatch(entry, /dsh-feiyu-image|dsh-bili-subagent/)
+  assert.match(app, /load\(true, true\)/)
 })

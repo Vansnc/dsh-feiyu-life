@@ -101,7 +101,8 @@ export function createImagePanel(React) {
         useEffect(() => { load() }, [])
         useEffect(() => { loadModels() }, [])
         useEffect(() => {
-          const refresh = () => { if (!document.hidden) load(dirty, true) }
+          // Preserve the form unconditionally: the request may finish after editing starts.
+          const refresh = () => { if (!document.hidden) load(true, true) }
           const timer = window.setInterval(refresh, 30000)
           document.addEventListener('visibilitychange', refresh)
           return () => {

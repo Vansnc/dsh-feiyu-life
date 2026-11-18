@@ -108,7 +108,7 @@
       }, []);
       useEffect(() => {
         const refresh = () => {
-          if (!document.hidden) load(dirty, true);
+          if (!document.hidden) load(true, true);
         };
         const timer = window.setInterval(refresh, 3e4);
         document.addEventListener("visibilitychange", refresh);
@@ -416,6 +416,8 @@
   var routineTables = [["\u65E5\u5E38", "\u65E5\u5E38\uFF08\u6709\u8BFE\u7684\u65E5\u5B50\uFF09"], ["\u665A\u8D77", "\u665A\u8D77\uFF08\u5468\u56DB\u90A3\u79CD\uFF09"], ["\u5047\u671F", "\u5047\u671F"], ["\u5907\u8003", "\u5907\u8003\uFF08\u8003\u8BD5\u5468\uFF09"]];
   var wardrobeLabels = [["sleep", "\u7761\u89C9"], ["bath", "\u6D17\u6FA1"], ["class", "\u4E0A\u8BFE"], ["home", "\u5728\u5BB6"], ["out", "\u51FA\u95E8"], ["eat", "\u5403\u996D"]];
   var weekdayNames = ["", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"];
+  var UI_ASSET_VERSION = "2.6.1";
+  var SETTINGS_BACKUP_VERSIONS = [1, 2];
   var tabs = [["now", "\u6B64\u523B"], ["life", "\u751F\u6D3B"], ["inner", "\u5185\u5728"], ["proactive", "\u4E3B\u52A8"], ["world", "\u4E16\u754C"], ["camera", "\u76F8\u673A"], ["data", "\u6570\u636E"]];
   var groupSections = {
     now: [],
@@ -426,6 +428,10 @@
     camera: [["photo", "\u7167\u7247"]],
     data: [["data", "\u6570\u636E"]]
   };
+  var firstTabForGroup = (group) => groupSections[group]?.[0]?.[0] || group;
+  var isSupportedSettingsBackup = (value) => Boolean(
+    value && value.format === "dsh-feiyu-life-settings" && SETTINGS_BACKUP_VERSIONS.includes(Number(value.version)) && value.life && value.camera
+  );
 
   // src/ui/styles.js
   var CSS = `
@@ -799,7 +805,7 @@
       return h("img", {
         "data-fl-brand-mark": "",
         "data-fl-map-logo": map ? "" : void 0,
-        src: `${API}/logo?v=1.0.9`,
+        src: `${API}/logo?v=${UI_ASSET_VERSION}`,
         width: size,
         height: size,
         alt: "",
@@ -846,9 +852,9 @@
         mapStyle === "xueyuan-road" ? h(
           "div",
           { "data-fl-map-layers": "", "aria-hidden": "true" },
-          h("img", { "data-fl-map-layer": "base", src: `${API}/map/xueyuan?layer=base&v=1.0.8`, alt: "" }),
-          h("img", { "data-fl-map-layer": "anime", src: `${API}/map/xueyuan?layer=anime&v=1.0.8`, alt: "" }),
-          h("img", { "data-fl-map-layer": "buildings", src: `${API}/map/xueyuan?layer=buildings&v=1.0.8`, alt: "" })
+          h("img", { "data-fl-map-layer": "base", src: `${API}/map/xueyuan?layer=base&v=${UI_ASSET_VERSION}`, alt: "" }),
+          h("img", { "data-fl-map-layer": "anime", src: `${API}/map/xueyuan?layer=anime&v=${UI_ASSET_VERSION}`, alt: "" }),
+          h("img", { "data-fl-map-layer": "buildings", src: `${API}/map/xueyuan?layer=buildings&v=${UI_ASSET_VERSION}`, alt: "" })
         ) : null,
         h(
           "div",
@@ -897,7 +903,7 @@
           h("div", {
             "data-fl-avatar-sprite": "",
             "aria-hidden": "true",
-            style: { "--fl-avatar-image": `url(${API}/avatar/${spriteBehavior}?v=1.0.8)` }
+            style: { "--fl-avatar-image": `url(${API}/avatar/${spriteBehavior}?v=${UI_ASSET_VERSION})` }
           }),
           h("span", { "data-fl-avatar-bubble": "", title: meta[1] }, h(IconifyGlyph, { name: meta[0], size: 17 })),
           h("span", { "data-fl-avatar-label": "" }, world.moving && world.destination ? `\u53BB${world.destination.name} ${Math.round((world.progress || 0) * 100)}%` : world.location && world.location.name || "\u672A\u77E5\u4F4D\u7F6E")
@@ -974,7 +980,7 @@
       useEffect(() => {
         const refresh = () => {
           if (document.hidden || previewAt) return;
-          load(dirty, true);
+          load(true, true);
         };
         const timer = window.setInterval(refresh, 3e4);
         document.addEventListener("visibilitychange", refresh);
@@ -1093,8 +1099,11 @@
       };
       const previewOther = async () => {
         try {
-          const ts = previewAt ? new Date(previewAt).getTime() : Date.now();
-          const data = await getJson(API + "/preview?ts=" + ts);
+          const [date, time = "00:00"] = previewAt.split("T");
+          const [hour, minute] = time.split(":").map(Number);
+          const localMinute = hour * 60 + minute;
+          const query = date ? `date=${encodeURIComponent(date)}&minute=${localMinute}` : `ts=${Date.now()}`;
+          const data = await getJson(API + "/preview?" + query);
           setPreview(data.preview);
           setTimeline(data.timeline || []);
           setCurrentMinute(data.currentMinute || 0);
@@ -1102,7 +1111,7 @@
           setMeta(data.meta || null);
           setAdjustments(data.adjustments || []);
           setWorld(data.world || null);
-          setMessage("\u4EE5\u4E0B\u662F\u5728 " + new Date(ts).toLocaleString() + " \u7B97\u51FA\u6765\u7684");
+          setMessage("\u4EE5\u4E0B\u662F\u5728 " + (previewAt ? previewAt.replace("T", " ") : "\u6B64\u523B") + " \u7B97\u51FA\u6765\u7684");
         } catch (e) {
           setMessage("\u9884\u89C8\u5931\u8D25\uFF1A" + e.message);
         }
@@ -1111,8 +1120,8 @@
         setReplayPlaying(false);
         setMessage("\u6B63\u5728\u8BFB\u53D6\u751F\u6D3B\u56DE\u653E\u2026");
         try {
-          const at = date ? /* @__PURE__ */ new Date(`${date}T12:00:00`) : /* @__PURE__ */ new Date();
-          const data = await getJson(API + "/replay?ts=" + at.getTime());
+          const query = date ? `date=${encodeURIComponent(date)}&minute=720` : `ts=${Date.now()}`;
+          const data = await getJson(API + "/replay?" + query);
           setReplay(data);
           setReplayDate(data.date || date || "");
           setReplayMinute(jumpToNow ? data.currentMinute || 0 : 0);
@@ -1317,7 +1326,7 @@
         }
         try {
           const value = JSON.parse(await file.text());
-          if (value.format !== "dsh-feiyu-life-settings" || Number(value.version) !== 1 || !value.life || !value.camera) {
+          if (!isSupportedSettingsBackup(value)) {
             throw new Error("\u6587\u4EF6\u4E0D\u662F\u53D7\u652F\u6301\u7684\u9C7C\u7684\u751F\u6D3B\u8BBE\u7F6E\u5907\u4EFD");
           }
           setBackupCandidate({ name: file.name, value });
@@ -2218,8 +2227,7 @@
           "data-fl-on": group === k ? "" : void 0,
           onClick: () => {
             setGroup(k);
-            const first = groupSections[k]?.[0]?.[0];
-            if (first) setTab(first);
+            setTab(firstTabForGroup(k));
           }
         }, t))),
         (groupSections[group] || []).length > 0 ? h("div", { "data-fl-subtabs": "", role: "tablist", "aria-label": "\u751F\u6D3B\u9875\u9762\u5206\u533A" }, groupSections[group].map(([k, t]) => h("button", {
@@ -2265,6 +2273,8 @@
         behaviorMeta,
         placeIconOptions,
         replayFrameAt,
+        firstTabForGroup,
+        isSupportedSettingsBackup,
         ImagePanel: ImagePanel.Panel,
         imageCSS: ImagePanel.CSS
       },

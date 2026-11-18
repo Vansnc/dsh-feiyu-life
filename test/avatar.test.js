@@ -1,8 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import {
+  AVATAR_ACTION_FILES, AVATAR_FILE, PLUGIN_LOGO_FILE, XUEYUAN_MAP_FILES,
+} from '../src/plugin/app.js'
 
 const behaviors = ['idle', 'walk', 'sleep', 'study', 'eat', 'phone', 'photo', 'bath']
+
+test('plugin media routes resolve to packaged files after the src layout migration', () => {
+  const urls = [PLUGIN_LOGO_FILE, AVATAR_FILE, ...AVATAR_ACTION_FILES.values(), ...XUEYUAN_MAP_FILES.values()]
+  assert.equal(urls.length, 13)
+  for (const url of urls) assert.equal(existsSync(url), true, url.pathname)
+})
 
 test('each avatar behavior is an isolated four-frame PNG strip', () => {
   for (const behavior of behaviors) {

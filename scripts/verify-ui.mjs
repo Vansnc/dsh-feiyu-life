@@ -8,6 +8,7 @@ import { chromium } from 'playwright'
 import { defaultWorldConfig } from '../src/life/world.js'
 import { defaultConfig } from '../src/life/life.js'
 import { normalizeImageConfig } from '../src/media/image.js'
+import { UI_ASSET_VERSION } from '../src/ui/constants.js'
 
 let definition
 globalThis.window = { __ModuleLoader__: { load(value) { definition = value } } }
@@ -36,11 +37,11 @@ const world = {
 
 let markup = renderToStaticMarkup(React.createElement(WorldMap, { world, map }))
 const dataUri = (path, mime) => `data:${mime};base64,${readFileSync(new URL(path, import.meta.url)).toString('base64')}`
-markup = markup.replace('/dsh-feiyu-life/logo?v=1.0.9', dataUri('../icon.png', 'image/png'))
+markup = markup.replace(`/dsh-feiyu-life/logo?v=${UI_ASSET_VERSION}`, dataUri('../icon.png', 'image/png'))
 for (const layer of ['base', 'anime', 'buildings']) {
-  markup = markup.replace(`/dsh-feiyu-life/map/xueyuan?layer=${layer}&amp;v=1.0.8`, dataUri(`../assets/maps/xueyuan-${layer}.svg`, 'image/svg+xml'))
+  markup = markup.replace(`/dsh-feiyu-life/map/xueyuan?layer=${layer}&amp;v=${UI_ASSET_VERSION}`, dataUri(`../assets/maps/xueyuan-${layer}.svg`, 'image/svg+xml'))
 }
-markup = markup.replace('/dsh-feiyu-life/avatar/bath?v=1.0.8', dataUri('../assets/actions/bath.png', 'image/png'))
+markup = markup.replace(`/dsh-feiyu-life/avatar/bath?v=${UI_ASSET_VERSION}`, dataUri('../assets/actions/bath.png', 'image/png'))
 const html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0}body{padding:24px;background:Canvas;color:CanvasText;font-family:system-ui,sans-serif}${CSS}</style><div data-fl-wrap>${markup}</div>`
 
 const systemExecutable = [
