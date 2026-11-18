@@ -89,7 +89,7 @@ export function createUI(require) {
       return selected
     }
 
-    function TimelineChart({ timeline, currentMinute }) {
+    function TimelineChart({ timeline, currentMinute, cursorLabel = '此刻' }) {
       if (!timeline || !timeline.length) return h('div', { 'data-fl-empty': '' }, '还没有今天的时间线')
       const rows = timeline.map((x) => ({ ...x, start: Math.max(0, x.start), end: Math.min(1440, x.end) })).filter((x) => x.end > x.start)
       const active = rows.find((x) => currentMinute >= x.start && currentMinute < x.end)
@@ -98,7 +98,7 @@ export function createUI(require) {
           h('span', { 'data-fl-tl-time': '' }, ''),
           h('div', { 'data-fl-ticks': '' },
             [0, 6, 12, 18, 24].map((hh) => h('span', { key: hh, style: { left: (hh / 24 * 100) + '%' } }, hh + ':00')),
-            h('span', { 'data-fl-now-mark': '', style: { left: (Math.max(0, Math.min(1440, currentMinute)) / 1440 * 100) + '%' } }, '此刻 ' + clockOf(currentMinute))),
+            h('span', { 'data-fl-now-mark': '', style: { left: (Math.max(0, Math.min(1440, currentMinute)) / 1440 * 100) + '%' } }, cursorLabel + ' ' + clockOf(currentMinute))),
           h('span', { 'data-fl-tl-what': '' }, '')),
         rows.map((x, i) => h('div', {
           key: i, 'data-fl-tl-row': '', 'data-fl-cur': x === active ? '' : undefined,
@@ -262,6 +262,8 @@ export function createUI(require) {
       const [preview, setPreview] = useState(null)
       const [configPath, setConfigPath] = useState('')
       const [previewAt, setPreviewAt] = useState('')
+      const [selectedPreview, setSelectedPreview] = useState(null)
+      const previewRequest = React.useRef(0)
       const [busy, setBusy] = useState(false)
       const [timeline, setTimeline] = useState([])
       const [currentMinute, setCurrentMinute] = useState(0)
@@ -274,6 +276,8 @@ export function createUI(require) {
       const [replayDate, setReplayDate] = useState('')
       const [replayPlaying, setReplayPlaying] = useState(false)
       const [replaySpeed, setReplaySpeed] = useState(10)
+      const replayEnd = replay && replay.date === replay.today ? replay.currentMinute : 1439
+      const replayRequest = React.useRef(0)
       const [backupCandidate, setBackupCandidate] = useState(null)
       const [inferenceText, setInferenceText] = useState('蹲着看猫吃完半根火腿肠')
       const [inference, setInference] = useState(null)
@@ -309,7 +313,7 @@ export function createUI(require) {
       useEffect(() => { load() }, [])
       useEffect(() => {
         const refresh = () => {
-          if (document.hidden || previewAt) return
+          if (document.hidden) return
           // A refresh that started before the user typed must never replace the form.
           load(true, true)
         }
@@ -319,7 +323,7 @@ export function createUI(require) {
           window.clearInterval(timer)
           document.removeEventListener('visibilitychange', refresh)
         }
-      }, [dirty, previewAt])
+      }, [])
       useEffect(() => {
         const warn = (e) => { if (dirty) { e.preventDefault(); e.returnValue = '' } }
         window.addEventListener('beforeunload', warn)
@@ -328,11 +332,11 @@ export function createUI(require) {
       useEffect(() => {
         if (!replayPlaying || tab !== 'replay') return undefined
         const timer = window.setInterval(() => {
-          setReplayMinute((minute) => Math.min(1439, minute + replaySpeed))
+          setReplayMinute((minute) => Math.min(replayEnd, minute + replaySpeed))
         }, 650)
         return () => window.clearInterval(timer)
-      }, [replayPlaying, replaySpeed, tab])
-      useEffect(() => { if (replayMinute >= 1439 && replayPlaying) setReplayPlaying(false) }, [replayMinute, replayPlaying])
+      }, [replayPlaying, replaySpeed, tab, replayEnd])
+      useEffect(() => { if (replayMinute >= replayEnd && replayPlaying) setReplayPlaying(false) }, [replayMinute, replayPlaying, replayEnd])
 
       const patch = (path, value) => setConfig((prev) => (prev ? setPath(prev, path, value) : prev))
 
@@ -398,6 +402,7 @@ export function createUI(require) {
       }
 
       const previewOther = async () => {
+        const request = ++previewRequest.current
         try {
           const [date, time = '00:00'] = previewAt.split('T')
           const [hour, minute] = time.split(':').map(Number)
@@ -406,25 +411,23 @@ export function createUI(require) {
             ? `date=${encodeURIComponent(date)}&minute=${localMinute}`
             : `ts=${Date.now()}`
           const data = await getJson(API + '/preview?' + query)
-          setPreview(data.preview); setTimeline(data.timeline || []); setCurrentMinute(data.currentMinute || 0)
-          setCurrent(data.current || null); setMeta(data.meta || null)
-          setAdjustments(data.adjustments || [])
-          setWorld(data.world || null)
-          setMessage('以下是在 ' + (previewAt ? previewAt.replace('T', ' ') : '此刻') + ' 算出来的')
-        } catch (e) { setMessage('预览失败：' + e.message) }
+          if (previewRequest.current === request) setSelectedPreview({ ...data, label: previewAt.replace('T', ' ') })
+        } catch (e) { if (previewRequest.current === request) setMessage('预览失败：' + e.message) }
       }
 
       const loadReplay = async (date = replayDate, jumpToNow = false) => {
+        const request = ++replayRequest.current
         setReplayPlaying(false)
         setMessage('正在读取生活回放…')
         try {
           const query = date ? `date=${encodeURIComponent(date)}&minute=720` : `ts=${Date.now()}`
           const data = await getJson(API + '/replay?' + query)
+          if (request !== replayRequest.current) return
           setReplay(data)
           setReplayDate(data.date || date || '')
           setReplayMinute(jumpToNow ? (data.currentMinute || 0) : 0)
           setMessage(`已加载 ${data.date || date} 的生活回放`)
-        } catch (e) { setMessage('回放读取失败：' + e.message) }
+        } catch (e) { if (request === replayRequest.current) setMessage('回放读取失败：' + e.message) }
       }
 
       useEffect(() => {
@@ -580,7 +583,8 @@ export function createUI(require) {
       const restoreSettings = async () => {
         if (!backupCandidate) return
         const exportedAt = backupCandidate.value.exportedAt ? new Date(backupCandidate.value.exportedAt).toLocaleString() : '未知时间'
-        if (!window.confirm(`将用 ${exportedAt} 的备份覆盖当前生活和相机设置。每日剧本、照片与日志不会改变。继续吗？`)) return
+        const scope = Number(backupCandidate.value.version) === 2 ? '生活设置、相机设置及人格数据（含长期记忆与关系）' : '生活设置和相机设置'
+        if (!window.confirm(`将用 ${exportedAt} 的备份覆盖${scope}。继续吗？`)) return
         setBusy(true); setMessage('正在校验并恢复设置…')
         try {
           const data = await postJson(API + '/settings-restore', { backup: backupCandidate.value })
@@ -599,12 +603,20 @@ export function createUI(require) {
         h('div', { 'data-fl-row': '' },
           h('span', { 'data-fl-note': '' }, '想看别的日子：'),
           h('input', { 'data-fl-input': '', type: 'datetime-local', value: previewAt, onChange: (e) => setPreviewAt(e.target.value) }),
-          h('button', { 'data-fl-btn': '', onClick: previewOther }, '预览这个时间'),
-          h('button', { 'data-fl-btn': '', onClick: async () => { setPreviewAt(''); await load(true); setMessage('回到此刻') } }, '回到此刻')),
+          h('button', { 'data-fl-btn': '', disabled: !previewAt, onClick: previewOther }, '预览这个时间'),
+          h('button', { 'data-fl-btn': '', onClick: () => { previewRequest.current++; setPreviewAt(''); setSelectedPreview(null) } }, '关闭预览')),
+        selectedPreview ? h('section', { 'aria-label': '指定时间预览' },
+          h('strong', null, '预览 · ' + selectedPreview.label),
+          h('div', null, [selectedPreview.current?.what, selectedPreview.world?.location?.name].filter(Boolean).join(' · ')),
+          h('div', { 'data-fl-prev': '' }, selectedPreview.preview?.text || '此时没有注入内容'),
+          h(TimelineChart, { timeline: selectedPreview.timeline, currentMinute: selectedPreview.currentMinute, cursorLabel: '预览' })) : null,
         h('div', { 'data-fl-note': '' }, '时序图里红线是此刻；灰色的段是按计划走，橙色的段是你用 life_adjust 改过的。'),
         meta && meta.agency ? h('div', { 'data-fl-note': '' }, `心里在推进：${meta.agency.title}${meta.agency.nextStep ? `，下一步 ${meta.agency.nextStep}` : ''}。这是内部议程，不代表已经完成。`) : null)
 
+      const nextActivity = timeline.find(row => row.start > currentMinute)
       const nowPage = h('div', { 'data-fl-sec': '' },
+        world?.enabled ? h(WorldMap, { world, map: savedConfig?.地图 }) : null,
+        nextActivity ? h('p', null, '下一项安排 · ' + clockOf(nextActivity.start) + ' ' + nextActivity.what) : null,
         h('div', { 'data-fl-h': '' }, '今天的时序'),
         h(TimelineChart, { timeline, currentMinute }),
         h('div', { 'data-fl-h': '' }, '临时调整记录'),
@@ -619,11 +631,13 @@ export function createUI(require) {
           : h('div', { 'data-fl-empty': '' }, '今天还没有用 life_adjust 改过安排'),
         previewBlock,
         h('div', { 'data-fl-sec': '' },
-          h('div', { 'data-fl-h': '' }, '总开关与时间'),
+          h('div', { 'data-fl-h': '' }, '生活线'),
           h('div', { 'data-fl-row': '' },
             h('label', { 'data-fl-row': '' },
               h('input', { type: 'checkbox', checked: config.总开关 !== false, onChange: (e) => patch(['总开关'], e.target.checked) }),
-              h('span', null, '启用生活线（关掉就完全不注入）'))),
+              h('span', null, '启用生活线（关掉就完全不注入）')))))
+      const systemSettings = h('div', { 'data-fl-sec': '' },
+          h('div', { 'data-fl-h': '' }, '运行设置'),
           h('div', { 'data-fl-row': '' },
             h('span', { 'data-fl-note': '' }, '时区'),
             h(Field, { value: config.时区, width: 'data-fl-narrow', onChange: (v) => patch(['时区'], v) })),
@@ -638,11 +652,11 @@ export function createUI(require) {
               'data-fl-input': '', rows: 3,
               value: (config.工作区 || []).join('\n'),
               placeholder: '/home/ubuntu/dsh-agentchat',
-              onChange: (e) => patch(['工作区'], e.target.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)),
+              onChange: (e) => patch(['工作区'], e.target.value.split(/\r?\n/)),
               style: { width: '100%', resize: 'vertical', fontFamily: 'ui-monospace, monospace' },
             })),
           h('div', { 'data-fl-note': '' }, '配置文件：' + (configPath || '（未知）')),
-          h('div', { 'data-fl-note': '' }, '改完点上面的「保存」。')))
+          h('div', { 'data-fl-note': '' }, '改完点上面的「保存」。'))
 
       const mapCfg = config.地图 || { 启用: true, 自动通勤: true, 地点: [], 路径: [] }
       const placeRows = (mapCfg.地点 || []).map((node, i) => h('tr', { key: node.id || i },
@@ -724,10 +738,11 @@ export function createUI(require) {
             onClick: () => setReplayPlaying((playing) => !playing),
           }, replayPlaying ? 'Ⅱ' : '▶'),
           h('input', {
-            type: 'range', min: 0, max: 1439, step: 1, value: replayMinute,
+            type: 'range', min: 0, max: replayEnd, step: 1, value: replayMinute,
             'aria-label': '回放时间', onChange: (e) => { setReplayPlaying(false); setReplayMinute(Number(e.target.value)) },
           }),
-          h('span', { 'data-fl-replay-time': '' }, clockOf(replayMinute))) : h('div', { 'data-fl-replay-empty': '' }, '这一天还没有可回放的生活剧本'),
+          h('span', { 'data-fl-replay-time': '' }, clockOf(replayMinute))) : h('div', { 'data-fl-replay-empty': '' },
+            ({ disabled: '生活线已关闭', future: '这一天还没开始，可在「此刻」预览安排', missing: '这一天没有保存剧本' })[replay?.reason] || '这一天还没有可回放的生活剧本'),
         replayFrames.length ? h(WorldMap, { world: replayWorld, map: replayMap }) : null,
         replayFrames.length ? h('div', { 'data-fl-world-cards': '' },
           h('div', { 'data-fl-stat': '' }, h('div', { 'data-fl-stat-k': '' }, '回放时间'), h('div', { 'data-fl-stat-v': '' }, `${replay.date || replayDate} ${clockOf(replayMinute)}`)),
@@ -736,7 +751,11 @@ export function createUI(require) {
             replayWorld && replayWorld.moving && replayWorld.destination ? `去${replayWorld.destination.name}` : replayWorld && replayWorld.location && replayWorld.location.name,
             (behaviorMeta[(replayWorld && replayWorld.behavior) || 'idle'] || behaviorMeta.idle)[1],
           ].filter(Boolean).join(' · ')))) : null,
-        replay && replay.timeline && replay.timeline.length ? h(TimelineChart, { timeline: replay.timeline, currentMinute: replayMinute }) : null)
+        replay && replay.timeline && replay.timeline.length ? h('label', { 'data-fl-row': '' }, '跳到活动',
+          h('select', { 'data-fl-input': '', value: replay.timeline.find(row => row.start <= replayMinute && replayMinute < row.end)?.start ?? '',
+            onChange: e => { setReplayPlaying(false); setReplayMinute(Number(e.target.value)) } },
+            replay.timeline.map(row => h('option', { key: row.start, value: row.start }, clockOf(row.start) + ' ' + row.what)))) : null,
+        replay && replay.timeline && replay.timeline.length ? h(TimelineChart, { timeline: replay.timeline, currentMinute: replayMinute, cursorLabel: '回放' }) : null)
 
       const calendarTable = (key, label, withRoutine) => h('div', { 'data-fl-sec': '', key },
         h('div', { 'data-fl-h': '' }, label),
@@ -918,7 +937,8 @@ export function createUI(require) {
 
       const backupValue = backupCandidate && backupCandidate.value
       const dataPage = h('div', { 'data-fl-sec': '' },
-        h('div', { 'data-fl-note': '' }, '把生活配置与相机配置装进一个 JSON 文件，适合换设备、升级前留档，或在大改设置前做保险。每日剧本、临时调整、照片原图和日志不会导出。'),
+        systemSettings,
+        h('div', { 'data-fl-note': '' }, '备份包括生活和相机设置，以及人格数据中的长期记忆、关系、偏好和目标。请妥善保管导出的 JSON 文件。'),
         h('div', { 'data-fl-backup-card': '' },
           h('div', null,
             h('div', { 'data-fl-backup-title': '' }, '导出当前设置'),

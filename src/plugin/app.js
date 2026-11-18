@@ -33,6 +33,7 @@ import {
 } from '../life/plan.js'
 import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from '../life/state.js'
 import { writeDayWithModel } from '../life/gen.js'
+import { replayDay } from '../life/replay.js'
 import { cleanupMoments, momentSummary } from '../life/moments.js'
 import { agencyContext, agencyShareCandidates, handleAgencyInboxReply, markAgencyOutreach, observeAgencyReply, readAgency } from '../cognition/agency/index.js'
 import { runInternalAgencyRunner } from '../cognition/agency/runner.js'
@@ -738,7 +739,7 @@ export function apply(ctx) {
           const url = new URL(req.url || '/', 'http://x')
           const cfg = readConfig()
           const at = requestedAt(url.searchParams, cfg)
-          const r = generate(cfg, at)
+          const r = generate(cfg, at, { moments: 'read' })
           return reply(res, 200, {
             ok: true,
             preview: { text: r.text, evidence: r.evidence },
@@ -775,18 +776,7 @@ export function apply(ctx) {
           const url = new URL(req.url || '/', 'http://x')
           const cfg = readConfig()
           const at = requestedAt(url.searchParams, cfg)
-          const r = generate(cfg, at, { replay: true, moments: false })
-          const zoned = zonedNow(at, String(cfg.时区 || 'Asia/Shanghai'))
-          const today = zonedNow(new Date(), String(cfg.时区 || 'Asia/Shanghai')).ymd
-          return reply(res, 200, {
-            ok: true,
-            date: zoned.ymd,
-            today,
-            currentMinute: r.currentMinute || 0,
-            timeline: r.timeline || [],
-            frames: r.replay || [],
-            map: cfg.地图 || null,
-          })
+          return reply(res, 200, replayDay(cfg, at))
         } catch (e) { return reply(res, 500, { ok: false, error: String(e && e.message) }) }
       }),
     }), 'feiyu-life: replay')

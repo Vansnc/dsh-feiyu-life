@@ -40,7 +40,7 @@ test('top navigation always selects a page, including the standalone now page', 
 })
 
 test('settings import accepts every server-supported backup version', () => {
-  const backup = (version) => ({ format: 'dsh-feiyu-life-settings', version, life: {}, camera: {} })
+  const backup = (version) => ({ format: 'dsh-feiyu-life-settings', version, life: {}, camera: {}, mind: {} })
   assert.equal(isSupportedSettingsBackup(backup(1)), true)
   assert.equal(isSupportedSettingsBackup(backup(2)), true)
   assert.equal(isSupportedSettingsBackup(backup(3)), false)

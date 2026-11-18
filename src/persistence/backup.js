@@ -26,6 +26,7 @@ export function restoreSettingsBackup(input) {
   const version = Number(input.version)
   if (![1, SETTINGS_BACKUP_VERSION].includes(version)) throw new Error(`暂不支持备份版本 ${String(input.version ?? '')}`)
   if (!record(input.life) || !record(input.camera)) throw new Error('备份缺少生活配置或相机配置')
+  if (version === 2 && !record(input.mind)) throw new Error('备份缺少人格数据')
 
   const checked = validateConfig(migrateConfig(input.life).value)
   const camera = normalizeImageConfig(migrateImageConfig(input.camera).value)

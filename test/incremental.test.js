@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { generate, normalizeConfig } from '../src/life/life.js'
+import { replayDay } from '../src/life/replay.js'
+import { readMoments } from '../src/life/moments.js'
 import {
   dailyPlan, mergeFutureItems, planPath, readPlan, scheduleRevision, timelineCoverage, writePlan,
 } from '../src/life/plan.js'
@@ -37,6 +39,22 @@ const oldItems = [
   { start: 14 * 60, end: 18 * 60, what: '在宿舍剪片', phone: '在手', outfit: '旧卫衣', locationId: 'dorm' },
   { start: 18 * 60, end: 24 * 60, what: '躺床上刷手机', phone: '在手', outfit: '旧卫衣', locationId: 'dorm' },
 ]
+
+test('replay respects the local present, missing history and the saved historical schedule', () => withHome(() => {
+  const cfg = baseConfig()
+  const now = new Date('2026-11-17T09:12:00+08:00')
+  const past = new Date('2026-11-16T12:00:00+08:00')
+  assert.equal(replayDay(cfg, past, now).reason, 'missing')
+  assert.equal(replayDay(cfg, new Date('2026-11-18T12:00:00+08:00'), now).reason, 'future')
+  writePlan(ymd, { items: oldItems })
+  assert.ok(replayDay(cfg, past, now).timeline.some(row => row.what === '在宿舍剪片'))
+  const replay = replayDay(cfg, new Date('2026-11-17T12:00:00+08:00'), now)
+  assert.equal(replay.currentMinute, 552)
+  assert.ok(replay.frames.length && replay.frames.every(frame => frame.minute <= 552))
+  assert.equal(replay.timeline.at(-1).end, 553)
+  generate(cfg, past, { moments: 'read' })
+  assert.ok(!readMoments(ymd))
+}))
 
 test('a timetable change only adjusts the future and keeps the past frozen', () => withHome(() => {
   const before = baseConfig()

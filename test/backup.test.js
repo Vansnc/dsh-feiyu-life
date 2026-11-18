@@ -36,6 +36,9 @@ test('settings restore keeps version 1 backups compatible without overwriting pe
 })
 
 test('settings restore rejects unrelated or future backup files', () => {
+  assert.throws(() => restoreSettingsBackup({
+    format: SETTINGS_BACKUP_FORMAT, version: 2, life: {}, camera: {},
+  }), /缺少人格数据/)
   assert.throws(() => restoreSettingsBackup({}), /不是鱼的生活设置备份/)
   assert.throws(() => restoreSettingsBackup({
     format: SETTINGS_BACKUP_FORMAT, version: 99, life: {}, camera: {},

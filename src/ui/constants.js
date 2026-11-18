@@ -22,5 +22,6 @@ export const isSupportedSettingsBackup = (value) => Boolean(
   && value.format === 'dsh-feiyu-life-settings'
   && SETTINGS_BACKUP_VERSIONS.includes(Number(value.version))
   && value.life
-  && value.camera,
+  && value.camera
+  && (Number(value.version) === 1 || (value.mind && typeof value.mind === 'object' && !Array.isArray(value.mind))),
 )

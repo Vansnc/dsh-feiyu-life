@@ -430,7 +430,7 @@
   };
   var firstTabForGroup = (group) => groupSections[group]?.[0]?.[0] || group;
   var isSupportedSettingsBackup = (value) => Boolean(
-    value && value.format === "dsh-feiyu-life-settings" && SETTINGS_BACKUP_VERSIONS.includes(Number(value.version)) && value.life && value.camera
+    value && value.format === "dsh-feiyu-life-settings" && SETTINGS_BACKUP_VERSIONS.includes(Number(value.version)) && value.life && value.camera && (Number(value.version) === 1 || value.mind && typeof value.mind === "object" && !Array.isArray(value.mind))
   );
 
   // src/ui/styles.js
@@ -671,7 +671,7 @@
       }
       return selected;
     }
-    function TimelineChart({ timeline, currentMinute }) {
+    function TimelineChart({ timeline, currentMinute, cursorLabel = "\u6B64\u523B" }) {
       if (!timeline || !timeline.length) return h("div", { "data-fl-empty": "" }, "\u8FD8\u6CA1\u6709\u4ECA\u5929\u7684\u65F6\u95F4\u7EBF");
       const rows = timeline.map((x) => ({ ...x, start: Math.max(0, x.start), end: Math.min(1440, x.end) })).filter((x) => x.end > x.start);
       const active = rows.find((x) => currentMinute >= x.start && currentMinute < x.end);
@@ -686,7 +686,7 @@
             "div",
             { "data-fl-ticks": "" },
             [0, 6, 12, 18, 24].map((hh) => h("span", { key: hh, style: { left: hh / 24 * 100 + "%" } }, hh + ":00")),
-            h("span", { "data-fl-now-mark": "", style: { left: Math.max(0, Math.min(1440, currentMinute)) / 1440 * 100 + "%" } }, "\u6B64\u523B " + clockOf(currentMinute))
+            h("span", { "data-fl-now-mark": "", style: { left: Math.max(0, Math.min(1440, currentMinute)) / 1440 * 100 + "%" } }, cursorLabel + " " + clockOf(currentMinute))
           ),
           h("span", { "data-fl-tl-what": "" }, "")
         ),
@@ -929,6 +929,8 @@
       const [preview, setPreview] = useState(null);
       const [configPath, setConfigPath] = useState("");
       const [previewAt, setPreviewAt] = useState("");
+      const [selectedPreview, setSelectedPreview] = useState(null);
+      const previewRequest = React.useRef(0);
       const [busy, setBusy] = useState(false);
       const [timeline, setTimeline] = useState([]);
       const [currentMinute, setCurrentMinute] = useState(0);
@@ -941,6 +943,8 @@
       const [replayDate, setReplayDate] = useState("");
       const [replayPlaying, setReplayPlaying] = useState(false);
       const [replaySpeed, setReplaySpeed] = useState(10);
+      const replayEnd = replay && replay.date === replay.today ? replay.currentMinute : 1439;
+      const replayRequest = React.useRef(0);
       const [backupCandidate, setBackupCandidate] = useState(null);
       const [inferenceText, setInferenceText] = useState("\u8E72\u7740\u770B\u732B\u5403\u5B8C\u534A\u6839\u706B\u817F\u80A0");
       const [inference, setInference] = useState(null);
@@ -979,7 +983,7 @@
       }, []);
       useEffect(() => {
         const refresh = () => {
-          if (document.hidden || previewAt) return;
+          if (document.hidden) return;
           load(true, true);
         };
         const timer = window.setInterval(refresh, 3e4);
@@ -988,7 +992,7 @@
           window.clearInterval(timer);
           document.removeEventListener("visibilitychange", refresh);
         };
-      }, [dirty, previewAt]);
+      }, []);
       useEffect(() => {
         const warn = (e) => {
           if (dirty) {
@@ -1002,13 +1006,13 @@
       useEffect(() => {
         if (!replayPlaying || tab !== "replay") return void 0;
         const timer = window.setInterval(() => {
-          setReplayMinute((minute) => Math.min(1439, minute + replaySpeed));
+          setReplayMinute((minute) => Math.min(replayEnd, minute + replaySpeed));
         }, 650);
         return () => window.clearInterval(timer);
-      }, [replayPlaying, replaySpeed, tab]);
+      }, [replayPlaying, replaySpeed, tab, replayEnd]);
       useEffect(() => {
-        if (replayMinute >= 1439 && replayPlaying) setReplayPlaying(false);
-      }, [replayMinute, replayPlaying]);
+        if (replayMinute >= replayEnd && replayPlaying) setReplayPlaying(false);
+      }, [replayMinute, replayPlaying, replayEnd]);
       const patch = (path, value) => setConfig((prev) => prev ? setPath(prev, path, value) : prev);
       const save = async () => {
         if (!config) return;
@@ -1098,36 +1102,32 @@
         setBusy(false);
       };
       const previewOther = async () => {
+        const request = ++previewRequest.current;
         try {
           const [date, time = "00:00"] = previewAt.split("T");
           const [hour, minute] = time.split(":").map(Number);
           const localMinute = hour * 60 + minute;
           const query = date ? `date=${encodeURIComponent(date)}&minute=${localMinute}` : `ts=${Date.now()}`;
           const data = await getJson(API + "/preview?" + query);
-          setPreview(data.preview);
-          setTimeline(data.timeline || []);
-          setCurrentMinute(data.currentMinute || 0);
-          setCurrent(data.current || null);
-          setMeta(data.meta || null);
-          setAdjustments(data.adjustments || []);
-          setWorld(data.world || null);
-          setMessage("\u4EE5\u4E0B\u662F\u5728 " + (previewAt ? previewAt.replace("T", " ") : "\u6B64\u523B") + " \u7B97\u51FA\u6765\u7684");
+          if (previewRequest.current === request) setSelectedPreview({ ...data, label: previewAt.replace("T", " ") });
         } catch (e) {
-          setMessage("\u9884\u89C8\u5931\u8D25\uFF1A" + e.message);
+          if (previewRequest.current === request) setMessage("\u9884\u89C8\u5931\u8D25\uFF1A" + e.message);
         }
       };
       const loadReplay = async (date = replayDate, jumpToNow = false) => {
+        const request = ++replayRequest.current;
         setReplayPlaying(false);
         setMessage("\u6B63\u5728\u8BFB\u53D6\u751F\u6D3B\u56DE\u653E\u2026");
         try {
           const query = date ? `date=${encodeURIComponent(date)}&minute=720` : `ts=${Date.now()}`;
           const data = await getJson(API + "/replay?" + query);
+          if (request !== replayRequest.current) return;
           setReplay(data);
           setReplayDate(data.date || date || "");
           setReplayMinute(jumpToNow ? data.currentMinute || 0 : 0);
           setMessage(`\u5DF2\u52A0\u8F7D ${data.date || date} \u7684\u751F\u6D3B\u56DE\u653E`);
         } catch (e) {
-          setMessage("\u56DE\u653E\u8BFB\u53D6\u5931\u8D25\uFF1A" + e.message);
+          if (request === replayRequest.current) setMessage("\u56DE\u653E\u8BFB\u53D6\u5931\u8D25\uFF1A" + e.message);
         }
       };
       useEffect(() => {
@@ -1338,7 +1338,8 @@
       const restoreSettings = async () => {
         if (!backupCandidate) return;
         const exportedAt = backupCandidate.value.exportedAt ? new Date(backupCandidate.value.exportedAt).toLocaleString() : "\u672A\u77E5\u65F6\u95F4";
-        if (!window.confirm(`\u5C06\u7528 ${exportedAt} \u7684\u5907\u4EFD\u8986\u76D6\u5F53\u524D\u751F\u6D3B\u548C\u76F8\u673A\u8BBE\u7F6E\u3002\u6BCF\u65E5\u5267\u672C\u3001\u7167\u7247\u4E0E\u65E5\u5FD7\u4E0D\u4F1A\u6539\u53D8\u3002\u7EE7\u7EED\u5417\uFF1F`)) return;
+        const scope = Number(backupCandidate.value.version) === 2 ? "\u751F\u6D3B\u8BBE\u7F6E\u3001\u76F8\u673A\u8BBE\u7F6E\u53CA\u4EBA\u683C\u6570\u636E\uFF08\u542B\u957F\u671F\u8BB0\u5FC6\u4E0E\u5173\u7CFB\uFF09" : "\u751F\u6D3B\u8BBE\u7F6E\u548C\u76F8\u673A\u8BBE\u7F6E";
+        if (!window.confirm(`\u5C06\u7528 ${exportedAt} \u7684\u5907\u4EFD\u8986\u76D6${scope}\u3002\u7EE7\u7EED\u5417\uFF1F`)) return;
         setBusy(true);
         setMessage("\u6B63\u5728\u6821\u9A8C\u5E76\u6062\u590D\u8BBE\u7F6E\u2026");
         try {
@@ -1363,19 +1364,30 @@
           { "data-fl-row": "" },
           h("span", { "data-fl-note": "" }, "\u60F3\u770B\u522B\u7684\u65E5\u5B50\uFF1A"),
           h("input", { "data-fl-input": "", type: "datetime-local", value: previewAt, onChange: (e) => setPreviewAt(e.target.value) }),
-          h("button", { "data-fl-btn": "", onClick: previewOther }, "\u9884\u89C8\u8FD9\u4E2A\u65F6\u95F4"),
-          h("button", { "data-fl-btn": "", onClick: async () => {
+          h("button", { "data-fl-btn": "", disabled: !previewAt, onClick: previewOther }, "\u9884\u89C8\u8FD9\u4E2A\u65F6\u95F4"),
+          h("button", { "data-fl-btn": "", onClick: () => {
+            previewRequest.current++;
             setPreviewAt("");
-            await load(true);
-            setMessage("\u56DE\u5230\u6B64\u523B");
-          } }, "\u56DE\u5230\u6B64\u523B")
+            setSelectedPreview(null);
+          } }, "\u5173\u95ED\u9884\u89C8")
         ),
+        selectedPreview ? h(
+          "section",
+          { "aria-label": "\u6307\u5B9A\u65F6\u95F4\u9884\u89C8" },
+          h("strong", null, "\u9884\u89C8 \xB7 " + selectedPreview.label),
+          h("div", null, [selectedPreview.current?.what, selectedPreview.world?.location?.name].filter(Boolean).join(" \xB7 ")),
+          h("div", { "data-fl-prev": "" }, selectedPreview.preview?.text || "\u6B64\u65F6\u6CA1\u6709\u6CE8\u5165\u5185\u5BB9"),
+          h(TimelineChart, { timeline: selectedPreview.timeline, currentMinute: selectedPreview.currentMinute, cursorLabel: "\u9884\u89C8" })
+        ) : null,
         h("div", { "data-fl-note": "" }, "\u65F6\u5E8F\u56FE\u91CC\u7EA2\u7EBF\u662F\u6B64\u523B\uFF1B\u7070\u8272\u7684\u6BB5\u662F\u6309\u8BA1\u5212\u8D70\uFF0C\u6A59\u8272\u7684\u6BB5\u662F\u4F60\u7528 life_adjust \u6539\u8FC7\u7684\u3002"),
         meta && meta.agency ? h("div", { "data-fl-note": "" }, `\u5FC3\u91CC\u5728\u63A8\u8FDB\uFF1A${meta.agency.title}${meta.agency.nextStep ? `\uFF0C\u4E0B\u4E00\u6B65 ${meta.agency.nextStep}` : ""}\u3002\u8FD9\u662F\u5185\u90E8\u8BAE\u7A0B\uFF0C\u4E0D\u4EE3\u8868\u5DF2\u7ECF\u5B8C\u6210\u3002`) : null
       );
+      const nextActivity = timeline.find((row) => row.start > currentMinute);
       const nowPage = h(
         "div",
         { "data-fl-sec": "" },
+        world?.enabled ? h(WorldMap, { world, map: savedConfig?.\u5730\u56FE }) : null,
+        nextActivity ? h("p", null, "\u4E0B\u4E00\u9879\u5B89\u6392 \xB7 " + clockOf(nextActivity.start) + " " + nextActivity.what) : null,
         h("div", { "data-fl-h": "" }, "\u4ECA\u5929\u7684\u65F6\u5E8F"),
         h(TimelineChart, { timeline, currentMinute }),
         h("div", { "data-fl-h": "" }, "\u4E34\u65F6\u8C03\u6574\u8BB0\u5F55"),
@@ -1403,7 +1415,7 @@
         h(
           "div",
           { "data-fl-sec": "" },
-          h("div", { "data-fl-h": "" }, "\u603B\u5F00\u5173\u4E0E\u65F6\u95F4"),
+          h("div", { "data-fl-h": "" }, "\u751F\u6D3B\u7EBF"),
           h(
             "div",
             { "data-fl-row": "" },
@@ -1413,37 +1425,42 @@
               h("input", { type: "checkbox", checked: config.\u603B\u5F00\u5173 !== false, onChange: (e) => patch(["\u603B\u5F00\u5173"], e.target.checked) }),
               h("span", null, "\u542F\u7528\u751F\u6D3B\u7EBF\uFF08\u5173\u6389\u5C31\u5B8C\u5168\u4E0D\u6CE8\u5165\uFF09")
             )
-          ),
-          h(
-            "div",
-            { "data-fl-row": "" },
-            h("span", { "data-fl-note": "" }, "\u65F6\u533A"),
-            h(Field, { value: config.\u65F6\u533A, width: "data-fl-narrow", onChange: (v) => patch(["\u65F6\u533A"], v) })
-          ),
-          h(
-            "div",
-            { "data-fl-row": "" },
-            h("span", { "data-fl-note": "" }, "\u6A21\u578B\u786C\u8D85\u65F6\uFF08\u79D2\uFF09"),
-            h(Field, { value: config.\u6A21\u578B\u8D85\u65F6\u79D2, type: "number", width: "data-fl-num", onChange: (v) => patch(["\u6A21\u578B\u8D85\u65F6\u79D2"], Number(v) || 60) }),
-            h("span", { "data-fl-note": "" }, "\u5267\u672C\u4E0E\u8C03\u6574\u4FDD\u7559\uFF08\u5929\uFF09"),
-            h(Field, { value: config.\u5386\u53F2\u4FDD\u7559\u5929\u6570, type: "number", width: "data-fl-num", onChange: (v) => patch(["\u5386\u53F2\u4FDD\u7559\u5929\u6570"], Number(v) || 180) })
-          ),
-          h(
-            "label",
-            { "data-fl-sec": "" },
-            h("span", { "data-fl-note": "" }, "\u53EA\u5728\u8FD9\u4E9B\u5DE5\u4F5C\u533A\u6CE8\u5165\uFF08\u6BCF\u884C\u4E00\u4E2A\u76EE\u5F55\uFF1B\u7559\u7A7A = \u6240\u6709\u9876\u5C42\u4F1A\u8BDD\uFF09"),
-            h("textarea", {
-              "data-fl-input": "",
-              rows: 3,
-              value: (config.\u5DE5\u4F5C\u533A || []).join("\n"),
-              placeholder: "/home/ubuntu/dsh-agentchat",
-              onChange: (e) => patch(["\u5DE5\u4F5C\u533A"], e.target.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)),
-              style: { width: "100%", resize: "vertical", fontFamily: "ui-monospace, monospace" }
-            })
-          ),
-          h("div", { "data-fl-note": "" }, "\u914D\u7F6E\u6587\u4EF6\uFF1A" + (configPath || "\uFF08\u672A\u77E5\uFF09")),
-          h("div", { "data-fl-note": "" }, "\u6539\u5B8C\u70B9\u4E0A\u9762\u7684\u300C\u4FDD\u5B58\u300D\u3002")
+          )
         )
+      );
+      const systemSettings = h(
+        "div",
+        { "data-fl-sec": "" },
+        h("div", { "data-fl-h": "" }, "\u8FD0\u884C\u8BBE\u7F6E"),
+        h(
+          "div",
+          { "data-fl-row": "" },
+          h("span", { "data-fl-note": "" }, "\u65F6\u533A"),
+          h(Field, { value: config.\u65F6\u533A, width: "data-fl-narrow", onChange: (v) => patch(["\u65F6\u533A"], v) })
+        ),
+        h(
+          "div",
+          { "data-fl-row": "" },
+          h("span", { "data-fl-note": "" }, "\u6A21\u578B\u786C\u8D85\u65F6\uFF08\u79D2\uFF09"),
+          h(Field, { value: config.\u6A21\u578B\u8D85\u65F6\u79D2, type: "number", width: "data-fl-num", onChange: (v) => patch(["\u6A21\u578B\u8D85\u65F6\u79D2"], Number(v) || 60) }),
+          h("span", { "data-fl-note": "" }, "\u5267\u672C\u4E0E\u8C03\u6574\u4FDD\u7559\uFF08\u5929\uFF09"),
+          h(Field, { value: config.\u5386\u53F2\u4FDD\u7559\u5929\u6570, type: "number", width: "data-fl-num", onChange: (v) => patch(["\u5386\u53F2\u4FDD\u7559\u5929\u6570"], Number(v) || 180) })
+        ),
+        h(
+          "label",
+          { "data-fl-sec": "" },
+          h("span", { "data-fl-note": "" }, "\u53EA\u5728\u8FD9\u4E9B\u5DE5\u4F5C\u533A\u6CE8\u5165\uFF08\u6BCF\u884C\u4E00\u4E2A\u76EE\u5F55\uFF1B\u7559\u7A7A = \u6240\u6709\u9876\u5C42\u4F1A\u8BDD\uFF09"),
+          h("textarea", {
+            "data-fl-input": "",
+            rows: 3,
+            value: (config.\u5DE5\u4F5C\u533A || []).join("\n"),
+            placeholder: "/home/ubuntu/dsh-agentchat",
+            onChange: (e) => patch(["\u5DE5\u4F5C\u533A"], e.target.value.split(/\r?\n/)),
+            style: { width: "100%", resize: "vertical", fontFamily: "ui-monospace, monospace" }
+          })
+        ),
+        h("div", { "data-fl-note": "" }, "\u914D\u7F6E\u6587\u4EF6\uFF1A" + (configPath || "\uFF08\u672A\u77E5\uFF09")),
+        h("div", { "data-fl-note": "" }, "\u6539\u5B8C\u70B9\u4E0A\u9762\u7684\u300C\u4FDD\u5B58\u300D\u3002")
       );
       const mapCfg = config.\u5730\u56FE || { \u542F\u7528: true, \u81EA\u52A8\u901A\u52E4: true, \u5730\u70B9: [], \u8DEF\u5F84: [] };
       const placeRows = (mapCfg.\u5730\u70B9 || []).map((node, i) => h(
@@ -1588,7 +1605,7 @@
           h("input", {
             type: "range",
             min: 0,
-            max: 1439,
+            max: replayEnd,
             step: 1,
             value: replayMinute,
             "aria-label": "\u56DE\u653E\u65F6\u95F4",
@@ -1598,7 +1615,11 @@
             }
           }),
           h("span", { "data-fl-replay-time": "" }, clockOf(replayMinute))
-        ) : h("div", { "data-fl-replay-empty": "" }, "\u8FD9\u4E00\u5929\u8FD8\u6CA1\u6709\u53EF\u56DE\u653E\u7684\u751F\u6D3B\u5267\u672C"),
+        ) : h(
+          "div",
+          { "data-fl-replay-empty": "" },
+          { disabled: "\u751F\u6D3B\u7EBF\u5DF2\u5173\u95ED", future: "\u8FD9\u4E00\u5929\u8FD8\u6CA1\u5F00\u59CB\uFF0C\u53EF\u5728\u300C\u6B64\u523B\u300D\u9884\u89C8\u5B89\u6392", missing: "\u8FD9\u4E00\u5929\u6CA1\u6709\u4FDD\u5B58\u5267\u672C" }[replay?.reason] || "\u8FD9\u4E00\u5929\u8FD8\u6CA1\u6709\u53EF\u56DE\u653E\u7684\u751F\u6D3B\u5267\u672C"
+        ),
         replayFrames.length ? h(WorldMap, { world: replayWorld, map: replayMap }) : null,
         replayFrames.length ? h(
           "div",
@@ -1610,7 +1631,24 @@
             (behaviorMeta[replayWorld && replayWorld.behavior || "idle"] || behaviorMeta.idle)[1]
           ].filter(Boolean).join(" \xB7 ")))
         ) : null,
-        replay && replay.timeline && replay.timeline.length ? h(TimelineChart, { timeline: replay.timeline, currentMinute: replayMinute }) : null
+        replay && replay.timeline && replay.timeline.length ? h(
+          "label",
+          { "data-fl-row": "" },
+          "\u8DF3\u5230\u6D3B\u52A8",
+          h(
+            "select",
+            {
+              "data-fl-input": "",
+              value: replay.timeline.find((row) => row.start <= replayMinute && replayMinute < row.end)?.start ?? "",
+              onChange: (e) => {
+                setReplayPlaying(false);
+                setReplayMinute(Number(e.target.value));
+              }
+            },
+            replay.timeline.map((row) => h("option", { key: row.start, value: row.start }, clockOf(row.start) + " " + row.what))
+          )
+        ) : null,
+        replay && replay.timeline && replay.timeline.length ? h(TimelineChart, { timeline: replay.timeline, currentMinute: replayMinute, cursorLabel: "\u56DE\u653E" }) : null
       );
       const calendarTable = (key, label, withRoutine) => h(
         "div",
@@ -1832,7 +1870,8 @@
       const dataPage = h(
         "div",
         { "data-fl-sec": "" },
-        h("div", { "data-fl-note": "" }, "\u628A\u751F\u6D3B\u914D\u7F6E\u4E0E\u76F8\u673A\u914D\u7F6E\u88C5\u8FDB\u4E00\u4E2A JSON \u6587\u4EF6\uFF0C\u9002\u5408\u6362\u8BBE\u5907\u3001\u5347\u7EA7\u524D\u7559\u6863\uFF0C\u6216\u5728\u5927\u6539\u8BBE\u7F6E\u524D\u505A\u4FDD\u9669\u3002\u6BCF\u65E5\u5267\u672C\u3001\u4E34\u65F6\u8C03\u6574\u3001\u7167\u7247\u539F\u56FE\u548C\u65E5\u5FD7\u4E0D\u4F1A\u5BFC\u51FA\u3002"),
+        systemSettings,
+        h("div", { "data-fl-note": "" }, "\u5907\u4EFD\u5305\u62EC\u751F\u6D3B\u548C\u76F8\u673A\u8BBE\u7F6E\uFF0C\u4EE5\u53CA\u4EBA\u683C\u6570\u636E\u4E2D\u7684\u957F\u671F\u8BB0\u5FC6\u3001\u5173\u7CFB\u3001\u504F\u597D\u548C\u76EE\u6807\u3002\u8BF7\u59A5\u5584\u4FDD\u7BA1\u5BFC\u51FA\u7684 JSON \u6587\u4EF6\u3002"),
         h(
           "div",
           { "data-fl-backup-card": "" },

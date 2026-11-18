@@ -22,7 +22,7 @@ import { addZonedDays, clockOf, coldEpisode, dayDiff, hashSeed, lastNightSleep, 
 import { dayType, dailyPlan, readPlan, normalizeRoutine, normalizeWardrobe, timelineCoverage } from './plan.js'
 import { readFacts, buildTimeline, segmentAt, recentSegments } from './state.js'
 import { addWorldToTimeline, buildReplayFrames, defaultWorldConfig, normalizeWorldConfig, worldStateAt } from './world.js'
-import { ensureMoments, momentContext } from './moments.js'
+import { ensureMoments, readMoments, momentContext } from './moments.js'
 import { atomicWriteJson, quarantine, readJsonBounded, withLock } from '../persistence/storage.js'
 import { defaultSharingConfig, normalizeSharingConfig } from '../proactive/sharing.js'
 import { join, dirname } from 'node:path'
@@ -530,7 +530,7 @@ export function generate(cfg, now = new Date(), options = {}) {
   const calendar = todayCalendar(cfg, t)
   const deviation = todayDeviation(cfg, t, calendar.routine)
   const type = dayType(cfg, t, calendar)
-  const plan = dailyPlan(cfg, t, calendar, deviation, type, { mergeFuture: true, nowMinute: t.minuteOfDay })
+  const plan = dailyPlan(cfg, t, calendar, deviation, type, { mergeFuture: !options.archived, nowMinute: t.minuteOfDay })
   const dayStartMs = zonedDayStartMs(now, t, tz)
   const baseTimeline = buildTimeline(plan.items, readFacts(t.ymd), dayStartMs, (minute) => zonedDateTimeMs(t.ymd, minute, tz))
   const timeline = addWorldToTimeline(baseTimeline, cfg.地图)
@@ -572,7 +572,7 @@ export function generate(cfg, now = new Date(), options = {}) {
   let moment = null
   if (options.moments !== false) {
     const people = (Array.isArray(options.people) ? options.people : []).map((x) => String(x || '').trim()).filter(Boolean)
-    moments = ensureMoments(cfg, t, calendar, {
+    moments = options.moments === 'read' ? readMoments(t.ymd) : ensureMoments(cfg, t, calendar, {
       deviation,
       term: Boolean(calendar.term && !calendar.holiday && !calendar.special),
       outing: outings.length > 0,
