@@ -122,23 +122,30 @@ export function renderFact(fact) {
   return fact.label ? `${fact.label}：${fact.text}` : fact.text
 }
 
-// 必选项先占位：这些事实无论预算多紧都要留下，避免被低优先级短句挤掉。
+// 必选项先占位：这些事实无论预算多紧都要优先留下，避免被低优先级短句挤掉。
+// 但必选组本身也有上限（总预算的 60%），超了就从优先级最低的开始砍——先砍「说话」，别砍「此刻」。
 const REQUIRED_KINDS = new Set(['now', 'rule', 'self', 'context', 'hint'])
+const REQUIRED_SHARE = 0.6
 
 export function selectFacts(facts, { query = '', budget = 1200 } = {}) {
   const candidates = facts.filter(Boolean).filter((fact) => {
     if (!fact.topics.length) return true
     return fact.topics.some((topic) => new RegExp(topic).test(query))
   })
-  const picked = []
-  let used = 0
-  // 1) 必选项按原始顺序先入，不参与"放不下就跳过"的淘汰
-  for (const fact of candidates.filter(f => REQUIRED_KINDS.has(f.kind))) {
-    picked.push(fact)
-    used += renderFact(fact).length + 1
-  }
-  // 2) 剩余预算按优先级从高到低填；放不下就停（后面只会更低）
+  const required = candidates.filter(f => REQUIRED_KINDS.has(f.kind))
   const optional = candidates.filter(f => !REQUIRED_KINDS.has(f.kind)).sort((a, b) => b.priority - a.priority)
+  const requiredBudget = Math.round(budget * REQUIRED_SHARE)
+  const kept = new Set()
+  let used = 0
+  // 必选组：按优先级从高到低放，超过必选预算就停；只有「此刻」是硬保底
+  for (const fact of required.slice().sort((a, b) => b.priority - a.priority)) {
+    const line = renderFact(fact)
+    if (fact.kind !== 'now' && used + line.length + 1 > requiredBudget) break
+    kept.add(fact)
+    used += line.length + 1
+  }
+  const picked = required.filter(f => kept.has(f))
+  // 剩余预算按优先级从高到低填；放不下就停（后面只会更低）
   for (const fact of optional) {
     const line = renderFact(fact)
     if (used + line.length + 1 > budget) break

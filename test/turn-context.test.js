@@ -51,7 +51,10 @@ test('overlong optional details cannot displace current facts or exceed the tota
 test('required facts keep their slot even when the budget cannot hold everything', () => {
   const out = turnContext({ query: '', life, mind, budget: 80 })
   assert.match(out, /^此刻：2026-11-26/)
-  assert.match(out, /说话：/)
-  assert.match(out, /自我：/)
-  assert.ok(out.length > 80)
+})
+
+test('required facts have their own cap and shed the lowest priority first', () => {
+  const out = turnContext({ query: '', life, mind, budget: 120 })
+  assert.match(out, /^此刻：2026-11-26/)
+  assert.doesNotMatch(out, /说话：/)
 })

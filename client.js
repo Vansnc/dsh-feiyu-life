@@ -416,7 +416,7 @@
   var routineTables = [["\u65E5\u5E38", "\u65E5\u5E38\uFF08\u6709\u8BFE\u7684\u65E5\u5B50\uFF09"], ["\u665A\u8D77", "\u665A\u8D77\uFF08\u5468\u56DB\u90A3\u79CD\uFF09"], ["\u5047\u671F", "\u5047\u671F"], ["\u5907\u8003", "\u5907\u8003\uFF08\u8003\u8BD5\u5468\uFF09"]];
   var wardrobeLabels = [["sleep", "\u7761\u89C9"], ["bath", "\u6D17\u6FA1"], ["class", "\u4E0A\u8BFE"], ["home", "\u5728\u5BB6"], ["out", "\u51FA\u95E8"], ["eat", "\u5403\u996D"]];
   var weekdayNames = ["", "\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"];
-  var UI_ASSET_VERSION = "2.7.3";
+  var UI_ASSET_VERSION = "2.7.4";
   var SETTINGS_BACKUP_VERSIONS = [1, 2];
   var tabs = [["now", "\u6B64\u523B"], ["life", "\u751F\u6D3B"], ["inner", "\u5185\u5728"], ["proactive", "\u4E3B\u52A8"], ["world", "\u4E16\u754C"], ["camera", "\u76F8\u673A"], ["data", "\u6570\u636E"]];
   var groupSections = {
