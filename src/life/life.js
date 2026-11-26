@@ -668,7 +668,8 @@ export function generate(cfg, now = new Date(), options = {}) {
     lines.push(`（接下来）${clockOf(nextAt)} 大概${next.what}。`)
   }
 
-  if (t.hour >= 18) {
+  let tomorrowHint = ''
+  if (t.hour >= 18 || options.includeTomorrow) {
     const tomorrow = zonedNow(addZonedDays(now, tz, 1), tz)
     const tomorrowCal = todayCalendar(cfg, tomorrow)
     const tomorrowType = dayType(cfg, tomorrow, tomorrowCal)
@@ -676,13 +677,19 @@ export function generate(cfg, now = new Date(), options = {}) {
     const sleepEnd = tomorrowPlan.items.find((x) => /睡/.test(x.what) && x.end <= 12 * 60)?.end
     const firstWake = tomorrowPlan.items.find((x) => x.start >= 6 * 60 && !/睡/.test(x.what))
     const wakeMinute = Number.isFinite(sleepEnd) ? sleepEnd : (firstWake ? firstWake.start : null)
-    lines.push(`（明天）${weekdayName(tomorrow.weekday)}·${tomorrowType.name}${wakeMinute ? `，${minuteLabel(wakeMinute)} 左右起` : ''}。`)
+    tomorrowHint = `${weekdayName(tomorrow.weekday)}·${tomorrowType.name}${wakeMinute ? `，${minuteLabel(wakeMinute)} 左右起` : ''}`
+    if (t.hour >= 18) lines.push(`（明天）${tomorrowHint}。`)
   }
 
   lines.push('（说话）这是你自己的日子，别当时间表念：不报时间段、不列清单，他问起挑一两件说就行。括号里写死的是确定发生的事；没写到的细节可以随口补，但别改正在做的事、地点和手机状态。他说自己在地铁/公司/家，那是他的场景，别安到你身上。')
 
   return {
     text: lines.join('\n'),
+    chatFacts: {
+      date: t.ymd, clock: clockOf(t.minuteOfDay), recent,
+      next: next && nextAt < 1440 ? `${clockOf(nextAt)} ${next.what}` : '',
+      tomorrow: tomorrowHint,
+    },
     evidence,
     current,
     calendar,

@@ -608,8 +608,8 @@ export function createUI(require) {
       if (!config) return h('div', { 'data-fl-wrap': '' }, h('div', { 'data-fl-note': '' }, '读取中…'))
 
       const previewBlock = h('div', { 'data-fl-sec': '' },
-        h('div', { 'data-fl-h': '' }, '这会儿注入给她的'),
-        h('div', { 'data-fl-prev': '' }, (preview && preview.text) || '（当前没有注入）'),
+        h('div', { 'data-fl-h': '' }, '此刻生活线预览'),
+        h('div', { 'data-fl-prev': '' }, (preview && preview.text) || '（当前没有生活线）'),
         h('div', { 'data-fl-why': '' }, ((preview && preview.evidence) || []).map((x, i) => h('span', { key: i, 'data-fl-chip': '' }, x))),
         h('div', { 'data-fl-row': '' },
           h('span', { 'data-fl-note': '' }, '想看别的日子：'),
@@ -619,7 +619,7 @@ export function createUI(require) {
         selectedPreview ? h('section', { 'aria-label': '指定时间预览' },
           h('strong', null, '预览 · ' + selectedPreview.label),
           h('div', null, [selectedPreview.current?.what, selectedPreview.world?.location?.name].filter(Boolean).join(' · ')),
-          h('div', { 'data-fl-prev': '' }, selectedPreview.preview?.text || '此时没有注入内容'),
+          h('div', { 'data-fl-prev': '' }, selectedPreview.preview?.text || '此时没有生活线'),
           h(TimelineChart, { timeline: selectedPreview.timeline, currentMinute: selectedPreview.currentMinute, cursorLabel: '预览' })) : null,
         h('div', { 'data-fl-note': '' }, '时序图里红线是此刻；灰色的段是按计划走，橙色的段是你用 life_adjust 改过的。'),
         meta && meta.agency ? h('div', { 'data-fl-note': '' }, `心里在推进：${meta.agency.title}${meta.agency.nextStep ? `，下一步 ${meta.agency.nextStep}` : ''}。这是内部议程，不代表已经完成。`) : null)

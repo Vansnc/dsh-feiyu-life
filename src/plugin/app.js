@@ -35,7 +35,7 @@ import { addAdjustment, listAdjustments, removeAdjustment, cleanupFacts } from '
 import { writeDayWithModel } from '../life/gen.js'
 import { replayDay } from '../life/replay.js'
 import { cleanupMoments, momentSummary } from '../life/moments.js'
-import { agencyContext, agencyShareCandidates, handleAgencyInboxReply, markAgencyOutreach, observeAgencyReply, readAgency } from '../cognition/agency/index.js'
+import { agencyShareCandidates, handleAgencyInboxReply, markAgencyOutreach, observeAgencyReply, readAgency } from '../cognition/agency/index.js'
 import { runInternalAgencyRunner } from '../cognition/agency/runner.js'
 import {
   buildCandidates, buildSharePrompt, commitShare, normalizeSharingConfig, readSharing, releaseShare, sharingStatus, takeShare,
@@ -49,7 +49,7 @@ import {
   resetAffect, shouldReflect, sourceKind,
 } from '../cognition/reflection.js'
 import {
-  applyCognition, externalPluginStatus, mindContext,
+  applyCognition, externalPluginStatus,
   mutateGoal, mutateMemory, mutatePreference, readMind, writeMind,
 } from '../cognition/mind.js'
 import {
@@ -85,7 +85,8 @@ export function requestedAt(searchParams, config, fallback = new Date()) {
   return Number.isFinite(ts) && ts > 0 ? new Date(ts) : fallback
 }
 
-import { chatHint, bodyHint, calendarLabel, recentSummary, selfHint } from './context-hints.js'
+import { needsDiary, turnContext, wantsTomorrow } from './turn-context.js'
+import { bodyHint, calendarLabel, recentSummary, selfHint } from './context-hints.js'
 import { createInitiativeRunner } from './initiative.js'
 import { registerLifeTools } from './tools.js'
 import { createHttpHelpers } from './http.js'
@@ -141,31 +142,26 @@ export function apply(ctx) {
       text: () => {
         try {
           const cfg = readConfig()
-          if (!inWorkspace(cfg, cwd)) return ''
+          if (cfg.总开关 === false || !inWorkspace(cfg, cwd)) return ''
           const external = externalPluginStatus()
           const externalFirst = cfg.人格?.外部插件兼容 === '外部优先'
           const state = cfg.连续性?.启用 === false ? null : readContinuity()
           const people = state ? activePeople(state).map((x) => x.name) : []
+          const query = pendingInbox?.handled ? '' : pendingInbox?.text || ''
+          const gap = query ? gapHours : 0
           const life = generate(cfg, new Date(), {
+            includeTomorrow: wantsTomorrow.test(query),
             energyBaseline: state?.needs?.energy,
             people,
           })
           const inner = cfg.内在?.启用 === false || (externalFirst && external.mood) ? '' : affectContext(readAffect(cfg.内在), cfg.内在)
           const personalityCfg = externalFirst && external.memory ? { ...cfg.人格, 记忆启用: false } : cfg.人格
-          const personality = cfg.人格?.启用 === false ? '' : mindContext(readMind(cfg.人格), pendingInbox?.text || '', personalityCfg)
-          const chat = cfg.人格?.启用 === false ? '' : chatHint(life.reply?.id, gapHours)
-          if (!state) return [life.text, inner, personality, chat].filter(Boolean).join('\n')
-          const agency = readAgency()
-          return [
-            life.text,
-            inner,
-            personality,
-            chat,
-            `（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区, vitality: life.vitality })}`,
-            continuitySummary(state, { timeZone: cfg.时区 }),
-            agencyContext(agency.focus),
-            `（认识的人）\n${relationshipSummary(state, { timeZone: cfg.时区 })}\n这些是你心里记着的事，不要逐条播报；只有自然相关时才提。只有最终真实时间线中已经结束、且未被临时调整覆盖的活动与互动才算发生；不要把计划说成成果。`,
-          ].filter(Boolean).join('\n')
+          return turnContext({
+            life, query, gapHours: gap, state, inner, config: personalityCfg, timeZone: cfg.时区,
+            mind: cfg.人格?.启用 === false ? null : readMind(cfg.人格),
+            focus: state ? readAgency().focus : null,
+            diary: state && needsDiary(query, gap) ? readMemories(7) : [],
+          })
         } catch { return '' }
       },
     }))
@@ -205,7 +201,11 @@ export function apply(ctx) {
         const value = eventText(payload)
         const kind = sourceKind(payload)
         if (!value || /runtime-context|time-context|system|tool-result/.test(kind)) return
-        if (/feiyu-life-share/.test(kind)) return
+        if (/feiyu-life-share|feiyu-life-initiative|bili-duty-scan/.test(kind)) {
+          pendingInbox = null
+          gapHours = 0
+          return
+        }
         pendingInbox = { text: value, kind: kind || 'human', token: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}` }
         if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
           const at = Date.now()

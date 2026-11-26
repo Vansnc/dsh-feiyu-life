@@ -1379,8 +1379,8 @@
       const previewBlock = h(
         "div",
         { "data-fl-sec": "" },
-        h("div", { "data-fl-h": "" }, "\u8FD9\u4F1A\u513F\u6CE8\u5165\u7ED9\u5979\u7684"),
-        h("div", { "data-fl-prev": "" }, preview && preview.text || "\uFF08\u5F53\u524D\u6CA1\u6709\u6CE8\u5165\uFF09"),
+        h("div", { "data-fl-h": "" }, "\u6B64\u523B\u751F\u6D3B\u7EBF\u9884\u89C8"),
+        h("div", { "data-fl-prev": "" }, preview && preview.text || "\uFF08\u5F53\u524D\u6CA1\u6709\u751F\u6D3B\u7EBF\uFF09"),
         h("div", { "data-fl-why": "" }, (preview && preview.evidence || []).map((x, i) => h("span", { key: i, "data-fl-chip": "" }, x))),
         h(
           "div",
@@ -1399,7 +1399,7 @@
           { "aria-label": "\u6307\u5B9A\u65F6\u95F4\u9884\u89C8" },
           h("strong", null, "\u9884\u89C8 \xB7 " + selectedPreview.label),
           h("div", null, [selectedPreview.current?.what, selectedPreview.world?.location?.name].filter(Boolean).join(" \xB7 ")),
-          h("div", { "data-fl-prev": "" }, selectedPreview.preview?.text || "\u6B64\u65F6\u6CA1\u6709\u6CE8\u5165\u5185\u5BB9"),
+          h("div", { "data-fl-prev": "" }, selectedPreview.preview?.text || "\u6B64\u65F6\u6CA1\u6709\u751F\u6D3B\u7EBF"),
           h(TimelineChart, { timeline: selectedPreview.timeline, currentMinute: selectedPreview.currentMinute, cursorLabel: "\u9884\u89C8" })
         ) : null,
         h("div", { "data-fl-note": "" }, "\u65F6\u5E8F\u56FE\u91CC\u7EA2\u7EBF\u662F\u6B64\u523B\uFF1B\u7070\u8272\u7684\u6BB5\u662F\u6309\u8BA1\u5212\u8D70\uFF0C\u6A59\u8272\u7684\u6BB5\u662F\u4F60\u7528 life_adjust \u6539\u8FC7\u7684\u3002"),
