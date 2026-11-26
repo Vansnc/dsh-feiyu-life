@@ -46,3 +46,12 @@ test('overlong optional details cannot displace current facts or exceed the tota
   assert.match(out, /^此刻：2026-11-26/)
   assert.ok(out.length <= 1200)
 })
+
+
+test('required facts keep their slot even when the budget cannot hold everything', () => {
+  const out = turnContext({ query: '', life, mind, budget: 80 })
+  assert.match(out, /^此刻：2026-11-26/)
+  assert.match(out, /说话：/)
+  assert.match(out, /自我：/)
+  assert.ok(out.length > 80)
+})

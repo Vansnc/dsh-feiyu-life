@@ -122,16 +122,26 @@ export function renderFact(fact) {
   return fact.label ? `${fact.label}：${fact.text}` : fact.text
 }
 
+// 必选项先占位：这些事实无论预算多紧都要留下，避免被低优先级短句挤掉。
+const REQUIRED_KINDS = new Set(['now', 'rule', 'self', 'context', 'hint'])
+
 export function selectFacts(facts, { query = '', budget = 1200 } = {}) {
-  const picked = []
-  let used = 0
-  const ordered = facts.filter(Boolean).filter((fact) => {
+  const candidates = facts.filter(Boolean).filter((fact) => {
     if (!fact.topics.length) return true
     return fact.topics.some((topic) => new RegExp(topic).test(query))
-  }).sort((a, b) => b.priority - a.priority)
-  for (const fact of ordered) {
+  })
+  const picked = []
+  let used = 0
+  // 1) 必选项按原始顺序先入，不参与"放不下就跳过"的淘汰
+  for (const fact of candidates.filter(f => REQUIRED_KINDS.has(f.kind))) {
+    picked.push(fact)
+    used += renderFact(fact).length + 1
+  }
+  // 2) 剩余预算按优先级从高到低填；放不下就停（后面只会更低）
+  const optional = candidates.filter(f => !REQUIRED_KINDS.has(f.kind)).sort((a, b) => b.priority - a.priority)
+  for (const fact of optional) {
     const line = renderFact(fact)
-    if (used + line.length + 1 > budget) continue
+    if (used + line.length + 1 > budget) break
     picked.push(fact)
     used += line.length + 1
   }
