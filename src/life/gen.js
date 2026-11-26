@@ -223,39 +223,46 @@ export function normalizePlan(raw, worldConfig = defaultWorldConfig, allowedEnti
   return { title: String(raw.title || '').slice(0, 40), mood: String(raw.mood || '').slice(0, 80), items: clean }
 }
 
-/** Call the model once for a day; null on failure (caller falls back to template). */
+/** Call the model for a day; null on failure (caller falls back to template). */
 export async function writeDayWithModel(ctx, agent, params) {
   const target = pickModel(agent, params.cfg)
   if (!target) { log('no model available (agent=' + Boolean(agent) + ')'); return null }
   const system = '你在给一个角色编她真实的一天。只输出 JSON。'
   const user = buildPrompt(params)
-  let out = ''
-  const kinds = {}
-  try {
-    const timeoutMs = Math.max(10, Math.min(300, Number(params.cfg.模型超时秒) || 60)) * 1000
-    const stream = ctx.llm.stream({
-      provider: target.provider,
-      model: target.model,
-      system,
-      messages: [say('user', user)],
-      sessionId: String((agent && agent.session && agent.session.id) || ''),
-      maxTokens: 6000,
-      temperature: 0.9,
-      reasoningEffort: 'low',
-    })
-    for await (const chunk of withStreamTimeout(stream, timeoutMs, 'daily plan model')) {
-      if (!chunk) continue
-      kinds[chunk.type] = (kinds[chunk.type] || 0) + 1
-      if (chunk.type === 'text-delta') out += chunk.text
-      if (chunk.type === 'finish' && chunk.reason && chunk.reason.kind === 'error') {
-        log('model returned error: ' + JSON.stringify(chunk.reason).slice(0, 200))
-        return null
+  const timeoutMs = Math.max(10, Math.min(300, Number(params.cfg.模型超时秒) || 60)) * 1000
+  // 每天只跑一两次；不把 maxTokens 掐紧，让深度思考和正文都有地方写。
+  // 第一次默认推理，失败再重试一次（低推理）。
+  const attempts = [
+    { maxTokens: 32000, temperature: 0.9 },
+    { maxTokens: 32000, temperature: 0.9, reasoningEffort: 'low' },
+  ]
+  for (let i = 0; i < attempts.length; i++) {
+    let out = ''
+    const kinds = {}
+    try {
+      const stream = ctx.llm.stream({
+        provider: target.provider,
+        model: target.model,
+        system,
+        messages: [say('user', user)],
+        sessionId: String((agent && agent.session && agent.session.id) || ''),
+        ...attempts[i],
+      })
+      for await (const chunk of withStreamTimeout(stream, timeoutMs, 'daily plan model')) {
+        if (!chunk) continue
+        kinds[chunk.type] = (kinds[chunk.type] || 0) + 1
+        if (chunk.type === 'text-delta') out += chunk.text
+        if (chunk.type === 'finish' && chunk.reason && chunk.reason.kind === 'error') {
+          log('model returned error: ' + JSON.stringify(chunk.reason).slice(0, 200))
+          break
+        }
       }
-    }
-  } catch (e) { log('call failed: ' + String((e && e.message) || e)); return null }
-  const raw = parseJson(out)
-  if (!raw) { log('JSON parse failed: len=' + String(out).length + ' kinds=' + JSON.stringify(kinds) + ' body=' + String(out).slice(0, 200)); return null }
-  const ok = normalizePlan(raw, params.cfg.地图, params.continuityEntities, params.continuityPeople, params.cfg.衣柜)
-  if (!ok) { log('normalize failed: ' + String(out).slice(0, 300)); return null }
-  return { ...ok, source: 'llm', model: target.model }
+    } catch (e) { log('call failed: ' + String((e && e.message) || e)); return null }
+    const raw = parseJson(out)
+    if (!raw) { log('JSON parse failed (attempt ' + (i + 1) + '): len=' + String(out).length + ' kinds=' + JSON.stringify(kinds) + ' body=' + String(out).slice(0, 200)); continue }
+    const ok = normalizePlan(raw, params.cfg.地图, params.continuityEntities, params.continuityPeople, params.cfg.衣柜)
+    if (!ok) { log('normalize failed (attempt ' + (i + 1) + '): ' + String(out).slice(0, 300)); continue }
+    return { ...ok, source: 'llm', model: target.model }
+  }
+  return null
 }
