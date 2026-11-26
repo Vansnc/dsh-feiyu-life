@@ -48,6 +48,7 @@ export function lifeFacts(life) {
   const location = [world.location?.name, world.moving && world.destination?.name].filter(Boolean).join(' → ')
   facts.push(makeFact('now', [meta.date, meta.clock, location, life.current?.what, life.reply?.label, life.vitality?.energy < 35 && life.vitality?.label].filter(Boolean).join(' · '), { label: '此刻', priority: 100, max: 220 }))
   facts.push(makeFact('context', '这些是她自己的生活背景。按对方这句话回应；计划只有在真实时间线完成后才能当作经历。', { priority: 96, max: 160 }))
+  facts.push(makeFact('rule', '这是你自己的日子，别当时间表念：不提时间段、不列清单，他问起挑一两件说就行；别改正在做的事、地点和手机状态。他说自己在地铁/公司/家，那是他的场景，别安到你身上。', { label: '说话', priority: 85, max: 220 }))
   if (meta.tomorrow) facts.push(makeFact('tomorrow', meta.tomorrow, { label: '明天预计', priority: 55, topics: ['明天', '明早', '明晚', '明儿'] }))
   if (meta.next) facts.push(makeFact('next', meta.next, { label: '接下来预计', priority: 55, topics: ['接下来', '等会', '待会', '稍后', '安排'] }))
   if (meta.recent?.length) facts.push(makeFact('recent', meta.recent.join('，然后'), { label: '刚才', priority: 60, topics: ['刚才', '刚刚', '刚做', '今天.*做了'] }))

@@ -1,5 +1,9 @@
 # 更新记录
 
+## 2.7.1
+
+- **补回生活线说话约束**：2.7.0 拆层后，「别当时间表念、别改正在做的事和手机状态」这条只写在 `life.text` 里、没进聊天链路；现在作为事实层的一条 `rule` 重新注入。
+
 ## 2.7.0
 
 - **上下文拆成两层**：新增事实层 `src/plugin/facts.js`——life / mind / reflection / continuity 各自产出结构化事实（kind / text / priority / ttl / topics），不再直接拼句子；`turn-context.js` 只负责按话题挑、按 1200 字符预算裁剪、用统一句式渲染。
