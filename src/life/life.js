@@ -627,6 +627,7 @@ export function generate(cfg, now = new Date(), options = {}) {
   const lines = []
   const bodyText = conditions.slice(0, 2).join('；')
   lines.push(`（今天）${t.month}月${t.day}日 ${weekdayName(t.weekday)}·${type.name}${bodyText ? '。' + bodyText : ''}。`)
+  lines.push(`（现在）${clockOf(t.minuteOfDay)}。`)
 
   let nowLine = `（此刻）${current.what}`
   if (current.outfit && !/睡|洗澡|冲澡|洗漱|浴巾/.test(current.what) && !['sleep', 'bath'].includes(current.behavior)) {
