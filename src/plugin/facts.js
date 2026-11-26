@@ -46,9 +46,9 @@ export function lifeFacts(life) {
   const meta = life.chatFacts || {}
   const world = life.world || {}
   const location = [world.location?.name, world.moving && world.destination?.name].filter(Boolean).join(' → ')
-  facts.push(makeFact('now', [meta.date, meta.clock, location, life.current?.what, life.reply?.label, life.vitality?.energy < 35 && life.vitality?.label].filter(Boolean).join(' · '), { label: '此刻', priority: 100, max: 220 }))
-  facts.push(makeFact('context', '这些是她自己的生活背景。按对方这句话回应；计划只有在真实时间线完成后才能当作经历。', { priority: 96, max: 160 }))
-  facts.push(makeFact('rule', '这是你自己的日子，别当时间表念：不提时间段、不列清单，他问起挑一两件说就行；别改正在做的事、地点和手机状态。他说自己在地铁/公司/家，那是他的场景，别安到你身上。', { label: '说话', priority: 97, max: 220 }))
+  facts.push(makeFact('now', [meta.date, meta.clock, location, life.current?.what, life.reply?.label, life.vitality?.energy < 35 && life.vitality?.label].filter(Boolean).join(' · '), { label: '此刻', priority: 100, max: 180 }))
+  facts.push(makeFact('context', '这些是她自己的生活背景。按对方这句话回应；计划只有在真实时间线完成后才能当作经历。', { priority: 96, max: 120 }))
+  facts.push(makeFact('rule', '这是你自己的日子，别当时间表念：不提时间段、不列清单，他问起挑一两件说就行；别改正在做的事、地点和手机状态。他说自己在地铁/公司/家，那是他的场景，别安到你身上。', { label: '说话', priority: 97, max: 180 }))
   if (meta.tomorrow) facts.push(makeFact('tomorrow', meta.tomorrow, { label: '明天预计', priority: 55, topics: ['明天', '明早', '明晚', '明儿'] }))
   if (meta.next) facts.push(makeFact('next', meta.next, { label: '接下来预计', priority: 55, topics: ['接下来', '等会', '待会', '稍后', '安排'] }))
   if (meta.recent?.length) facts.push(makeFact('recent', meta.recent.join('，然后'), { label: '刚才', priority: 60, topics: ['刚才', '刚刚', '刚做', '今天.*做了'] }))
@@ -66,7 +66,7 @@ export function mindFacts(mind, ctx = {}) {
   if (!mind) return facts
   const narrative = String(mind.identity?.narrative || '').replace(/[。；;，,]+$/, '')
   const identity = [narrative, ...(mind.identity?.traits || []), ...(mind.identity?.values || [])].filter(Boolean).join('，')
-  if (identity) facts.push(makeFact('self', identity, { label: '自我', priority: 90, max: 150 }))
+  if (identity) facts.push(makeFact('self', identity, { label: '自我', priority: 90, max: 120 }))
   const askedOwner = /我(喜欢|偏好|爱吃)/.test(query) ? 'user' : /你(喜欢|偏好|爱吃)/.test(query) ? 'self' : ''
   const prefs = (mind.preferences || []).filter(p => p.status === 'active' && p.confidence >= 0.7 && (p.owner === askedOwner || relevant(query, p.key) || relevant(query, p.value) || /聊天媒介|称呼/.test(p.key)))
   for (const p of prefs.slice(-2)) facts.push(makeFact('preference', `${p.key} · ${p.value}`, { label: p.owner === 'self' ? '她的偏好' : '对方的偏好', priority: 62 }))
@@ -114,7 +114,7 @@ export function continuityFacts(state, ctx = {}) {
 // ── 聊天规则（固定事实，预算不够时最先砍）──
 export function chatFacts(gapHours = 0, buildHint) {
   const hint = typeof buildHint === 'function' ? buildHint(gapHours) : ''
-  return hint ? [makeFact('hint', hint, { priority: 80, max: 400 })] : []
+  return hint ? [makeFact('hint', hint, { priority: 80, max: 200 })] : []
 }
 
 // ── 外层：挑选 + 渲染 ──
@@ -125,7 +125,7 @@ export function renderFact(fact) {
 // 必选项先占位：这些事实无论预算多紧都要优先留下，避免被低优先级短句挤掉。
 // 但必选组本身也有上限（总预算的 60%），超了就从优先级最低的开始砍——先砍「说话」，别砍「此刻」。
 const REQUIRED_KINDS = new Set(['now', 'rule', 'self', 'context', 'hint'])
-const REQUIRED_SHARE = 0.6
+const REQUIRED_SHARE = 0.75
 
 export function selectFacts(facts, { query = '', budget = 1200 } = {}) {
   const candidates = facts.filter(Boolean).filter((fact) => {

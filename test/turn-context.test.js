@@ -58,3 +58,17 @@ test('required facts have their own cap and shed the lowest priority first', () 
   assert.match(out, /^此刻：2026-11-26/)
   assert.doesNotMatch(out, /说话：/)
 })
+
+
+test('required facts all fit at their maximum sizes', () => {
+  const big = {
+    chatFacts: { date: '2026-11-26', clock: '16:08', recent: [], next: '', tomorrow: '' },
+    current: { what: '长'.repeat(300) },
+    world: { location: { name: '咖啡屋' } },
+  }
+  const bigMind = { ...mind, identity: { narrative: '长'.repeat(300), traits: [], values: [] } }
+  const out = turnContext({ query: '', life: big, mind: bigMind, inner: '长'.repeat(300) })
+  assert.match(out, /此刻：/)
+  assert.match(out, /说话：/)
+  assert.match(out, /自我：/)
+})
