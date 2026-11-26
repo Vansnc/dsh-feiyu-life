@@ -239,8 +239,9 @@ export async function writeDayWithModel(ctx, agent, params) {
       system,
       messages: [say('user', user)],
       sessionId: String((agent && agent.session && agent.session.id) || ''),
-      maxTokens: 3000,
+      maxTokens: 6000,
       temperature: 0.9,
+      reasoningEffort: 'low',
     })
     for await (const chunk of withStreamTimeout(stream, timeoutMs, 'daily plan model')) {
       if (!chunk) continue
