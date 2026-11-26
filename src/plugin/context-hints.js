@@ -29,10 +29,9 @@ export function recentSummary(cfg, t) {
       if (!plan) continue
       const title = plan.title || (plan.type && plan.type.name) || ''
       const items = plan.items || []
-      const head = items.slice(0, 3).map((x) => x.what ?? x.在).filter(Boolean).join('、')
-      const tail = items.slice(-2).map((x) => x.what ?? x.在).filter(Boolean).join('、')
+      const all = items.map((x) => x.what ?? x.在).filter(Boolean).join('、')
       const small = momentSummary(d)
-      const bits = [head ? head + '…' : '', tail ? '后段：' + tail : '', small.length ? '小事：' + small.join('、') : ''].filter(Boolean).join('；')
+      const bits = [all, small.length ? '小事：' + small.join('、') : ''].filter(Boolean).join('；')
       lines.push(`- ${d}：${title}${bits ? '（' + bits + '）' : ''}`)
     } catch {}
   }
