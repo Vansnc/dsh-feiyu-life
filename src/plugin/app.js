@@ -44,7 +44,7 @@ import { registerImage, readImageConfig, replaceImageConfig, cleanupPhotos } fro
 import { BEHAVIOR_RULES, inferenceFor, normalizeWorldConfig } from '../life/world.js'
 import { createSettingsBackup, restoreSettingsBackup } from '../persistence/backup.js'
 import {
-  affectContext, affectLabel, appendEvent, applyReflection, cleanupEvents, eventId, eventText,
+  affectContext, affectLabel, appendEvent, applyReflection, cleanupEvents, eventId, lastHumanMessageAt, eventText,
   readAffect, readEvents, recordLifeSettlement, reflectTurn, reflectionUsage,
   resetAffect, shouldReflect, sourceKind,
 } from '../cognition/reflection.js'
@@ -85,7 +85,7 @@ export function requestedAt(searchParams, config, fallback = new Date()) {
   return Number.isFinite(ts) && ts > 0 ? new Date(ts) : fallback
 }
 
-import { bodyHint, calendarLabel, recentSummary, selfHint } from './context-hints.js'
+import { chatHint, bodyHint, calendarLabel, recentSummary, selfHint } from './context-hints.js'
 import { createInitiativeRunner } from './initiative.js'
 import { registerLifeTools } from './tools.js'
 import { createHttpHelpers } from './http.js'
@@ -105,6 +105,7 @@ export function apply(ctx) {
   const lastHumanText = new Map()
   const sharingCheckedAt = new Map()
   const initiativeRunning = new Set()
+  let lastShareCheck = null
   let lastInternalAgencyAt = 0
 
   const sessions = () => {
@@ -129,6 +130,10 @@ export function apply(ctx) {
     const cwd = String((agent && agent.session && agent.session.cwd) || '')
     if (!lastHumanAt.has(agent.id)) lastHumanAt.set(agent.id, Date.now())
     if (!lastHumanText.has(agent.id)) lastHumanText.set(agent.id, '')
+    let previousHumanAt = 0
+    try { previousHumanAt = lastHumanMessageAt(agent.session?.snapshotEvents?.()) } catch {}
+    if (previousHumanAt) lastHumanAt.set(agent.id, previousHumanAt)
+    let gapHours = 0
     const offs = []
     offs.push(agent.ctx.systemPrompt.context({
       name: 'feiyu-life',
@@ -148,12 +153,14 @@ export function apply(ctx) {
           const inner = cfg.内在?.启用 === false || (externalFirst && external.mood) ? '' : affectContext(readAffect(cfg.内在), cfg.内在)
           const personalityCfg = externalFirst && external.memory ? { ...cfg.人格, 记忆启用: false } : cfg.人格
           const personality = cfg.人格?.启用 === false ? '' : mindContext(readMind(cfg.人格), pendingInbox?.text || '', personalityCfg)
-          if (!state) return [life.text, inner, personality].filter(Boolean).join('\n')
+          const chat = cfg.人格?.启用 === false ? '' : chatHint(life.reply?.id, gapHours)
+          if (!state) return [life.text, inner, personality, chat].filter(Boolean).join('\n')
           const agency = readAgency()
           return [
             life.text,
             inner,
             personality,
+            chat,
             `（生活连续性）${continuityContext(state, readMemories(2), { timeZone: cfg.时区, vitality: life.vitality })}`,
             continuitySummary(state, { timeZone: cfg.时区 }),
             agencyContext(agency.focus),
@@ -201,7 +208,10 @@ export function apply(ctx) {
         if (/feiyu-life-share/.test(kind)) return
         pendingInbox = { text: value, kind: kind || 'human', token: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}` }
         if (!/feiyu-life-initiative|feiyu-life-share|bili-duty-scan/.test(kind)) {
-          lastHumanAt.set(agent.id, Date.now())
+          const at = Date.now()
+          gapHours = previousHumanAt ? Math.floor((at - previousHumanAt) / 3600000) : 0
+          previousHumanAt = at
+          lastHumanAt.set(agent.id, at)
           lastHumanText.set(agent.id, String(value).slice(0, 400))
           try { handleAgencyInboxReply(value, payload, agent.id, { now: Date.now() }) } catch {}
         }
@@ -358,7 +368,7 @@ export function apply(ctx) {
     try { runInternalAgency() } catch {}
   }
 
-  const runInitiative = createInitiativeRunner({
+  const checkInitiative = createInitiativeRunner({
     readConfig, normalizeSharingConfig, sessions, inWorkspace, generate, readContinuity,
     activePeople, readSharing, readMind, readAffect, readAgency, buildCandidates,
     agencyShareCandidates, takeShare, buildSharePrompt, commitShare, releaseShare,
@@ -367,6 +377,15 @@ export function apply(ctx) {
   })
 
   ctx.effect(() => ctx.interval(tick, 30000))
+  async function runInitiative(target, force) {
+    const results = await checkInitiative(target, force)
+    const result = results[0]
+    if (result && result.reason !== 'check-interval') {
+      lastShareCheck = { at: Date.now(), sessionId: result.sessionId || '', reason: result.sent ? 'queued' : result.reason }
+    }
+    return results
+  }
+
   try { ctx.effect(() => ctx.interval(() => { runInitiative().catch(() => {}) }, 5 * 60 * 1000)) } catch {}
   ctx.effect(() => () => {
     for (const off of mounted.values()) { try { off() } catch {} }
@@ -514,6 +533,8 @@ export function apply(ctx) {
     const at = now instanceof Date ? now.getTime() : Number(now) || Date.now()
     const mind = readMind(cfg.人格, at)
     return {
+      shareSessions: sessions().filter((agent) => inWorkspace(cfg, agent.session?.cwd || '')).map((agent) => String(agent.id)),
+      lastShareCheck,
       ok: true, mind, integrations: externalPluginStatus(),
       counts: {
         memories: mind.memories.filter((x) => x.status === 'active').length,
@@ -571,13 +592,8 @@ export function apply(ctx) {
       kind: 'exact', path: ROUTE_PREFIX + '/mind/initiative',
       handler: onlyOwner(async (req, res) => {
         if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' })
-        let body = {}
-        try { body = await readBody(req) } catch {}
-        const list = sessions()
-        const target = list.find((x) => String(x.id) === String(body?.sessionId || '')) || list[0]
-        if (!target) return reply(res, 409, { ok: false, error: 'no live root session' })
-        const results = await runInitiative(target, true)
-        return reply(res, 200, { ...mindPayload(), initiativeResult: results[0] || { sessionId: target.id, sent: false, reason: 'not-run' } })
+        const results = await runInitiative(null, true)
+        return reply(res, 200, { ...mindPayload(), initiativeResult: results[0] })
       }),
     }), 'feiyu-life: manual initiative')
   } catch {}

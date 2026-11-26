@@ -262,6 +262,7 @@ export function buildReflectionPrompt({ userText, replyText, source = 'human' })
     'JSON 要紧凑、一行输出；候选数组可以为空（[]），不要为了让数组非空而编造；不要输出解释或代码块。',
     '',
     '只输出 JSON：',
+    '对方明确表达以后想用文字、语音或表情包交流时，记为用户的“聊天媒介”偏好；一次索要图片或语音只算本轮请求。',
     '{"affect":{"valenceDelta":-12到12,"arousalDelta":-12到12,"dimensions":{"joy":0到20,"calm":0到20,"worry":0到20,"sadness":0到20},"reason":"一句可审计的变化原因","confidence":0到1},"memoryCandidates":[{"summary":"可独立理解的候选","kind":"episode|fact|preference|promise|relationship","subject":"user|self|relationship|world","importance":0到1,"confidence":0到1,"sensitivity":"normal|private|sensitive","explicit":false,"ttlDays":365}],"preferenceCandidates":[{"owner":"self|user","key":"偏好方面","value":"偏好内容","confidence":0到1,"evidence":"证据","explicit":false}],"goalCandidates":[{"title":"目标","reason":"原因","nextStep":"下一步","scope":"virtual|local","confidence":0到1,"explicit":false}],"identityEvidence":[{"trait":"特质","polarity":"for|against","reason":"证据","confidence":0到1}],"relationshipCandidates":[{"person":"对方称呼","tone":"warm|neutral|tense","reason":"原因"}],"initiative":{"desire":0到1,"reason":"想主动说的原因","topic":"以后可自然提起的话题"}}',
   ].join('\n')
 }
@@ -343,4 +344,20 @@ export function cleanupEvents(retentionDays = 180, now = Date.now()) {
     }
   } catch {}
   return removed
+}
+
+// Recover only a timestamp from the host's existing session history.
+export function lastHumanMessageAt(events, now = Date.now()) {
+  if (!Array.isArray(events)) return 0
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    const row = event?.data?.message || event?.data?.item || event?.message || event
+    if (row?.role !== 'user' && event?.type !== 'user/message' && event?.type !== 'inbox/inserted') continue
+    const kind = sourceKind(row) || sourceKind(event)
+    if (/runtime-context|time-context|system|tool-result|plugin|feiyu-life|bili-duty-scan|speak-up/.test(kind)) continue
+    const stamp = row.timestamp ?? event.timestamp ?? event.at
+    const at = typeof stamp === 'number' ? stamp : Date.parse(stamp)
+    if (at > 0 && at <= now) return at
+  }
+  return 0
 }

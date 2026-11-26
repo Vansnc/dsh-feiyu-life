@@ -745,7 +745,7 @@ export function registerImage(ctx) {
 
   ctx.effect(() => ctx.tools.register({
     name: 'shoot',
-    description: '拍下此刻的角色生活照或场景照。根据自己想记录的瞬间选择视角、距离和姿态，可用 framing 简述选择；地点、活动、穿着与人物参考由相机提供。回复里拿到路径后用 ![描述](路径) 发出去。',
+    description: '拍下此刻的角色生活照或场景照。根据自己想记录的瞬间选择视角、距离和姿态，可用 framing 简述选择；地点、活动、穿着与人物参考由相机提供。拿到路径后可单独发 ![照片](路径)，无需配文。只有这张照片有特别想说的事时再写，别习惯性点评自己的外表。',
     parameters: {
       type: 'object',
       properties: {
@@ -756,7 +756,7 @@ export function registerImage(ctx) {
     },
     output: {
       schema: { type: 'object', properties: { ok: { type: 'boolean' }, image: { type: 'string' }, say: { type: 'string' }, prompt: { type: 'string' }, check: { type: 'object' }, notes: { type: 'array' }, metadata: { type: 'object' } }, additionalProperties: true },
-      render: (_a, v) => [{ type: 'text', text: String(v?.say || '') + (v?.image ? '\n图片：' + v.image : '') }],
+      render: (_a, v) => [{ type: 'text', text: v?.ok && v.image ? '可直接发送：![照片](' + v.image + ')' : String(v?.say || '') }],
     },
     async execute(rawArgs = {}) {
       const args = {

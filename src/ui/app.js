@@ -16,6 +16,17 @@ export function createUI(require) {
   const ImagePanel = createImagePanel(React)
 
 
+    const shareReasons = {
+      'no-target': '尚未指定会话', 'target-unavailable': '指定会话未在线', disabled: '已关闭',
+      'outside-workspace': '会话不在配置的工作区', queued: '已进入会话队列', busy: '会话正忙',
+      'quiet-hours': '安静时段', 'daily-limit': '已达每日上限', 'recent-conversation': '刚聊过',
+      'sleep-or-bath': '正在睡觉或洗漱', 'phone-away': '手机不在手边', class: '正在上课或学习',
+      'no-candidate': '没有合适话题', 'below-min-score': '话题未达到最低分',
+      'global-cooldown': '分享冷却中', 'deduped-or-cooldown': '话题重复或仍在冷却',
+      'followup-failed': '加入会话队列失败', 'claim-active': '已有分享正在处理',
+      locked: '分享账本正忙', 'ledger-write-failed': '分享账本写入失败',
+    }
+    const shareReason = (key) => shareReasons[key] || key || '没有合适话题'
     const API = '/dsh-feiyu-life'
 
 
@@ -434,7 +445,7 @@ export function createUI(require) {
         if (tab === 'replay' && !replay) loadReplay('', true)
         if (tab === 'continuity' && !continuity) loadContinuity()
         if (tab === 'inner' && !affect) loadAffect()
-        if (tab === 'persona' && !mind) loadMind()
+        if (tab === 'share' || (tab === 'persona' && !mind)) loadMind()
       }, [tab])
 
       const loadAffect = async () => {
@@ -466,7 +477,7 @@ export function createUI(require) {
         try {
           const data = await postJson(API + '/mind/initiative', {})
           setMind(data)
-          setMessage(data.initiativeResult?.sent ? '已经在根会话主动开口' : `这次保持安静：${data.initiativeResult?.reason || '没有合适话题'}`)
+          setMessage(data.initiativeResult?.sent ? '分享已进入指定会话队列' : `这次保持安静：${shareReason(data.initiativeResult?.reason)}`)
         }
         catch (e) { setMessage('主动意图执行失败：' + e.message) }
         setBusy(false)
@@ -1077,6 +1088,12 @@ export function createUI(require) {
 
       const sharingCfg = config.主动分享 || {}
       const sharePage = h('div', { 'data-fl-sec': '' },
+        h('label', { 'data-fl-row': '' }, '指定会话',
+          h('select', { value: sharingCfg.指定会话 || '', onChange: (e) => patch(['主动分享', '指定会话'], e.target.value) },
+            h('option', { value: '' }, '未指定（暂停发送）'),
+            [...new Set([sharingCfg.指定会话, ...(mind?.shareSessions || [])].filter(Boolean))].map((id) =>
+              h('option', { key: id, value: id }, id)))),
+        mind?.lastShareCheck && h('div', { 'data-fl-note': '' }, '上次检查 · ' + new Date(mind.lastShareCheck.at).toLocaleString() + ' · ' + shareReason(mind.lastShareCheck.reason)),
         h('div', { 'data-fl-note': '' }, '只分享已经发生、能追溯到生活线的事：小事进入下一阶段、刚完成的出行/吃饭/上课、身体变化，或之前提过的事情有了后续。未来计划不会触发；没有合适候选时保持安静。'),
         h('div', { 'data-fl-row': '' },
           h('label', { 'data-fl-row': '' }, h('input', { type: 'checkbox', checked: sharingCfg.启用 !== false, onChange: (e) => patch(['主动分享', '启用'], e.target.checked) }), '启用主动分享'),
@@ -1089,7 +1106,7 @@ export function createUI(require) {
         h('div', { 'data-fl-row': '' },
           h('span', { 'data-fl-note': '' }, '最低分'), h(Field, { value: sharingCfg.最低分 ?? 84, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '最低分'], Number(v) || 0) }),
           h('span', { 'data-fl-note': '' }, '刚聊过多少分钟内不分享'), h(Field, { value: sharingCfg.近期对话分钟 ?? 20, type: 'number', width: 'data-fl-num', onChange: (v) => patch(['主动分享', '近期对话分钟'], Number(v) || 20) }),
-          h('button', { 'data-fl-btn': '', disabled: busy || sharingCfg.启用 === false, onClick: triggerInitiative }, '现在检查一次')),
+          h('button', { 'data-fl-btn': '', disabled: busy || dirty || !sharingCfg.指定会话 || sharingCfg.启用 === false, onClick: triggerInitiative }, '现在检查一次')),
         h('div', { 'data-fl-note': '' }, '默认低打扰：一天最多两次，其中一次可以留给同一件小事的后续；全局冷却 24 小时、同类冷却 8 小时。睡觉、洗澡、上课、手机不在手边、安静时段、刚聊过、会话忙、没有达到最低分或今天已经分享过时都会保持安静。'))
       const mindState = mind && mind.mind
       const integrationText = mind ? Object.entries(mind.integrations || {}).filter(([, on]) => on).map(([key]) => ({ memory: 'dsh-fish-memory', mood: 'dsh-feiyu-mood', bili: 'dsh-bili-subagent' }[key] || key)).join('、') : ''

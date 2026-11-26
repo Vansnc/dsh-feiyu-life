@@ -74,6 +74,13 @@ export const momentTemplates = [
     ],
   },
   {
+    id: 'misplacedEarbuds', title: '找耳机', weight: 0.45, window: [10 * 60, 17 * 60],
+    stages: [
+      { text: '想听歌，摸了摸常放耳机的口袋，里面是空的' },
+      { after: 45, text: '换到另一边口袋才摸到耳机盒' },
+    ],
+  },
+  {
     id: 'charger', title: '充电线', weight: 0.8, window: [10 * 60, 20 * 60],
     stages: [
       { text: '充电线又接触不良，得找角度' },

@@ -20,6 +20,7 @@ export const SHARING_LIMITS = { recent: 60, failures: 40, pendingLeaseMs: 5 * 60
 
 export const defaultSharingConfig = {
   启用: true,
+  指定会话: '',
   每日上限: 2,
   全局冷却分钟: 1440,
   同类冷却分钟: 480,
@@ -44,6 +45,7 @@ export function normalizeSharingConfig(input, issues = []) {
   if (input !== undefined && (typeof input !== 'object' || input === null || Array.isArray(input))) issues.push('主动分享必须是对象，已恢复默认')
   const cfg = {
     启用: raw.启用 !== false,
+    指定会话: typeof raw.指定会话 === 'string' ? raw.指定会话.trim() : '',
     每日上限: Math.round(clamp(raw.每日上限, 0, 6, defaultSharingConfig.每日上限)),
     全局冷却分钟: Math.round(clamp(raw.全局冷却分钟, 30, 1440, defaultSharingConfig.全局冷却分钟)),
     同类冷却分钟: Math.round(clamp(raw.同类冷却分钟, 60, 4320, defaultSharingConfig.同类冷却分钟)),

@@ -594,6 +594,29 @@
     const h = React.createElement;
     const { useState, useEffect } = React;
     const ImagePanel = createImagePanel(React);
+    const shareReasons = {
+      "no-target": "\u5C1A\u672A\u6307\u5B9A\u4F1A\u8BDD",
+      "target-unavailable": "\u6307\u5B9A\u4F1A\u8BDD\u672A\u5728\u7EBF",
+      disabled: "\u5DF2\u5173\u95ED",
+      "outside-workspace": "\u4F1A\u8BDD\u4E0D\u5728\u914D\u7F6E\u7684\u5DE5\u4F5C\u533A",
+      queued: "\u5DF2\u8FDB\u5165\u4F1A\u8BDD\u961F\u5217",
+      busy: "\u4F1A\u8BDD\u6B63\u5FD9",
+      "quiet-hours": "\u5B89\u9759\u65F6\u6BB5",
+      "daily-limit": "\u5DF2\u8FBE\u6BCF\u65E5\u4E0A\u9650",
+      "recent-conversation": "\u521A\u804A\u8FC7",
+      "sleep-or-bath": "\u6B63\u5728\u7761\u89C9\u6216\u6D17\u6F31",
+      "phone-away": "\u624B\u673A\u4E0D\u5728\u624B\u8FB9",
+      class: "\u6B63\u5728\u4E0A\u8BFE\u6216\u5B66\u4E60",
+      "no-candidate": "\u6CA1\u6709\u5408\u9002\u8BDD\u9898",
+      "below-min-score": "\u8BDD\u9898\u672A\u8FBE\u5230\u6700\u4F4E\u5206",
+      "global-cooldown": "\u5206\u4EAB\u51B7\u5374\u4E2D",
+      "deduped-or-cooldown": "\u8BDD\u9898\u91CD\u590D\u6216\u4ECD\u5728\u51B7\u5374",
+      "followup-failed": "\u52A0\u5165\u4F1A\u8BDD\u961F\u5217\u5931\u8D25",
+      "claim-active": "\u5DF2\u6709\u5206\u4EAB\u6B63\u5728\u5904\u7406",
+      locked: "\u5206\u4EAB\u8D26\u672C\u6B63\u5FD9",
+      "ledger-write-failed": "\u5206\u4EAB\u8D26\u672C\u5199\u5165\u5931\u8D25"
+    };
+    const shareReason = (key) => shareReasons[key] || key || "\u6CA1\u6709\u5408\u9002\u8BDD\u9898";
     const API = "/dsh-feiyu-life";
     const clone2 = (x) => JSON.parse(JSON.stringify(x));
     const setPath = (obj, path, value) => {
@@ -1134,7 +1157,7 @@
         if (tab === "replay" && !replay) loadReplay("", true);
         if (tab === "continuity" && !continuity) loadContinuity();
         if (tab === "inner" && !affect) loadAffect();
-        if (tab === "persona" && !mind) loadMind();
+        if (tab === "share" || tab === "persona" && !mind) loadMind();
       }, [tab]);
       const loadAffect = async () => {
         try {
@@ -1180,7 +1203,7 @@
         try {
           const data = await postJson(API + "/mind/initiative", {});
           setMind(data);
-          setMessage(data.initiativeResult?.sent ? "\u5DF2\u7ECF\u5728\u6839\u4F1A\u8BDD\u4E3B\u52A8\u5F00\u53E3" : `\u8FD9\u6B21\u4FDD\u6301\u5B89\u9759\uFF1A${data.initiativeResult?.reason || "\u6CA1\u6709\u5408\u9002\u8BDD\u9898"}`);
+          setMessage(data.initiativeResult?.sent ? "\u5206\u4EAB\u5DF2\u8FDB\u5165\u6307\u5B9A\u4F1A\u8BDD\u961F\u5217" : `\u8FD9\u6B21\u4FDD\u6301\u5B89\u9759\uFF1A${shareReason(data.initiativeResult?.reason)}`);
         } catch (e) {
           setMessage("\u4E3B\u52A8\u610F\u56FE\u6267\u884C\u5931\u8D25\uFF1A" + e.message);
         }
@@ -2126,6 +2149,18 @@
       const sharePage = h(
         "div",
         { "data-fl-sec": "" },
+        h(
+          "label",
+          { "data-fl-row": "" },
+          "\u6307\u5B9A\u4F1A\u8BDD",
+          h(
+            "select",
+            { value: sharingCfg.\u6307\u5B9A\u4F1A\u8BDD || "", onChange: (e) => patch(["\u4E3B\u52A8\u5206\u4EAB", "\u6307\u5B9A\u4F1A\u8BDD"], e.target.value) },
+            h("option", { value: "" }, "\u672A\u6307\u5B9A\uFF08\u6682\u505C\u53D1\u9001\uFF09"),
+            [...new Set([sharingCfg.\u6307\u5B9A\u4F1A\u8BDD, ...mind?.shareSessions || []].filter(Boolean))].map((id) => h("option", { key: id, value: id }, id))
+          )
+        ),
+        mind?.lastShareCheck && h("div", { "data-fl-note": "" }, "\u4E0A\u6B21\u68C0\u67E5 \xB7 " + new Date(mind.lastShareCheck.at).toLocaleString() + " \xB7 " + shareReason(mind.lastShareCheck.reason)),
         h("div", { "data-fl-note": "" }, "\u53EA\u5206\u4EAB\u5DF2\u7ECF\u53D1\u751F\u3001\u80FD\u8FFD\u6EAF\u5230\u751F\u6D3B\u7EBF\u7684\u4E8B\uFF1A\u5C0F\u4E8B\u8FDB\u5165\u4E0B\u4E00\u9636\u6BB5\u3001\u521A\u5B8C\u6210\u7684\u51FA\u884C/\u5403\u996D/\u4E0A\u8BFE\u3001\u8EAB\u4F53\u53D8\u5316\uFF0C\u6216\u4E4B\u524D\u63D0\u8FC7\u7684\u4E8B\u60C5\u6709\u4E86\u540E\u7EED\u3002\u672A\u6765\u8BA1\u5212\u4E0D\u4F1A\u89E6\u53D1\uFF1B\u6CA1\u6709\u5408\u9002\u5019\u9009\u65F6\u4FDD\u6301\u5B89\u9759\u3002"),
         h(
           "div",
@@ -2153,7 +2188,7 @@
           h(Field, { value: sharingCfg.\u6700\u4F4E\u5206 ?? 84, type: "number", width: "data-fl-num", onChange: (v) => patch(["\u4E3B\u52A8\u5206\u4EAB", "\u6700\u4F4E\u5206"], Number(v) || 0) }),
           h("span", { "data-fl-note": "" }, "\u521A\u804A\u8FC7\u591A\u5C11\u5206\u949F\u5185\u4E0D\u5206\u4EAB"),
           h(Field, { value: sharingCfg.\u8FD1\u671F\u5BF9\u8BDD\u5206\u949F ?? 20, type: "number", width: "data-fl-num", onChange: (v) => patch(["\u4E3B\u52A8\u5206\u4EAB", "\u8FD1\u671F\u5BF9\u8BDD\u5206\u949F"], Number(v) || 20) }),
-          h("button", { "data-fl-btn": "", disabled: busy || sharingCfg.\u542F\u7528 === false, onClick: triggerInitiative }, "\u73B0\u5728\u68C0\u67E5\u4E00\u6B21")
+          h("button", { "data-fl-btn": "", disabled: busy || dirty || !sharingCfg.\u6307\u5B9A\u4F1A\u8BDD || sharingCfg.\u542F\u7528 === false, onClick: triggerInitiative }, "\u73B0\u5728\u68C0\u67E5\u4E00\u6B21")
         ),
         h("div", { "data-fl-note": "" }, "\u9ED8\u8BA4\u4F4E\u6253\u6270\uFF1A\u4E00\u5929\u6700\u591A\u4E24\u6B21\uFF0C\u5176\u4E2D\u4E00\u6B21\u53EF\u4EE5\u7559\u7ED9\u540C\u4E00\u4EF6\u5C0F\u4E8B\u7684\u540E\u7EED\uFF1B\u5168\u5C40\u51B7\u5374 24 \u5C0F\u65F6\u3001\u540C\u7C7B\u51B7\u5374 8 \u5C0F\u65F6\u3002\u7761\u89C9\u3001\u6D17\u6FA1\u3001\u4E0A\u8BFE\u3001\u624B\u673A\u4E0D\u5728\u624B\u8FB9\u3001\u5B89\u9759\u65F6\u6BB5\u3001\u521A\u804A\u8FC7\u3001\u4F1A\u8BDD\u5FD9\u3001\u6CA1\u6709\u8FBE\u5230\u6700\u4F4E\u5206\u6216\u4ECA\u5929\u5DF2\u7ECF\u5206\u4EAB\u8FC7\u65F6\u90FD\u4F1A\u4FDD\u6301\u5B89\u9759\u3002")
       );

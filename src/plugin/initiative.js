@@ -15,7 +15,11 @@ export function createInitiativeRunner(deps) {
     try { runInternalAgency(now) } catch {}
     const cfg = readConfig()
     const sharingCfg = normalizeSharingConfig(cfg.主动分享)
-    const candidates = forcedAgent ? [forcedAgent] : sessions()
+    const targetId = sharingCfg.指定会话
+    if (!targetId) return [{ sent: false, reason: 'no-target' }]
+    const target = sessions().find((agent) => String(agent.id) === targetId)
+    if (!target || (forcedAgent && forcedAgent !== target)) return [{ sessionId: targetId, sent: false, reason: 'target-unavailable' }]
+    const candidates = [target]
     const results = []
     for (const agent of candidates) {
       if (!agent || initiativeRunning.has(agent.id)) { if (agent) results.push({ sessionId: agent.id, sent: false, reason: 'busy' }); continue }
@@ -75,6 +79,7 @@ export function createInitiativeRunner(deps) {
         }
         const accepted = agent.followup(message)
         if (accepted && typeof accepted.then === 'function') await accepted
+        if (accepted === false) throw new Error('followup rejected')
         const committed = commitShare(decision.claim.claimId, { now: Date.now(), timeZone: cfg.时区 })
         if (committed.ok && decision.claim.sourceKey) {
           try { markAgencyOutreach(decision.claim, { now: Date.now(), sessionId: agent.id, topic: decision.claim.title }) } catch {}
