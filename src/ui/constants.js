@@ -2,7 +2,7 @@ export const phoneOptions = ['在手', '静音', '在床头', '不在手边']
 export const routineTables = [['日常', '日常（有课的日子）'], ['晚起', '晚起（周四那种）'], ['假期', '假期'], ['备考', '备考（考试周）']]
 export const wardrobeLabels = [['sleep', '睡觉'], ['bath', '洗澡'], ['class', '上课'], ['home', '在家'], ['out', '出门'], ['eat', '吃饭']]
 export const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
-export const UI_ASSET_VERSION = '2.6.5'
+export const UI_ASSET_VERSION = '2.6.6'
 export const SETTINGS_BACKUP_VERSIONS = [1, 2]
 
 export const tabs = [['now', '此刻'], ['life', '生活'], ['inner', '内在'], ['proactive', '主动'], ['world', '世界'], ['camera', '相机'], ['data', '数据']]
