@@ -60,6 +60,25 @@ ui -> HTTP API only
 | 原子文件/备份 | `src/persistence/*` |
 | 浏览器 UI | `src/ui/client.js`，根产物生成 |
 
+## 聊天上下文（两层）
+
+每轮注入分两层，避免「改一个措辞就得动生成逻辑」：
+
+```text
+事实层（src/plugin/facts.js）          渲染层（src/plugin/turn-context.js）
+─────────────────────────────          ──────────────────────────────────
+lifeFacts()       作息 / 时间线 / 小事    selectFacts()   按话题 + 优先级挑
+mindFacts()       自我 / 偏好 / 目标      renderFacts()   统一句式渲染
+affectFacts()     情绪底色               1200 字符预算，超出砍低优先级
+continuityFacts() 人物 / 未完成 / 日记
+chatFacts()       聊天规则
+```
+
+- 每条事实：`{ kind, text, label, priority, ttlMinutes, topics }`
+- 里层只描述事实、不写整段句子；外层决定去留、占多少字、用哪种句式
+- 闲聊只保留「此刻 + 自我 + 说话 + 聊天规则」；追问才按 `topics` 带入日程、人物、记忆、未完成事项
+- `life.text` 仍保留给设置页预览和回放，不再进入聊天上下文
+
 ## 构建
 
 ```bash
