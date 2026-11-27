@@ -106,7 +106,7 @@ test('model prompt uses the selected routine as its upstream skeleton', () => {
     relationships: 'person:p1「小满」（室友）',
   })
   assert.match(prompt, /作息骨架：02:00-08:30 睡着了；11:40-12:40 食堂吃饭/)
-  assert.match(prompt, /以作息骨架为主，课表覆盖冲突时段/)
+  assert.match(prompt, /作息骨架只锁「睡醒 \/ 上课 \/ 用餐」/)
   assert.doesNotMatch(prompt, /事件池/)
   assert.match(prompt, /person:p1「小满」/)
   assert.match(prompt, /不得凭空创建人物/)
