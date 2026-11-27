@@ -25,7 +25,7 @@ function graph(entries) {
 test('root facades and package exports stay stable', () => {
   const pkg = JSON.parse(read('package.json'))
   assert.equal(pkg.name, 'dsh-feiyu-life')
-  assert.equal(pkg.version, '2.7.8')
+  assert.equal(pkg.version, '2.7.9')
   assert.ok(pkg.files.includes('src/'))
   const allowedRoot = new Set(['assets','docs','locale','scripts','src','test','node_modules','.git','.codex','.github','.editorconfig','.gitignore','index.js','client.js','package.json','package-lock.json','cordis.patch.yml','README.md','CHANGELOG.md','CONTRIBUTING.md','LICENSE','icon.png'])
   for (const name of readdirSync(ROOT)) assert.equal(allowedRoot.has(name), true, `unexpected root entry: ${name}`)

@@ -105,8 +105,8 @@ test('model prompt uses the selected routine as its upstream skeleton', () => {
     classes: [], calendarLabel: '学期：2026 秋季学期', body: '平常', recent: '',
     relationships: 'person:p1「小满」（室友）',
   })
-  assert.match(prompt, /作息骨架：02:00-08:30 睡着了；11:40-12:40 食堂吃饭/)
-  assert.match(prompt, /作息骨架只锁「睡醒 \/ 上课 \/ 用餐」/)
+  assert.match(prompt, /平时的作息习惯（只是参考，今天完全可以打破）：02:00-08:30 睡着了；11:40-12:40 食堂吃饭/)
+  assert.match(prompt, /这一天怎么过完全由你决定/)
   assert.doesNotMatch(prompt, /事件池/)
   assert.match(prompt, /person:p1「小满」/)
   assert.match(prompt, /不得凭空创建人物/)
